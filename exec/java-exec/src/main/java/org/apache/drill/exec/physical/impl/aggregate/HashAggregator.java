@@ -36,19 +36,17 @@ import org.apache.drill.exec.record.VectorContainer;
 
 public interface HashAggregator {
 
-  public static TemplateClassDefinition<HashAggregator> TEMPLATE_DEFINITION = new TemplateClassDefinition<HashAggregator>(HashAggregator.class, HashAggTemplate.class);
+  public static TemplateClassDefinition<HashAggregator> TEMPLATE_DEFINITION =
+      new TemplateClassDefinition<HashAggregator>(HashAggregator.class, HashAggTemplate.class);
 
   public static enum AggOutcome {
     RETURN_OUTCOME, CLEANUP_AND_RETURN, UPDATE_AGGREGATOR
   }
 
   public abstract void setup(HashAggregate hashAggrConfig, HashTableConfig htConfig, FragmentContext context,
-                             OperatorStats stats, BufferAllocator allocator, RecordBatch incoming,
-                             HashAggBatch outgoing, LogicalExpression[] valueExprs,
-                             List<TypedFieldId> valueFieldIds,
-                             TypedFieldId[] keyFieldIds,
-                             VectorContainer outContainer)
-    throws SchemaChangeException, IOException, ClassTransformationException;
+      OperatorStats stats, BufferAllocator allocator, RecordBatch incoming, HashAggBatch outgoing,
+      LogicalExpression[] valueExprs, List<TypedFieldId> valueFieldIds, TypedFieldId[] keyFieldIds,
+      VectorContainer outContainer) throws SchemaChangeException, IOException, ClassTransformationException;
 
   public abstract IterOutcome getOutcome();
 

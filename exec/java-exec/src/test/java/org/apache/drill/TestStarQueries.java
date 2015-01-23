@@ -17,21 +17,104 @@
  */
 package org.apache.drill;
 
+import org.apache.drill.common.types.TypeProtos;
+import org.apache.drill.common.util.TestTools;
 import org.junit.Test;
 import org.apache.drill.exec.rpc.RpcException;
 
 public class TestStarQueries extends BaseTestQuery{
   static final org.slf4j.Logger logger = org.slf4j.LoggerFactory.getLogger(TestStarQueries.class);
+  static final String WORKING_PATH = TestTools.getWorkingPath();
+  static final String TEST_RES_PATH = WORKING_PATH + "/src/test/resources";
+
+  @Test // see DRILL-2021
+  public void testSelStarCommaSameColumnRepeated() throws Exception {
+    testBuilder()
+      .sqlQuery("select n_name, *, n_name, n_name from cp.`tpch/nation.parquet`")
+      .ordered()
+      .csvBaselineFile("testframework/testStarQueries/testSelStarCommaSameColumnRepeated/q1.tsv")
+      .baselineTypes(TypeProtos.MinorType.VARCHAR, TypeProtos.MinorType.INT, TypeProtos.MinorType.VARCHAR, TypeProtos.MinorType.INT, TypeProtos.MinorType.VARCHAR, TypeProtos.MinorType.VARCHAR, TypeProtos.MinorType.VARCHAR)
+      .baselineColumns("n_name", "n_nationkey", "n_name0", "n_regionkey", "n_comment", "n_name00", "n_name1")
+      .build().run();
+
+    testBuilder()
+      .sqlQuery("select n_name, *, n_name, n_name from cp.`tpch/nation.parquet` limit 2")
+      .ordered()
+      .csvBaselineFile("testframework/testStarQueries/testSelStarCommaSameColumnRepeated/q2.tsv")
+      .baselineTypes(TypeProtos.MinorType.VARCHAR, TypeProtos.MinorType.INT, TypeProtos.MinorType.VARCHAR, TypeProtos.MinorType.INT, TypeProtos.MinorType.VARCHAR, TypeProtos.MinorType.VARCHAR, TypeProtos.MinorType.VARCHAR)
+      .baselineColumns("n_name", "n_nationkey", "n_name0", "n_regionkey", "n_comment", "n_name00", "n_name1")
+      .build().run();
+
+    testBuilder()
+      .sqlQuery("select *, n_name, *, n_name, n_name from cp.`tpch/nation.parquet`")
+      .ordered()
+      .csvBaselineFile("testframework/testStarQueries/testSelStarCommaSameColumnRepeated/q3.tsv")
+      .baselineTypes(TypeProtos.MinorType.INT, TypeProtos.MinorType.VARCHAR, TypeProtos.MinorType.INT, TypeProtos.MinorType.VARCHAR, TypeProtos.MinorType.VARCHAR,
+            TypeProtos.MinorType.INT, TypeProtos.MinorType.VARCHAR, TypeProtos.MinorType.INT, TypeProtos.MinorType.VARCHAR, TypeProtos.MinorType.VARCHAR, TypeProtos.MinorType.VARCHAR)
+      .baselineColumns("n_nationkey", "n_name", "n_regionkey", "n_comment", "n_name0",
+            "n_nationkey0", "n_name1", "n_regionkey0", "n_comment0", "n_name00", "n_name10")
+      .build().run();
+
+    testBuilder()
+      .sqlQuery("select *, n_name, *, n_name, n_name from cp.`tpch/nation.parquet` limit 2")
+      .ordered()
+      .csvBaselineFile("testframework/testStarQueries/testSelStarCommaSameColumnRepeated/q4.tsv")
+      .baselineTypes(TypeProtos.MinorType.INT, TypeProtos.MinorType.VARCHAR, TypeProtos.MinorType.INT, TypeProtos.MinorType.VARCHAR, TypeProtos.MinorType.VARCHAR,
+            TypeProtos.MinorType.INT, TypeProtos.MinorType.VARCHAR, TypeProtos.MinorType.INT, TypeProtos.MinorType.VARCHAR, TypeProtos.MinorType.VARCHAR, TypeProtos.MinorType.VARCHAR)
+      .baselineColumns("n_nationkey", "n_name", "n_regionkey", "n_comment", "n_name0",
+            "n_nationkey0", "n_name1", "n_regionkey0", "n_comment0", "n_name00", "n_name10")
+      .build().run();
+  }
+
+  @Test // see DRILL-1979
+  public void testSelStarMultipleStarsRegularColumnAsAlias() throws Exception {
+    testBuilder()
+      .sqlQuery("select *, n_name as extra, *, n_name as extra from cp.`tpch/nation.parquet`")
+      .ordered()
+      .csvBaselineFile("testframework/testStarQueries/testSelStarMultipleStarsRegularColumnAsAlias/q1.tsv")
+      .baselineTypes(TypeProtos.MinorType.INT, TypeProtos.MinorType.VARCHAR, TypeProtos.MinorType.INT, TypeProtos.MinorType.VARCHAR, TypeProtos.MinorType.VARCHAR,
+              TypeProtos.MinorType.INT, TypeProtos.MinorType.VARCHAR, TypeProtos.MinorType.INT, TypeProtos.MinorType.VARCHAR, TypeProtos.MinorType.VARCHAR)
+      .baselineColumns("n_nationkey", "n_name", "n_regionkey", "n_comment", "extra", "n_nationkey0", "n_name0", "n_regionkey0", "n_comment0", "extra0")
+      .build().run();
+
+      testBuilder()
+      .sqlQuery("select *, n_name as extra, *, n_name as extra from cp.`tpch/nation.parquet` limit 2")
+      .ordered()
+      .csvBaselineFile("testframework/testStarQueries/testSelStarMultipleStarsRegularColumnAsAlias/q2.tsv")
+      .baselineTypes(TypeProtos.MinorType.INT, TypeProtos.MinorType.VARCHAR, TypeProtos.MinorType.INT, TypeProtos.MinorType.VARCHAR, TypeProtos.MinorType.VARCHAR,
+              TypeProtos.MinorType.INT, TypeProtos.MinorType.VARCHAR, TypeProtos.MinorType.INT, TypeProtos.MinorType.VARCHAR, TypeProtos.MinorType.VARCHAR)
+      .baselineColumns("n_nationkey", "n_name", "n_regionkey", "n_comment", "extra", "n_nationkey0", "n_name0", "n_regionkey0", "n_comment0", "extra0")
+      .build().run();
+  }
 
   @Test // see DRILL-1828
   public void testSelStarMultipleStars() throws Exception {
-    test("select *, * from cp.`employee.json`;");
-    test("select *, * from cp.`employee.json` limit 2;");
+    testBuilder()
+    .sqlQuery("select *, *, n_name from cp.`tpch/nation.parquet`")
+    .ordered()
+    .csvBaselineFile("testframework/testStarQueries/testSelStarMultipleStars/q1.tsv")
+    .baselineTypes(TypeProtos.MinorType.INT, TypeProtos.MinorType.VARCHAR, TypeProtos.MinorType.INT, TypeProtos.MinorType.VARCHAR, TypeProtos.MinorType.INT, TypeProtos.MinorType.VARCHAR, TypeProtos.MinorType.INT, TypeProtos.MinorType.VARCHAR, TypeProtos.MinorType.VARCHAR)
+    .baselineColumns("n_nationkey", "n_name", "n_regionkey", "n_comment", "n_nationkey0", "n_name0", "n_regionkey0", "n_comment0", "n_name1")
+    .build().run();
+
+    testBuilder()
+    .sqlQuery("select *, *, n_name from cp.`tpch/nation.parquet` limit 2")
+    .ordered()
+    .csvBaselineFile("testframework/testStarQueries/testSelStarMultipleStars/q2.tsv")
+    .baselineTypes(TypeProtos.MinorType.INT, TypeProtos.MinorType.VARCHAR, TypeProtos.MinorType.INT, TypeProtos.MinorType.VARCHAR, TypeProtos.MinorType.INT, TypeProtos.MinorType.VARCHAR, TypeProtos.MinorType.INT, TypeProtos.MinorType.VARCHAR, TypeProtos.MinorType.VARCHAR)
+    .baselineColumns("n_nationkey", "n_name", "n_regionkey", "n_comment", "n_nationkey0", "n_name0", "n_regionkey0", "n_comment0", "n_name1")
+    .build().run();
   }
 
   @Test // see DRILL-1825
   public void testSelStarWithAdditionalColumnLimit() throws Exception {
-    test("select *, first_name, *, last_name from cp.`employee.json` limit 2;");
+    testBuilder()
+    .sqlQuery("select *, n_nationkey, *, n_name from cp.`tpch/nation.parquet` limit 2")
+    .ordered()
+    .csvBaselineFile("testframework/testStarQueries/testSelStarWithAdditionalColumnLimit/q1.tsv")
+    .baselineTypes(TypeProtos.MinorType.INT, TypeProtos.MinorType.VARCHAR, TypeProtos.MinorType.INT, TypeProtos.MinorType.VARCHAR, TypeProtos.MinorType.INT, TypeProtos.MinorType.INT, TypeProtos.MinorType.VARCHAR, TypeProtos.MinorType.INT, TypeProtos.MinorType.VARCHAR, TypeProtos.MinorType.VARCHAR)
+    .baselineColumns("n_nationkey", "n_name", "n_regionkey", "n_comment", "n_nationkey0", "n_nationkey1", "n_name0", "n_regionkey0", "n_comment0", "n_name1")
+    .build().run();
   }
 
   @Test
@@ -225,6 +308,19 @@ public class TestStarQueries extends BaseTestQuery{
     test("select *, n_nationkey + 5 from cp.`tpch/nation.parquet` limit 3");
     test("select *  from cp.`tpch/nation.parquet` where n_nationkey + 5 > 10 limit 3");
     test("select * from cp.`tpch/nation.parquet` order by random()");
+  }
+
+  @Test // DRILL-1500
+  public void testStarPartitionFilterOrderBy() throws Exception {
+    String query = String.format("select * from dfs_test.`%s/multilevel/parquet` where dir0=1994 and dir1='Q1' order by dir0 limit 1", TEST_RES_PATH);
+    org.joda.time.DateTime mydate = new org.joda.time.DateTime("1994-01-20T00:00:00.000");
+
+    testBuilder()
+    .sqlQuery(query)
+    .ordered()
+    .baselineColumns("dir0", "dir1", "o_clerk", "o_comment", "o_custkey", "o_orderdate", "o_orderkey",  "o_orderpriority", "o_orderstatus", "o_shippriority",  "o_totalprice")
+    .baselineValues("1994", "Q1", "Clerk#000000743", "y pending requests integrate", 1292, mydate, 66, "5-LOW", "F",  0, 104190.66)
+    .build().run();
   }
 
 }
