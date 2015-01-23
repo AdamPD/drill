@@ -202,4 +202,9 @@ public class TestFlatten extends BaseTestQuery {
     test("select flatten(sub.fk.`value`) from (select flatten(kvgen(map)) fk from cp.`/store/json/nested_repeated_map.json`) sub");
   }
 
+  @Test
+  public void testDrill_2013() throws Exception {
+    test("select flatten(complex), rownum from cp.`/store/json/test_flatten_mappify2.json` where rownum > 5");
+  }
+
 }
