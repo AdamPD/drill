@@ -20,15 +20,14 @@
 #ifndef DRILL_CLIENT_IMPL_H
 #define DRILL_CLIENT_IMPL_H
 
-/* Define some BOOST defines */
-#define BOOST_ASIO_ENABLE_CANCELIO
-// If we want to support older versions of windows than Windows 7, we should
-// disable IOCP
-//#ifdef _WIN32
-//#define BOOST_ASIO_DISABLE_IOCP
-//#endif // _WIN32
-
 #include "drill/common.hpp"
+
+// Define some BOOST defines
+// WIN32_SHUTDOWN_ON_TIMEOUT is defined in "drill/common.hpp" for Windows 32 bit platform
+#ifndef WIN32_SHUTDOWN_ON_TIMEOUT
+#define BOOST_ASIO_ENABLE_CANCELIO
+#endif //WIN32_SHUTDOWN_ON_TIMEOUT
+
 #include <stdlib.h>
 #include <time.h>
 #include <queue>
@@ -134,6 +133,7 @@ class DrillClientQueryResult{
     status_t defaultQueryResultsListener(void* ctx, RecordBatch* b, DrillClientError* err);
     // Construct a DrillClientError object, set the appropriate state and signal any listeners, condition variables.
     // Also used when a query is cancelled or when a query completed response is received.
+    // Error object is now owned by the DrillClientQueryResult object.
     void signalError(DrillClientError* pErr);
     void clearAndDestroy();
 
@@ -193,6 +193,7 @@ class DrillClientImpl{
             m_pError(NULL),
             m_pListenerThread(NULL),
             m_socket(m_io_service),
+            m_pWork(NULL),
             m_deadlineTimer(m_io_service),
             m_rbuf(NULL),
             m_wbuf(MAX_SOCK_RD_BUFSIZE)
@@ -206,12 +207,16 @@ class DrillClientImpl{
             //Free any record batches or buffers remaining
             //Cancel any pending requests
             //Clear and destroy DrillClientQueryResults vector?
+            if(this->m_pWork!=NULL){
+                delete this->m_pWork;
+                this->m_pWork = NULL;
+            }
 
             clearCancelledEntries();
             m_deadlineTimer.cancel();
             m_io_service.stop();
             boost::system::error_code ignorederr;
-            m_socket.shutdown(boost::asio::ip::tcp::socket::shutdown_send, ignorederr);
+            m_socket.shutdown(boost::asio::ip::tcp::socket::shutdown_both, ignorederr);
             m_socket.close();
             if(m_rbuf!=NULL){
                 Utils::freeBuffer(m_rbuf, MAX_SOCK_RD_BUFSIZE); m_rbuf=NULL;
@@ -224,6 +229,7 @@ class DrillClientImpl{
                 this->m_pListenerThread->interrupt();
                 this->m_pListenerThread->join();
                 delete this->m_pListenerThread;
+                this->m_pListenerThread = NULL;
             }
         };
 
@@ -235,7 +241,7 @@ class DrillClientImpl{
         DrillClientError* getError(){ return m_pError;}
         DrillClientQueryResult* SubmitQuery(::exec::shared::QueryType t, const std::string& plan, pfnQueryResultsListener listener, void* listenerCtx);
         void waitForResults();
-        bool validateHandShake(const char* defaultSchema);
+        connectionStatus_t validateHandShake(const char* defaultSchema);
 
     private:
         friend class DrillClientQueryResult;
@@ -310,6 +316,8 @@ class DrillClientImpl{
         // for boost asio
         boost::thread * m_pListenerThread;
         boost::asio::io_service m_io_service;
+        // the work object prevent io_service running out of work
+        boost::asio::io_service::work * m_pWork;
         boost::asio::ip::tcp::socket m_socket;
         boost::asio::deadline_timer m_deadlineTimer; // to timeout async queries that never return
 
@@ -341,7 +349,7 @@ inline void DrillClientImpl::Close() {
     //TODO: cancel pending query
     if(this->m_bIsConnected){
         boost::system::error_code ignorederr;
-        m_socket.shutdown(boost::asio::ip::tcp::socket::shutdown_send, ignorederr);
+        m_socket.shutdown(boost::asio::ip::tcp::socket::shutdown_both, ignorederr);
         m_socket.close();
         m_bIsConnected=false;
     }

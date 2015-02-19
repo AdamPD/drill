@@ -38,7 +38,7 @@ import org.apache.drill.exec.physical.base.PhysicalOperator;
 import org.apache.drill.exec.planner.logical.DrillRel;
 import org.apache.drill.exec.planner.logical.DrillScreenRel;
 import org.apache.drill.exec.planner.logical.DrillStoreRel;
-import org.apache.drill.exec.planner.logical.RewriteProjectRel;
+import org.apache.drill.exec.planner.logical.PreProcessLogicalRel;
 import org.apache.drill.exec.planner.physical.DrillDistributionTrait;
 import org.apache.drill.exec.planner.physical.PhysicalPlanCreator;
 import org.apache.drill.exec.planner.physical.PlannerSettings;
@@ -55,10 +55,12 @@ import org.apache.drill.exec.planner.physical.visitor.SelectionVectorPrelVisitor
 import org.apache.drill.exec.planner.physical.visitor.SplitUpComplexExpressions;
 import org.apache.drill.exec.planner.physical.visitor.StarColumnConverter;
 import org.apache.drill.exec.planner.sql.DrillSqlWorker;
+import org.apache.drill.exec.planner.sql.parser.UnsupportedOperatorsVisitor;
 import org.apache.drill.exec.server.options.OptionManager;
 import org.apache.drill.exec.server.options.OptionValue;
 import org.apache.drill.exec.util.Pointer;
 import org.apache.drill.exec.work.foreman.ForemanSetupException;
+import org.apache.drill.exec.work.foreman.SqlUnsupportedException;
 import org.eigenbase.rel.RelNode;
 import org.eigenbase.relopt.RelOptUtil;
 import org.eigenbase.relopt.RelTraitSet;
@@ -120,16 +122,11 @@ public class DefaultSqlHandler extends AbstractSqlHandler {
 
   @Override
   public PhysicalPlan getPlan(SqlNode sqlNode) throws ValidationException, RelConversionException, IOException, ForemanSetupException {
-
     SqlNode rewrittenSqlNode = rewrite(sqlNode);
     SqlNode validated = validateNode(rewrittenSqlNode);
     RelNode rel = convertToRel(validated);
+    rel = preprocessNode(rel);
 
-    /* Traverse the tree and replace the convert_from, convert_to function to actual implementations
-     * Eg: convert_from(EXPR, 'JSON') be converted to convert_fromjson(EXPR);
-     * TODO: Ideally all function rewrites would move here instead of DrillOptiq
-     */
-    rel = rel.accept(new RewriteProjectRel(planner.getTypeFactory(), context.getDrillOperatorTable()));
     log("Optiq Logical", rel);
     DrillRel drel = convertToDrel(rel);
     log("Drill Logical", drel);
@@ -142,13 +139,51 @@ public class DefaultSqlHandler extends AbstractSqlHandler {
   }
 
   protected SqlNode validateNode(SqlNode sqlNode) throws ValidationException, RelConversionException, ForemanSetupException {
-    return planner.validate(sqlNode);
+    SqlNode sqlNodeValidated = planner.validate(sqlNode);
+
+    // Check if the unsupported functionality is used
+    UnsupportedOperatorsVisitor visitor = UnsupportedOperatorsVisitor.getVisitor();
+    try {
+      sqlNodeValidated.accept(visitor);
+    } catch (UnsupportedOperationException ex) {
+      // If the exception due to the unsupported functionalities
+      visitor.convertException();
+
+      // If it is not, let this exception move forward to higher logic
+      throw ex;
+    }
+
+    return sqlNodeValidated;
   }
 
   protected RelNode convertToRel(SqlNode node) throws RelConversionException {
     RelNode convertedNode = planner.convert(node);
     hepPlanner.setRoot(convertedNode);
-    return hepPlanner.findBestExp();
+    RelNode rel = hepPlanner.findBestExp();
+
+    return rel;
+  }
+
+  protected RelNode preprocessNode(RelNode rel) throws SqlUnsupportedException{
+     /* Traverse the tree to do the following pre-processing tasks:
+     * 1. replace the convert_from, convert_to function to actual implementations
+     * Eg: convert_from(EXPR, 'JSON') be converted to convert_fromjson(EXPR);
+     * TODO: Ideally all function rewrites would move here instead of DrillOptiq
+     *
+     * 2. see where the tree contains unsupported functions;
+     * throw SqlUnsupportedException if there is
+     */
+
+     PreProcessLogicalRel.initialize(planner.getTypeFactory(), context.getDrillOperatorTable());
+     PreProcessLogicalRel visitor =  PreProcessLogicalRel.getVisitor();
+     try {
+        rel = rel.accept(visitor);
+     } catch(UnsupportedOperationException ex) {
+        visitor.convertException();
+       throw ex;
+     }
+
+    return rel;
   }
 
   protected DrillRel convertToDrel(RelNode relNode) throws RelConversionException {

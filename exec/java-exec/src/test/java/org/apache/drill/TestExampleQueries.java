@@ -19,12 +19,50 @@ package org.apache.drill;
 
 import static org.junit.Assert.assertEquals;
 
+import org.apache.drill.common.types.TypeProtos;
 import org.apache.drill.common.util.FileUtils;
+import org.apache.drill.common.util.TestTools;
 import org.junit.Ignore;
 import org.junit.Test;
 
 public class TestExampleQueries extends BaseTestQuery{
   static final org.slf4j.Logger logger = org.slf4j.LoggerFactory.getLogger(TestExampleQueries.class);
+
+  @Test // see DRILL-2054
+  public void testConcatOperator() throws Exception {
+    testBuilder()
+        .sqlQuery("select n_nationkey || '+' || n_name || '=' as CONCAT, n_nationkey, '+' as PLUS, n_name from cp.`tpch/nation.parquet`")
+        .ordered()
+        .csvBaselineFile("testframework/testExampleQueries/testConcatOperator.tsv")
+        .baselineTypes(TypeProtos.MinorType.VARCHAR, TypeProtos.MinorType.INT, TypeProtos.MinorType.VARCHAR, TypeProtos.MinorType.VARCHAR)
+        .baselineColumns("CONCAT", "n_nationkey", "PLUS", "n_name")
+        .build().run();
+
+    testBuilder()
+        .sqlQuery("select (n_nationkey || n_name) as CONCAT from cp.`tpch/nation.parquet`")
+        .ordered()
+        .csvBaselineFile("testframework/testExampleQueries/testConcatOperatorInputTypeCombination.tsv")
+        .baselineTypes(TypeProtos.MinorType.VARCHAR)
+        .baselineColumns("CONCAT")
+        .build().run();
+
+
+    testBuilder()
+        .sqlQuery("select (n_nationkey || cast(n_name as varchar(30))) as CONCAT from cp.`tpch/nation.parquet`")
+        .ordered()
+        .csvBaselineFile("testframework/testExampleQueries/testConcatOperatorInputTypeCombination.tsv")
+        .baselineTypes(TypeProtos.MinorType.VARCHAR)
+        .baselineColumns("CONCAT")
+        .build().run();
+
+    testBuilder()
+        .sqlQuery("select (cast(n_nationkey as varchar(30)) || n_name) as CONCAT from cp.`tpch/nation.parquet`")
+        .ordered()
+        .csvBaselineFile("testframework/testExampleQueries/testConcatOperatorInputTypeCombination.tsv")
+        .baselineTypes(TypeProtos.MinorType.VARCHAR)
+        .baselineColumns("CONCAT")
+        .build().run();
+  }
 
   @Test // see DRILL-985
   public void testViewFileName() throws Exception {
@@ -516,6 +554,68 @@ public class TestExampleQueries extends BaseTestQuery{
 
     actualRecordCount = testSql(query2);
     assertEquals(expectedRecordCount, actualRecordCount);
+  }
+
+  @Test // DRILL-2063
+  public void testAggExpressionWithGroupBy() throws Exception {
+    String query = "select l_suppkey, sum(l_extendedprice)/sum(l_quantity) as avg_price \n" +
+           " from cp.`tpch/lineitem.parquet` where l_orderkey in \n" +
+           " (select o_orderkey from cp.`tpch/orders.parquet` where o_custkey = 2) \n" +
+           " and l_suppkey = 4 group by l_suppkey";
+
+    testBuilder()
+    .sqlQuery(query)
+    .ordered()
+    .baselineColumns("l_suppkey", "avg_price")
+    .baselineValues(4, 1374.47)
+    .build().run();
+
+  }
+
+  @Test // DRILL-1888
+  public void testAggExpressionWithGroupByHaving() throws Exception {
+    String query = "select l_suppkey, sum(l_extendedprice)/sum(l_quantity) as avg_price \n" +
+        " from cp.`tpch/lineitem.parquet` where l_orderkey in \n" +
+        " (select o_orderkey from cp.`tpch/orders.parquet` where o_custkey = 2) \n" +
+        " group by l_suppkey having sum(l_extendedprice)/sum(l_quantity) > 1850.0";
+
+    testBuilder()
+    .sqlQuery(query)
+    .ordered()
+    .baselineColumns("l_suppkey", "avg_price")
+    .baselineValues(98, 1854.95)
+    .build().run();
+  }
+
+  @Test
+  public void testExchangeRemoveForJoinPlan() throws Exception {
+    final String WORKING_PATH = TestTools.getWorkingPath();
+    final String TEST_RES_PATH = WORKING_PATH + "/src/test/resources";
+
+    String sql = String.format("select t2.n_nationkey from dfs_test.`%s/tpchmulti/region` t1 join dfs_test.`%s/tpchmulti/nation` t2 on t2.n_regionkey = t1.r_regionkey", TEST_RES_PATH, TEST_RES_PATH);
+
+    testBuilder()
+        .unOrdered()
+        .optionSettingQueriesForTestQuery("alter session set `planner.slice_target` = 10; alter session set `planner.join.row_count_estimate_factor` = 0.1")  // Enforce exchange will be inserted.
+        .sqlQuery(sql)
+        .optionSettingQueriesForBaseline("alter session set `planner.slice_target` = 100000; alter session set `planner.join.row_count_estimate_factor` = 1.0") // Use default option setting.
+        .sqlBaselineQuery(sql)
+        .build().run();
+
+  }
+
+  @Test //DRILL-2163
+  public void testNestedTypesPastJoinReportsValidResult() throws Exception {
+    final String query = "select t1.uid, t1.events, t1.events[0].evnt_id as event_id, t2.transactions, " +
+        "t2.transactions[0] as trans, t1.odd, t2.even from cp.`project/complex/a.json` t1, " +
+        "cp.`project/complex/b.json` t2 where t1.uid = t2.uid";
+
+    testBuilder()
+        .sqlQuery(query)
+        .ordered()
+        .jsonBaselineFile("project/complex/drill-2163-result.json")
+        .build()
+        .run();
   }
 
 }

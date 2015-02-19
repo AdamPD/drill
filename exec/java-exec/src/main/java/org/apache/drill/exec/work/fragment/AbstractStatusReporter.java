@@ -37,9 +37,10 @@ public abstract class AbstractStatusReporter implements StatusReporter{
   }
 
   private  FragmentStatus.Builder getBuilder(FragmentState state){
-    return getBuilder(state, null, null);
+    return getBuilder(context, state, null, null);
   }
-  private  FragmentStatus.Builder getBuilder(FragmentState state, String message, Throwable t){
+
+  public static FragmentStatus.Builder getBuilder(FragmentContext context, FragmentState state, String message, Throwable t){
     FragmentStatus.Builder status = FragmentStatus.newBuilder();
     MinorFragmentProfile.Builder b = MinorFragmentProfile.newBuilder();
     context.getStats().addMetricsToStatus(b);
@@ -105,7 +106,7 @@ public abstract class AbstractStatusReporter implements StatusReporter{
 
   @Override
   public final void fail(FragmentHandle handle, String message, Throwable excep) {
-    FragmentStatus.Builder status = getBuilder(FragmentState.FAILED, message, excep);
+    FragmentStatus.Builder status = getBuilder(context, FragmentState.FAILED, message, excep);
     fail(handle, status);
   }
 

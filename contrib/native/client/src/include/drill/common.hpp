@@ -50,6 +50,14 @@
 #define CODER_DEBUGGING
 #endif
 
+// http://www.boost.org/doc/libs/1_54_0/doc/html/boost_asio/reference/basic_stream_socket/cancel/overload1.html
+// : "Calls to cancel() will always fail with boost::asio::error::operation_not_supported when run on Windows XP, Windows Server 2003, and earlier versions of Windows..."
+// As such, achieving cancel needs to be implemented differently;
+#if defined(_WIN32)  && !defined(_WIN64)
+#define WIN32_SHUTDOWN_ON_TIMEOUT
+#endif // _WIN32 && !_WIN64
+
+
 namespace Drill {
 
 typedef std::vector<uint8_t> DataBuf;
@@ -78,7 +86,8 @@ typedef enum{
     QRY_COMPLETED = 11,
     QRY_CANCELED = 12,
     QRY_FAILED = 13,
-    QRY_UNKNOWN_QUERY = 14
+    QRY_UNKNOWN_QUERY = 14,
+    QRY_TIMEOUT = 15
 } status_t;
 
 typedef enum{
@@ -86,7 +95,8 @@ typedef enum{
     CONN_FAILURE=1,
     CONN_HANDSHAKE_FAILED=2,
     CONN_INVALID_INPUT=3,
-    CONN_ZOOKEEPER_ERROR=4
+    CONN_ZOOKEEPER_ERROR=4,
+    CONN_HANDSHAKE_TIMEOUT=5
 } connectionStatus_t;
 
 typedef enum{

@@ -33,7 +33,6 @@ import org.apache.drill.exec.expr.TypeHelper;
 import org.apache.drill.exec.expr.holders.ComplexHolder;
 import org.apache.drill.exec.expr.holders.RepeatedListHolder;
 import org.apache.drill.exec.memory.BufferAllocator;
-import org.apache.drill.exec.memory.OutOfMemoryRuntimeException;
 import org.apache.drill.exec.proto.UserBitShared.SerializedField;
 import org.apache.drill.exec.record.MaterializedField;
 import org.apache.drill.exec.record.TransferPair;
@@ -48,29 +47,38 @@ import org.apache.drill.exec.vector.complex.impl.RepeatedListReaderImpl;
 import org.apache.drill.exec.vector.complex.reader.FieldReader;
 
 import com.google.common.base.Preconditions;
-import com.google.common.collect.Lists;
 
 
 public class RepeatedListVector extends AbstractContainerVector implements RepeatedFixedWidthVector{
+
+  public final static MajorType TYPE = Types.repeated(MinorType.LIST);
 
   private final UInt4Vector offsets;   // offsets to start of each record
   private final Mutator mutator = new Mutator();
   private final RepeatedListAccessor accessor = new RepeatedListAccessor();
   private ValueVector vector;
   private final RepeatedListReaderImpl reader = new RepeatedListReaderImpl(null, this);
-  private int lastSet = 0;
+  private final EmptyValuePopulator emptyPopulator;
 
-  private int valueCount;
-
-  public static MajorType TYPE = Types.repeated(MinorType.LIST);
-
-  public RepeatedListVector(MaterializedField field, BufferAllocator allocator, CallBack callBack){
-    super(field, allocator, callBack);
-    this.offsets = new UInt4Vector(null, allocator);
-  }
 
   public RepeatedListVector(SchemaPath path, BufferAllocator allocator, CallBack callBack){
     this(MaterializedField.create(path, TYPE), allocator, callBack);
+  }
+
+  public RepeatedListVector(MaterializedField field, BufferAllocator allocator, CallBack callBack){
+    super(field, allocator, callBack);
+    int childrenSize = field.getChildren().size();
+
+    // repeated list vector should not have more than one child
+    assert childrenSize <= 1;
+
+    if (childrenSize > 0) {
+      MaterializedField child = field.getChildren().iterator().next();
+      setVector(TypeHelper.getNewVector(child, allocator, callBack));
+    }
+
+    this.offsets = new UInt4Vector(null, allocator);
+    this.emptyPopulator = new EmptyValuePopulator(offsets);
   }
 
   @Override
@@ -113,23 +121,18 @@ public class RepeatedListVector extends AbstractContainerVector implements Repea
   public class Mutator implements ValueVector.Mutator, RepeatedMutator{
 
     public void startNewGroup(int index) {
+      emptyPopulator.populate(index+1);
       offsets.getMutator().setSafe(index+1, offsets.getAccessor().get(index));
     }
 
     public int add(int index) {
-      int endOffset = index+1;
-      int currentChildOffset = offsets.getAccessor().get(endOffset);
-      int newChildOffset = currentChildOffset + 1;
-      offsets.getMutator().setSafe(endOffset, newChildOffset);
-      lastSet = index;
-      // this is done at beginning so return the currentChildOffset, not the new offset.
-      return currentChildOffset;
-
+      final int prevEnd = offsets.getAccessor().get(index+1);
+      offsets.getMutator().setSafe(index+1, prevEnd+1);
+      return prevEnd;
     }
 
-    @Override
     public void setValueCount(int groupCount) {
-      populateEmpties(groupCount);
+      emptyPopulator.populate(groupCount);
       offsets.getMutator().setValueCount(groupCount+1);
 
       if (vector != null) {
@@ -139,9 +142,7 @@ public class RepeatedListVector extends AbstractContainerVector implements Repea
     }
 
     @Override
-    public void reset() {
-      lastSet = 0;
-    }
+    public void reset() { }
 
     @Override
     public void generateTestData(int values) {
@@ -186,11 +187,7 @@ public class RepeatedListVector extends AbstractContainerVector implements Repea
 
     @Override
     public int getValueCount() {
-//      if (offsets.getAccessor().getValueCount() == 0 ) {
-//        return 0;
-//      } else {
-        return offsets.getAccessor().get(offsets.getAccessor().getValueCount() - 1);
-//      }
+      return offsets.getAccessor().get(offsets.getAccessor().getValueCount() - 1);
     }
 
     public void get(int index, RepeatedListHolder holder) {
@@ -235,7 +232,8 @@ public class RepeatedListVector extends AbstractContainerVector implements Repea
 
     @Override
     public int getGroupCount() {
-      return offsets.getAccessor().getValueCount() - 1;
+      final int valueCount = offsets.getAccessor().getValueCount();
+      return valueCount == 0 ? 0 : valueCount - 1;
     }
   }
 
@@ -252,7 +250,7 @@ public class RepeatedListVector extends AbstractContainerVector implements Repea
 
   @Override
   public void clear() {
-    lastSet = 0;
+    getMutator().reset();
     offsets.clear();
     if (vector != null) {
       vector.clear();
@@ -288,7 +286,6 @@ public class RepeatedListVector extends AbstractContainerVector implements Repea
     public void transfer() {
       offsets.transferTo(to.offsets);
       vectorTransfer.transfer();
-      to.valueCount = valueCount;
       clear();
     }
 
@@ -303,16 +300,16 @@ public class RepeatedListVector extends AbstractContainerVector implements Repea
     }
 
     @Override
-    public void copyValueSafe(int from, int to) {
+    public void copyValueSafe(int srcIndex, int destIndex) {
       RepeatedListHolder holder = new RepeatedListHolder();
-      accessor.get(from, holder);
-      int newIndex = this.to.offsets.getAccessor().get(to);
+      accessor.get(srcIndex, holder);
+      to.emptyPopulator.populate(destIndex+1);
+      int newIndex = to.offsets.getAccessor().get(destIndex);
       //todo: make this a bulk copy.
       for (int i = holder.start; i < holder.end; i++, newIndex++) {
         vectorTransfer.copyValueSafe(i, newIndex);
       }
-      this.to.offsets.getMutator().setSafe(to + 1, newIndex);
-      this.to.lastSet++;
+      to.offsets.getMutator().setSafe(destIndex + 1, newIndex);
     }
 
   }
@@ -348,9 +345,9 @@ public class RepeatedListVector extends AbstractContainerVector implements Repea
     return ArrayUtils.addAll(offsets.getBuffers(clear), vector.getBuffers(clear));
   }
 
-  private void setVector(ValueVector v) {
-    getField().addChild(v.getField());
-    this.vector = v;
+  protected void setVector(ValueVector newVector) {
+    vector = Preconditions.checkNotNull(newVector);
+    getField().addChild(newVector.getField());
   }
 
   @Override
@@ -381,14 +378,6 @@ public class RepeatedListVector extends AbstractContainerVector implements Repea
         .build();
   }
 
-  private void populateEmpties(int groupCount) {
-    int previousEnd = offsets.getAccessor().get(lastSet + 1);
-    for (int i = lastSet + 2; i <= groupCount; i++) {
-      offsets.getMutator().setSafe(i, previousEnd);
-    }
-    lastSet = groupCount - 1;
-  }
-
   @Override
   public Iterator<ValueVector> iterator() {
     return Collections.singleton(vector).iterator();
@@ -399,7 +388,9 @@ public class RepeatedListVector extends AbstractContainerVector implements Repea
     Preconditions.checkArgument(name == null);
 
     if(vector == null){
-      vector = TypeHelper.getNewVector(MaterializedField.create(getField().getPath().getUnindexedArrayChild(), type), allocator, callBack);
+      final MaterializedField child =  MaterializedField.create(getField().getPath().getUnindexedArrayChild(), type);
+      vector = TypeHelper.getNewVector(child, allocator, callBack);
+      setVector(vector);
       if (callBack != null) {
         callBack.doWork();
       }

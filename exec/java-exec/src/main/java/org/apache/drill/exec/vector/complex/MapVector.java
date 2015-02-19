@@ -48,7 +48,7 @@ import org.apache.drill.exec.vector.complex.reader.FieldReader;
 
 import com.google.common.base.Preconditions;
 
-public class MapVector extends AbstractContainerVector {
+public class MapVector extends AbstractMapVector {
   static final org.slf4j.Logger logger = org.slf4j.LoggerFactory.getLogger(MapVector.class);
 
   public final static MajorType TYPE = MajorType.newBuilder().setMinorType(MinorType.MAP).setMode(DataMode.REQUIRED).build();
@@ -106,6 +106,15 @@ public class MapVector extends AbstractContainerVector {
   }
 
   @Override
+  public DrillBuf[] getBuffers(boolean clear) {
+    int expectedSize = getBufferSize();
+    int actualSize   = super.getBufferSize();
+
+    Preconditions.checkArgument(expectedSize == actualSize);
+    return super.getBuffers(clear);
+  }
+
+  @Override
   public TransferPair getTransferPair() {
     return new MapTransferPair(this, getField().getPath());
   }
@@ -146,6 +155,15 @@ public class MapVector extends AbstractContainerVector {
         if (vector == null) {
           continue;
         }
+        //DRILL-1872: we add the child fields for the vector, looking up the field by name. For a map vector,
+        // the child fields may be nested fields of the top level child. For example if the structure
+        // of a child field is oa.oab.oabc then we add oa, then add oab to oa then oabc to oab.
+        // But the children member of a Materialized field is a HashSet. If the fields are added in the
+        // children HashSet, and the hashCode of the Materialized field includes the hash code of the
+        // children, the hashCode value of oa changes *after* the field has been added to the HashSet.
+        // (This is similar to what happens in ScanBatch where the children cannot be added till they are
+        // read). To take care of this, we ensure that the hashCode of the MaterializedField does not
+        // include the hashCode of the children but is based only on MaterializedField$key.
         ValueVector newVector = to.addOrGet(child, vector.getField().getType(), vector.getClass());
         if (allocate && to.size() != preSize) {
           newVector.allocateNew();

@@ -22,7 +22,7 @@
 #include <stdlib.h>
 #include "drill/drillc.hpp"
 
-int nOptions=8;
+int nOptions=11;
 
 struct Option{
     char name[32];
@@ -36,12 +36,16 @@ struct Option{
     {"schema", "Default schema", false},
     {"api", "API type [sync|async]", true},
     {"logLevel", "Logging level [trace|debug|info|warn|error|fatal]", false},
-    {"testCancel", "Cancel the query afterthe first record batch.", false}
+    {"testCancel", "Cancel the query afterthe first record batch.", false},
+    {"syncSend", "Send query only after previous result is received", false},
+    {"hshakeTimeout", "Handshake timeout (second).", false},
+    {"queryTimeout", "Query timeout (second).", false}
 };
 
 std::map<std::string, std::string> qsOptionValues;
 
 bool bTestCancel=false;
+bool bSyncSend=false;
 
 
 Drill::status_t SchemaListener(void* ctx, Drill::FieldDefPtr fields, Drill::DrillClientError* err){
@@ -266,6 +270,9 @@ int main(int argc, char* argv[]) {
         std::string type_str=qsOptionValues["type"];
         std::string logLevel=qsOptionValues["logLevel"];
         std::string testCancel=qsOptionValues["testCancel"];
+        std::string syncSend=qsOptionValues["syncSend"];
+        std::string hshakeTimeout=qsOptionValues["hshakeTimeout"];
+        std::string queryTimeout=qsOptionValues["queryTimeout"];
 
         Drill::QueryType type;
 
@@ -291,6 +298,7 @@ int main(int argc, char* argv[]) {
         }
 
         bTestCancel = !strcmp(testCancel.c_str(), "true")?true:false;
+        bSyncSend = !strcmp(syncSend.c_str(), "true")?true:false;
 
         std::vector<std::string>::iterator queryInpIter;
 
@@ -309,6 +317,13 @@ int main(int argc, char* argv[]) {
         int nQueries=queryInputs.size();
         Drill::DrillClientConfig::setBufferLimit(nQueries*2*1024*1024); // 2MB per query. Allows us to hold at least two record batches.
 
+
+        if (!hshakeTimeout.empty()){
+            Drill::DrillClientConfig::setHandshakeTimeout(atoi(hshakeTimeout.c_str()));
+        }
+        if (!queryTimeout.empty()){
+            Drill::DrillClientConfig::setQueryTimeout(atoi(queryTimeout.c_str()));
+        }
         if(client.connect(connectStr.c_str(), schema.c_str())!=Drill::CONN_SUCCESS){
             std::cerr<< "Failed to connect with error: "<< client.getError() << " (Using:"<<connectStr<<")"<<std::endl;
             return -1;
@@ -360,16 +375,30 @@ int main(int argc, char* argv[]) {
                 client.freeQueryIterator(&pRecIter);
             }
         }else{
-            for(queryInpIter = queryInputs.begin(); queryInpIter != queryInputs.end(); queryInpIter++) {
-                Drill::QueryHandle_t* qryHandle = new Drill::QueryHandle_t;
-                client.submitQuery(type, *queryInpIter, QueryResultsListener, NULL, qryHandle);
-                client.registerSchemaChangeListener(qryHandle, SchemaListener);
-                queryHandles.push_back(qryHandle);
-            }
-            client.waitForResults();
-            for(queryHandleIter = queryHandles.begin(); queryHandleIter != queryHandles.end(); queryHandleIter++) {
-                client.freeQueryResources(*queryHandleIter);
-                delete *queryHandleIter;
+            if(bSyncSend){
+                for(queryInpIter = queryInputs.begin(); queryInpIter != queryInputs.end(); queryInpIter++) {
+                    Drill::QueryHandle_t* qryHandle = new Drill::QueryHandle_t;
+                    client.submitQuery(type, *queryInpIter, QueryResultsListener, NULL, qryHandle);
+                    client.registerSchemaChangeListener(qryHandle, SchemaListener);
+                    
+                    client.waitForResults();
+
+                    client.freeQueryResources(qryHandle);
+                    delete qryHandle;
+                }
+
+            }else{
+                for(queryInpIter = queryInputs.begin(); queryInpIter != queryInputs.end(); queryInpIter++) {
+                    Drill::QueryHandle_t* qryHandle = new Drill::QueryHandle_t;
+                    client.submitQuery(type, *queryInpIter, QueryResultsListener, NULL, qryHandle);
+                    client.registerSchemaChangeListener(qryHandle, SchemaListener);
+                    queryHandles.push_back(qryHandle);
+                }
+                client.waitForResults();
+                for(queryHandleIter = queryHandles.begin(); queryHandleIter != queryHandles.end(); queryHandleIter++) {
+                    client.freeQueryResources(*queryHandleIter);
+                    delete *queryHandleIter;
+                }
             }
         }
         client.close();

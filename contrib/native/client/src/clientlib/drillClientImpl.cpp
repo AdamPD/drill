@@ -169,13 +169,17 @@ connectionStatus_t DrillClientImpl::recvHandshake(){
         m_rbuf = Utils::allocateBuffer(MAX_SOCK_RD_BUFSIZE);
     }
 
-    m_deadlineTimer.expires_from_now(boost::posix_time::seconds(DrillClientConfig::getSocketTimeout()));
-    m_deadlineTimer.async_wait(boost::bind(
-                &DrillClientImpl::handleHShakeReadTimeout,
-                this,
-                boost::asio::placeholders::error
-                ));
-    DRILL_LOG(LOG_TRACE) << "Started new handshake wait timer."  << std::endl;
+    m_io_service.reset();
+    if (DrillClientConfig::getHandshakeTimeout() > 0){
+        m_deadlineTimer.expires_from_now(boost::posix_time::seconds(DrillClientConfig::getHandshakeTimeout()));
+        m_deadlineTimer.async_wait(boost::bind(
+                    &DrillClientImpl::handleHShakeReadTimeout,
+                    this,
+                    boost::asio::placeholders::error
+                    ));
+        DRILL_LOG(LOG_TRACE) << "Started new handshake wait timer with "
+                << DrillClientConfig::getHandshakeTimeout() << " seconds." << std::endl;
+    }
 
     async_read(
             this->m_socket,
@@ -192,6 +196,12 @@ connectionStatus_t DrillClientImpl::recvHandshake(){
     if(m_rbuf!=NULL){
         Utils::freeBuffer(m_rbuf, MAX_SOCK_RD_BUFSIZE); m_rbuf=NULL;
     }
+#ifdef WIN32_SHUTDOWN_ON_TIMEOUT
+    if (m_pError != NULL) {
+        return static_cast<connectionStatus_t>(m_pError->status);
+    }
+#endif // WIN32_SHUTDOWN_ON_TIMEOUT
+
     return CONN_SUCCESS;
 }
 
@@ -201,7 +211,7 @@ void DrillClientImpl::handleHandshake(ByteBuf_t _buf,
     boost::system::error_code error=err;
     // cancel the timer
     m_deadlineTimer.cancel();
-    DRILL_LOG(LOG_TRACE) << "Deadline timer cancelled."  << std::endl;
+    DRILL_LOG(LOG_TRACE) << "Deadline timer cancelled." << std::endl;
     if(!error){
         InBoundRpcMessage msg;
         uint32_t length = 0;
@@ -222,7 +232,9 @@ void DrillClientImpl::handleHandshake(ByteBuf_t _buf,
             }
             DrillClientImpl::s_decoder.Decode(m_rbuf+bytes_read, length, msg);
         }else{
+            DRILL_LOG(LOG_TRACE) << "DrillClientImpl::handleHandshake: ERR_CONN_RDFAIL. No handshake.\n";
             handleConnError(CONN_FAILURE, getMessage(ERR_CONN_RDFAIL, "No handshake"));
+            return;
         }
         exec::user::BitToUserHandshake b2u;
         b2u.ParseFromArray(msg.m_pbody.data(), msg.m_pbody.size());
@@ -243,21 +255,22 @@ void DrillClientImpl::handleHandshake(ByteBuf_t _buf,
 
 void DrillClientImpl::handleHShakeReadTimeout(const boost::system::error_code & err){
     // if err == boost::asio::error::operation_aborted) then the caller cancelled the timer.
-    if(!err){
+    if(err != boost::asio::error::operation_aborted){
         // Check whether the deadline has passed.
         if (m_deadlineTimer.expires_at() <= boost::asio::deadline_timer::traits_type::now()){
             // The deadline has passed.
             m_deadlineTimer.expires_at(boost::posix_time::pos_infin);
-            DRILL_LOG(LOG_TRACE) << "Deadline timer expired."  << std::endl;
+            DRILL_LOG(LOG_TRACE) << "DrillClientImpl::HandleHShakeReadTimeout: Deadline timer expired; ERR_CONN_HSHAKETIMOUT.\n";
+            handleConnError(CONN_HANDSHAKE_TIMEOUT, getMessage(ERR_CONN_HSHAKETIMOUT));
+            m_io_service.stop();
             boost::system::error_code ignorederr;
-            m_socket.shutdown(boost::asio::ip::tcp::socket::shutdown_send, ignorederr);
-            m_socket.close();
+            m_socket.shutdown(boost::asio::ip::tcp::socket::shutdown_both, ignorederr);
         }
     }
     return;
 }
 
-bool DrillClientImpl::validateHandShake(const char* defaultSchema){
+connectionStatus_t DrillClientImpl::validateHandShake(const char* defaultSchema){
 
     DRILL_LOG(LOG_TRACE) << "validateHandShake\n";
 
@@ -282,19 +295,19 @@ bool DrillClientImpl::validateHandShake(const char* defaultSchema){
         DRILL_LOG(LOG_TRACE) << "Sent handshake request message. Coordination id: " << coordId << "\n";
     }
 
-    recvHandshake();
-    this->m_io_service.reset();
-    if(this->m_pError!=NULL){
-        return false;
+    connectionStatus_t ret = recvHandshake();
+    if(ret!=CONN_SUCCESS){
+        return ret;
     }
     if(m_handshakeVersion != u2b.rpc_version()) {
         DRILL_LOG(LOG_TRACE) << "Invalid rpc version.  Expected << "
             << DRILL_RPC_VERSION << ", actual "<< m_handshakeVersion << "." << std::endl;
-        handleConnError(CONN_HANDSHAKE_FAILED,
+        return handleConnError(CONN_HANDSHAKE_FAILED,
                 getMessage(ERR_CONN_NOHSHAKE, DRILL_RPC_VERSION, m_handshakeVersion));
-        return false;
     }
-    return true;
+    // reset io_service after handshake is validated before running queries
+    m_io_service.reset();
+    return CONN_SUCCESS;
 }
 
 
@@ -340,8 +353,8 @@ DrillClientQueryResult* DrillClientImpl::SubmitQuery(::exec::shared::QueryType t
     //run this in a new thread
     {
         if(this->m_pListenerThread==NULL){
-            // reset io_service before running
-            m_io_service.reset();
+            // Stopping the io_service from running out-of-work
+            this->m_pWork = new boost::asio::io_service::work(m_io_service);
             this->m_pListenerThread = new boost::thread(boost::bind(&boost::asio::io_service::run,
                 &this->m_io_service));
             DRILL_LOG(LOG_DEBUG) << "DrillClientImpl::SubmitQuery: Starting listener thread: "
@@ -365,14 +378,16 @@ void DrillClientImpl::getNextResult(){
     }
     //use free, not delete to free
     ByteBuf_t readBuf = Utils::allocateBuffer(LEN_PREFIX_BUFLEN);
-
-    m_deadlineTimer.expires_from_now(boost::posix_time::seconds(DrillClientConfig::getSocketTimeout()));
-    m_deadlineTimer.async_wait(boost::bind(
-                &DrillClientImpl::handleReadTimeout,
-                this,
-                boost::asio::placeholders::error
-                ));
-    DRILL_LOG(LOG_TRACE) << "Started new async wait timer."  << std::endl;
+    if (DrillClientConfig::getQueryTimeout() > 0){
+        DRILL_LOG(LOG_TRACE) << "Started new query wait timer with "
+                << DrillClientConfig::getQueryTimeout() << " seconds." << std::endl;
+        m_deadlineTimer.expires_from_now(boost::posix_time::seconds(DrillClientConfig::getQueryTimeout()));
+        m_deadlineTimer.async_wait(boost::bind(
+            &DrillClientImpl::handleReadTimeout,
+            this,
+            boost::asio::placeholders::error
+            ));
+    }
 
     async_read(
             this->m_socket,
@@ -388,10 +403,14 @@ void DrillClientImpl::getNextResult(){
 }
 
 void DrillClientImpl::waitForResults(){
-    this->m_pListenerThread->join();
-    DRILL_LOG(LOG_DEBUG) << "DrillClientImpl::waitForResults: Listener thread "
-        << this->m_pListenerThread << " exited." << std::endl;
-    delete this->m_pListenerThread; this->m_pListenerThread=NULL;
+    if(this->m_pListenerThread!=NULL){
+        // do nothing. No we do not need to explicity wait for the listener thread to finish
+        delete this->m_pWork; this->m_pWork = NULL; // inform io_service that io_service is permited to exit
+        this->m_pListenerThread->join();
+        DRILL_LOG(LOG_DEBUG) << "DrillClientImpl::waitForResults: Listener thread "
+            << this->m_pListenerThread << " exited." << std::endl;
+        delete this->m_pListenerThread; this->m_pListenerThread=NULL;
+    }
 }
 
 status_t DrillClientImpl::readMsg(ByteBuf_t _buf,
@@ -627,7 +646,9 @@ status_t DrillClientImpl::processQueryId(AllocatedBufferPtr allocatedBuffer, InB
     boost::lock_guard<boost::mutex> lock(m_dcMutex);
     std::map<int,DrillClientQueryResult*>::iterator it;
     for(it=this->m_queryIds.begin();it!=this->m_queryIds.end();it++){
-    DRILL_LOG(LOG_DEBUG) << "DrillClientImpl::processQueryId: m_queryIds: " << it->first << std::endl;
+        std::string qidString = it->second->m_pQueryId!=NULL?debugPrintQid(*it->second->m_pQueryId):std::string("NULL");
+        DRILL_LOG(LOG_DEBUG) << "DrillClientImpl::processQueryId: m_queryIds: coordinationId: " << it->first
+        << " QueryId: "<< qidString << std::endl;
     }
     if(msg.m_coord_id==0){
         DRILL_LOG(LOG_TRACE) << "DrillClientImpl::processQueryId: m_coord_id=0. Ignore and return QRY_SUCCESS." << std::endl;
@@ -677,9 +698,9 @@ status_t DrillClientImpl::processQueryStatusResult(exec::shared::QueryResult* qr
             case exec::shared::QueryResult_QueryState_COMPLETED:
                 {
                     //Not clean to call the handleTerminatedQryState method
-                    //because it signals an error to the listener. 
+                    //because it signals an error to the listener.
                     //The ODBC driver expects this though and the sync API
-                    //handles this (luckily). 
+                    //handles this (luckily).
                     ret=handleTerminatedQryState(ret,
                             getMessage(ERR_QRY_COMPLETED),
                             pDrillClientQueryResult);
@@ -700,22 +721,28 @@ status_t DrillClientImpl::processQueryStatusResult(exec::shared::QueryResult* qr
 
 void DrillClientImpl::handleReadTimeout(const boost::system::error_code & err){
     // if err == boost::asio::error::operation_aborted) then the caller cancelled the timer.
-    if(!err){
+    if(err != boost::asio::error::operation_aborted){
+
         // Check whether the deadline has passed.
         if (m_deadlineTimer.expires_at() <= boost::asio::deadline_timer::traits_type::now()){
             // The deadline has passed.
-            handleQryError(QRY_COMM_ERROR, getMessage(ERR_QRY_TIMOUT), NULL);
+            DRILL_LOG(LOG_TRACE) << "DrillClientImpl::handleReadTimeout: Deadline timer expired; ERR_QRY_TIMOUT. \n";
+            handleQryError(QRY_TIMEOUT, getMessage(ERR_QRY_TIMOUT), NULL);
             // There is no longer an active deadline. The expiry is set to positive
             // infinity so that the timer never expires until a new deadline is set.
             // Note that at this time, the caller is not in a (async) wait for the timer.
             m_deadlineTimer.expires_at(boost::posix_time::pos_infin);
-            DRILL_LOG(LOG_TRACE) << "Deadline timer expired."  << std::endl;
             // Cancel all pending async IOs.
             // The cancel call _MAY_ not work on all platforms. To be a little more reliable we need
             // to have the BOOST_ASIO_ENABLE_CANCELIO macro (as well as the BOOST_ASIO_DISABLE_IOCP macro?)
             // defined. To be really sure, we need to close the socket. Closing the socket is a bit
             // drastic and we will defer that till a later release.
+#ifdef WIN32_SHUTDOWN_ON_TIMEOUT
+            boost::system::error_code ignorederr;
+            m_socket.shutdown(boost::asio::ip::tcp::socket::shutdown_both, ignorederr);
+#else // NOT WIN32_SHUTDOWN_ON_TIMEOUT
             m_socket.cancel();
+#endif // WIN32_SHUTDOWN_ON_TIMEOUT
         }
     }
     return;
@@ -725,11 +752,13 @@ void DrillClientImpl::handleRead(ByteBuf_t _buf,
         const boost::system::error_code& err,
         size_t bytes_transferred) {
     boost::system::error_code error=err;
-    // cancel the timer
     DRILL_LOG(LOG_TRACE) << "DrillClientImpl::handleRead: Handle Read from buffer "
         <<  reinterpret_cast<int*>(_buf) << std::endl;
-    m_deadlineTimer.cancel();
-    DRILL_LOG(LOG_TRACE) << "Deadline timer cancelled."  << std::endl;
+    if(DrillClientConfig::getQueryTimeout() > 0){
+        // Cancel the timeout if handleRead is called
+        DRILL_LOG(LOG_TRACE) << "DrillClientImpl::handleRead: Cancel deadline timer.\n";
+        m_deadlineTimer.cancel();
+    }
     if(!error){
         InBoundRpcMessage msg;
 
@@ -841,22 +870,25 @@ status_t DrillClientImpl::validateMessage(InBoundRpcMessage& msg, exec::shared::
 connectionStatus_t DrillClientImpl::handleConnError(connectionStatus_t status, std::string msg){
     DrillClientError* pErr = new DrillClientError(status, DrillClientError::CONN_ERROR_START+status, msg);
     m_pendingRequests=0;
-    if(m_pError!=NULL){ delete m_pError; m_pError=NULL;}
-    m_pError=pErr;
-    broadcastError(this->m_pError);
+    if(!m_queryIds.empty()){
+        // set query error only if queries are running
+        broadcastError(pErr);
+    }else{
+        if(m_pError!=NULL){ delete m_pError; m_pError=NULL;}
+        m_pError=pErr;
+    }
     return status;
 }
 
 status_t DrillClientImpl::handleQryError(status_t status, std::string msg, DrillClientQueryResult* pQueryResult){
     DrillClientError* pErr = new DrillClientError(status, DrillClientError::QRY_ERROR_START+status, msg);
-    if(m_pError!=NULL){ delete m_pError; m_pError=NULL;}
-    m_pError=pErr;
+    // set query error only if queries are running
     if(pQueryResult!=NULL){
         m_pendingRequests--;
         pQueryResult->signalError(pErr);
     }else{
         m_pendingRequests=0;
-        broadcastError(this->m_pError);
+        broadcastError(pErr);
     }
     return status;
 }
@@ -865,9 +897,8 @@ status_t DrillClientImpl::handleQryError(status_t status,
         const exec::shared::DrillPBError& e,
         DrillClientQueryResult* pQueryResult){
     assert(pQueryResult!=NULL);
-    if(m_pError!=NULL){ delete m_pError; m_pError=NULL;}
-    this->m_pError = DrillClientError::getErrorObject(e);
-    pQueryResult->signalError(this->m_pError);
+    DrillClientError* pErr =  DrillClientError::getErrorObject(e);
+    pQueryResult->signalError(pErr);
     m_pendingRequests--;
     return status;
 }
@@ -890,10 +921,11 @@ status_t DrillClientImpl::handleTerminatedQryState(
         std::string msg,
         DrillClientQueryResult* pQueryResult){
     assert(pQueryResult!=NULL);
-    DrillClientError* pErr = new DrillClientError(status, DrillClientError::QRY_ERROR_START+status, msg);
-    if(m_pError!=NULL){ delete m_pError; m_pError=NULL;}
-    m_pError=pErr;
-    pQueryResult->signalError(pErr);
+    if(status!=QRY_COMPLETED){
+        // set query error only if queries did not complete successfully
+        DrillClientError* pErr = new DrillClientError(status, DrillClientError::QRY_ERROR_START+status, msg);
+        pQueryResult->signalError(pErr);
+    }
     return status;
 }
 
@@ -1095,6 +1127,9 @@ void DrillClientQueryResult::cancel() {
 void DrillClientQueryResult::signalError(DrillClientError* pErr){
     // Ignore return values from the listener.
     if(pErr!=NULL){
+        if(m_pError!=NULL){
+            delete m_pError; m_pError=NULL;
+        }
         m_pError=pErr;
         pfnQueryResultsListener pResultsListener=this->m_pResultsListener;
         if(pResultsListener!=NULL){
@@ -1122,7 +1157,9 @@ void DrillClientQueryResult::clearAndDestroy(){
         }
         m_columnDefs->clear();
     }
-    DRILL_LOG(LOG_TRACE) << "Clearing state for Query Id - " << debugPrintQid(*this->m_pQueryId) << std::endl;
+    if(this->m_pQueryId!=NULL){
+        DRILL_LOG(LOG_TRACE) << "Clearing state for Query Id - " << debugPrintQid(*this->m_pQueryId) << std::endl;
+    }
     //Tell the parent to remove this from its lists
     m_pClient->clearMapEntries(this);
 
@@ -1141,6 +1178,9 @@ void DrillClientQueryResult::clearAndDestroy(){
             delete pR;
         }
     }
+    if(m_pError!=NULL){
+        delete m_pError; m_pError=NULL;
+}
 }
 
 char ZookeeperImpl::s_drillRoot[]="/drill/";

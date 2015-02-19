@@ -51,7 +51,7 @@ import org.apache.drill.exec.vector.complex.reader.FieldReader;
 import com.google.common.base.Preconditions;
 import com.google.common.collect.Maps;
 
-public class RepeatedMapVector extends AbstractContainerVector implements RepeatedFixedWidthVector {
+public class RepeatedMapVector extends AbstractMapVector implements RepeatedFixedWidthVector {
 
   static final org.slf4j.Logger logger = org.slf4j.LoggerFactory.getLogger(RepeatedMapVector.class);
 
@@ -61,20 +61,21 @@ public class RepeatedMapVector extends AbstractContainerVector implements Repeat
   private final RepeatedMapReaderImpl reader = new RepeatedMapReaderImpl(RepeatedMapVector.this);
   private final RepeatedMapAccessor accessor = new RepeatedMapAccessor();
   private final Mutator mutator = new Mutator();
-  private int lastPopulatedValueIndex = -1;
+  private final EmptyValuePopulator emptyPopulator;
 
   public RepeatedMapVector(MaterializedField field, BufferAllocator allocator, CallBack callBack){
     super(field, allocator, callBack);
     this.offsets = new UInt4Vector(null, allocator);
+    this.emptyPopulator = new EmptyValuePopulator(offsets);
   }
 
   @Override
-  public void allocateNew(int topLevelValueCount, int childValueCount) {
+  public void allocateNew(int groupCount, int valueCount) {
     clear();
-    offsets.allocateNew(topLevelValueCount+1);
+    offsets.allocateNew(groupCount+1);
     offsets.zeroVector();
     for (ValueVector v : getChildren()) {
-      AllocationHelper.allocatePrecomputedChildCount(v, topLevelValueCount, 50, childValueCount);
+      AllocationHelper.allocatePrecomputedChildCount(v, groupCount, 50, valueCount);
     }
     mutator.reset();
     accessor.reset();
@@ -296,7 +297,7 @@ public class RepeatedMapVector extends AbstractContainerVector implements Repeat
     public void copyValueSafe(int srcIndex, int destIndex) {
       RepeatedMapHolder holder = new RepeatedMapHolder();
       from.getAccessor().get(srcIndex, holder);
-      to.populateEmpties(destIndex+1);
+      to.emptyPopulator.populate(destIndex + 1);
       int newIndex = to.offsets.getAccessor().get(destIndex);
       //todo: make these bulk copies
       for (int i = holder.start; i < holder.end; i++, newIndex++) {
@@ -318,15 +319,15 @@ public class RepeatedMapVector extends AbstractContainerVector implements Repeat
 
       to.offsets.clear();
       to.offsets.allocateNew(groups + 1);
-      int normalizedPos = 0;
 
+      int normalizedPos;
       for (int i=0; i < groups+1; i++) {
         normalizedPos = a.get(groupStart+i) - startPos;
         m.set(i, normalizedPos);
       }
 
       m.setValueCount(groups + 1);
-      to.lastPopulatedValueIndex = groups - 1;
+      to.emptyPopulator.populate(groups);
 
       for (TransferPair p : pairs) {
         p.splitAndTransfer(startPos, valuesToCopy);
@@ -358,6 +359,10 @@ public class RepeatedMapVector extends AbstractContainerVector implements Repeat
 
   @Override
   public DrillBuf[] getBuffers(boolean clear) {
+    int expectedBufferSize = getBufferSize();
+    int actualBufferSize = super.getBufferSize();
+
+    Preconditions.checkArgument(expectedBufferSize == actualBufferSize + offsets.getBufferSize());
     return ArrayUtils.addAll(offsets.getBuffers(clear), super.getBuffers(clear));
   }
 
@@ -430,7 +435,6 @@ public class RepeatedMapVector extends AbstractContainerVector implements Repeat
     @Override
     public int getValueCount() {
       return offsets.getAccessor().get(offsets.getAccessor().getValueCount() - 1);
-//      return offsets.getAccessor().getValueCount() - 1;
     }
 
     public int getGroupSizeAtIndex(int index) {
@@ -483,33 +487,27 @@ public class RepeatedMapVector extends AbstractContainerVector implements Repeat
 
     @Override
     public int getGroupCount() {
-      return offsets.getAccessor().getValueCount() - 1;
+      final int valueCount = offsets.getAccessor().getValueCount();
+      return valueCount == 0 ? 0 : valueCount - 1;
     }
   }
 
-  private void populateEmpties(int topLevelValueCount) {
-    int previousEnd = offsets.getAccessor().get(lastPopulatedValueIndex + 1);
-    for (int i = lastPopulatedValueIndex + 1; i < topLevelValueCount; i++) {
-      offsets.getMutator().setSafe(i+1, previousEnd);
-    }
-    lastPopulatedValueIndex = topLevelValueCount - 1;
-  }
 
   public class Mutator implements ValueVector.Mutator, RepeatedMutator {
 
     public void startNewGroup(int index) {
-      populateEmpties(index+1);
+      emptyPopulator.populate(index+1);
       offsets.getMutator().setSafe(index+1, offsets.getAccessor().get(index));
     }
 
     public int add(int index) {
-      int prevEnd = offsets.getAccessor().get(index+1);
-      offsets.getMutator().setSafe(index+1, prevEnd+1);
+      final int prevEnd = offsets.getAccessor().get(index+1);
+      offsets.getMutator().setSafe(index + 1, prevEnd + 1);
       return prevEnd;
     }
 
     public void setValueCount(int topLevelValueCount) {
-      populateEmpties(topLevelValueCount);
+      emptyPopulator.populate(topLevelValueCount);
       offsets.getMutator().setValueCount(topLevelValueCount == 0 ? 0 : topLevelValueCount+1);
       int childValueCount = offsets.getAccessor().get(topLevelValueCount);
       for (ValueVector v : getChildren()) {
@@ -518,10 +516,7 @@ public class RepeatedMapVector extends AbstractContainerVector implements Repeat
     }
 
     @Override
-    public void reset() {
-      // the last non empty element index starts from -1
-      lastPopulatedValueIndex = -1;
-    }
+    public void reset() { }
 
     @Override
     public void generateTestData(int values) {
@@ -548,8 +543,8 @@ public class RepeatedMapVector extends AbstractContainerVector implements Repeat
     getMutator().reset();
 
     offsets.clear();
-    for(ValueVector v : getChildren()) {
-      v.clear();;
+    for(ValueVector vector:getChildren()) {
+      vector.clear();
     }
   }
 
