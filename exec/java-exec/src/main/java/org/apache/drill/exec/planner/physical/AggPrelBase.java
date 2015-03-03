@@ -120,13 +120,13 @@ public abstract class AggPrelBase extends AggregateRelBase implements Prel {
     final List<String> fields = getRowType().getFieldNames();
 
     for (int group : BitSets.toIter(groupSet)) {
-      FieldReference fr = new FieldReference(childFields.get(group), ExpressionPosition.UNKNOWN);
+      FieldReference fr = FieldReference.getWithQuotedRef(childFields.get(group));
       keys.add(new NamedExpression(fr, fr));
     }
 
     for (Ord<AggregateCall> aggCall : Ord.zip(aggCalls)) {
       int aggExprOrdinal = groupSet.cardinality() + aggCall.i;
-      FieldReference ref = new FieldReference(fields.get(aggExprOrdinal));
+      FieldReference ref = FieldReference.getWithQuotedRef(fields.get(aggExprOrdinal));
       LogicalExpression expr = toDrill(aggCall.e, childFields);
       NamedExpression ne = new NamedExpression(expr, ref);
       aggExprs.add(ne);

@@ -89,4 +89,14 @@ public class TestBugFixes extends BaseTestQuery {
     test("select * from cp.`tpch/nation.parquet` n left outer join cp.`tpch/region.parquet` r on n.n_regionkey = r.r_regionkey and r.r_name not like '%ASIA' order by r.r_name;");
   }
 
+  @Test
+  public void testDRILL2361_ColumnAliasWithDots() throws Exception {
+    testBuilder()
+      .sqlQuery("select count(*) as `test.alias` from cp.`employee.json`")
+      .unOrdered()
+      .baselineColumns("`test.alias`")
+      .baselineValues(1155L)
+      .build().run();
+  }
+
 }
