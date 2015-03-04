@@ -18,6 +18,7 @@
 package org.apache.drill.exec.planner.sql.handlers;
 
 import java.io.IOException;
+import java.util.ArrayList;
 import java.util.Collection;
 import java.util.List;
 
@@ -35,6 +36,7 @@ import org.apache.drill.exec.ops.QueryContext;
 import org.apache.drill.exec.physical.PhysicalPlan;
 import org.apache.drill.exec.physical.base.AbstractPhysicalVisitor;
 import org.apache.drill.exec.physical.base.PhysicalOperator;
+import org.apache.drill.exec.physical.impl.join.JoinUtils;
 import org.apache.drill.exec.planner.logical.DrillRel;
 import org.apache.drill.exec.planner.logical.DrillScreenRel;
 import org.apache.drill.exec.planner.logical.DrillStoreRel;
@@ -54,6 +56,7 @@ import org.apache.drill.exec.planner.physical.visitor.RewriteProjectToFlatten;
 import org.apache.drill.exec.planner.physical.visitor.SelectionVectorPrelVisitor;
 import org.apache.drill.exec.planner.physical.visitor.SplitUpComplexExpressions;
 import org.apache.drill.exec.planner.physical.visitor.StarColumnConverter;
+import org.apache.drill.exec.planner.physical.visitor.SwapHashJoinVisitor;
 import org.apache.drill.exec.planner.sql.DrillSqlWorker;
 import org.apache.drill.exec.planner.sql.parser.UnsupportedOperatorsVisitor;
 import org.apache.drill.exec.server.options.OptionManager;
@@ -61,7 +64,9 @@ import org.apache.drill.exec.server.options.OptionValue;
 import org.apache.drill.exec.util.Pointer;
 import org.apache.drill.exec.work.foreman.ForemanSetupException;
 import org.apache.drill.exec.work.foreman.SqlUnsupportedException;
+import org.apache.drill.exec.work.foreman.UnsupportedRelOperatorException;
 import org.eigenbase.rel.RelNode;
+import org.eigenbase.relopt.RelOptPlanner;
 import org.eigenbase.relopt.RelOptUtil;
 import org.eigenbase.relopt.RelTraitSet;
 import org.eigenbase.relopt.hep.HepPlanner;
@@ -103,7 +108,7 @@ public class DefaultSqlHandler extends AbstractSqlHandler {
   }
 
   protected void log(String name, Prel node) {
-    String plan = PrelSequencer.printWithIds(node, SqlExplainLevel.ALL_ATTRIBUTES);;
+    String plan = PrelSequencer.printWithIds(node, SqlExplainLevel.ALL_ATTRIBUTES);
     if(textPlan != null){
       textPlan.value = plan;
     }
@@ -186,13 +191,23 @@ public class DefaultSqlHandler extends AbstractSqlHandler {
     return rel;
   }
 
-  protected DrillRel convertToDrel(RelNode relNode) throws RelConversionException {
-    RelNode convertedRelNode = planner.transform(DrillSqlWorker.LOGICAL_RULES,
-        relNode.getTraitSet().plus(DrillRel.DRILL_LOGICAL), relNode);
-    if (convertedRelNode instanceof DrillStoreRel) {
-      throw new UnsupportedOperationException();
-    } else {
-      return new DrillScreenRel(convertedRelNode.getCluster(), convertedRelNode.getTraitSet(), convertedRelNode);
+  protected DrillRel convertToDrel(RelNode relNode) throws RelConversionException, SqlUnsupportedException {
+    try {
+      RelNode convertedRelNode = planner.transform(DrillSqlWorker.LOGICAL_RULES,
+          relNode.getTraitSet().plus(DrillRel.DRILL_LOGICAL), relNode);
+      if (convertedRelNode instanceof DrillStoreRel) {
+        throw new UnsupportedOperationException();
+      } else {
+        return new DrillScreenRel(convertedRelNode.getCluster(), convertedRelNode.getTraitSet(), convertedRelNode);
+      }
+    } catch (RelOptPlanner.CannotPlanException ex) {
+      logger.error(ex.getMessage());
+
+      if(JoinUtils.checkCartesianJoin(relNode, new ArrayList<Integer>(), new ArrayList<Integer>())) {
+        throw new UnsupportedRelOperatorException("This query cannot be planned possibly due to either a cartesian join or an inequality join");
+      } else {
+        throw ex;
+      }
     }
   }
 
@@ -232,12 +247,20 @@ public class DefaultSqlHandler extends AbstractSqlHandler {
     phyRelNode = JoinPrelRenameVisitor.insertRenameProject(phyRelNode);
 
     /*
-     * 1.1) Break up all expressions with complex outputs into their own project operations
+     * 1.1) Swap left / right for INNER hash join, if left's row count is < (1 + margin) right's row count.
+     * We want to have smaller dataset on the right side, since hash table builds on right side.
+     */
+    if (context.getPlannerSettings().isHashJoinSwapEnabled()) {
+      phyRelNode = SwapHashJoinVisitor.swapHashJoin(phyRelNode, new Double(context.getPlannerSettings().getHashJoinSwapMarginFactor()));
+    }
+
+    /*
+     * 1.2) Break up all expressions with complex outputs into their own project operations
      */
     phyRelNode = ((Prel) phyRelNode).accept(new SplitUpComplexExpressions(planner.getTypeFactory(), context.getDrillOperatorTable(), context.getPlannerSettings().functionImplementationRegistry), null);
 
     /*
-     * 1.2) Projections that contain reference to flatten are rewritten as Flatten operators followed by Project
+     * 1.3) Projections that contain reference to flatten are rewritten as Flatten operators followed by Project
      */
     phyRelNode = ((Prel) phyRelNode).accept(new RewriteProjectToFlatten(planner.getTypeFactory(), context.getDrillOperatorTable()), null);
 

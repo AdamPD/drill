@@ -31,6 +31,12 @@ public class ExpressionPosition {
     this.charIndex = charIndex;
   }
 
+  @Override
+  public String toString() {
+    return super.toString()
+           + "[charIndex = " + charIndex + ", expression = " + expression + "]";
+  }
+
   public String getExpression() {
     return expression;
   }

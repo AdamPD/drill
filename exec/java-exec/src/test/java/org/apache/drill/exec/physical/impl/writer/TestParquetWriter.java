@@ -21,6 +21,7 @@ import static org.junit.Assert.assertEquals;
 
 import java.io.UnsupportedEncodingException;
 import java.lang.reflect.Array;
+import java.math.BigDecimal;
 import java.util.ArrayList;
 import java.util.Arrays;
 import java.util.HashMap;
@@ -204,6 +205,12 @@ public class TestParquetWriter extends BaseTestQuery {
     runTestAndValidate("*", "*", inputTable, "nullable_test");
   }
 
+  @Ignore("Binary file too large for version control, TODO - make available on S3 bucket or similar service")
+  @Test
+  public void testBitError_Drill_2031() throws Exception {
+    compareParquetReadersHyperVector("*", "dfs.`/tmp/wide2/0_0_3.parquet`");
+  }
+
   @Test
   public void testDecimal() throws Exception {
     String selection = "cast(salary as decimal(8,2)) as decimal8, cast(salary as decimal(15,2)) as decimal15, " +
@@ -352,6 +359,30 @@ public class TestParquetWriter extends BaseTestQuery {
   @Test
   public void testParquetReadWebReturns() throws Exception {
     compareParquetReadersColumnar("wr_returning_customer_sk", "dfs.`/tmp/web_returns`");
+  }
+
+  @Test
+  public void testWriteDecimal() throws Exception {
+    String outputTable = "decimal_test";
+    Path path = new Path("/tmp/" + outputTable);
+    if (fs.exists(path)) {
+      fs.delete(path, true);
+    }
+    String ctas = String.format("use dfs.tmp; " +
+        "create table %s as select " +
+        "cast('1.2' as decimal(38, 2)) col1, cast('1.2' as decimal(28, 2)) col2 " +
+        "from cp.`employee.json` limit 1", outputTable);
+
+    test(ctas);
+
+    BigDecimal result = new BigDecimal("1.20");
+
+    testBuilder()
+        .unOrdered()
+        .sqlQuery(String.format("select col1, col2 from %s ", outputTable))
+        .baselineColumns("col1", "col2")
+        .baselineValues(result, result)
+        .go();
   }
 
   public void runTestAndValidate(String selection, String validationSelection, String inputTable, String outputFile) throws Exception {

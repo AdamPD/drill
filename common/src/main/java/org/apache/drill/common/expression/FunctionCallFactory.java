@@ -39,7 +39,7 @@ public class FunctionCallFactory {
     opToFuncTable.put("*", "multiply");
     opToFuncTable.put("%", "modulo");
     opToFuncTable.put("^", "xor");
-    opToFuncTable.put("||", "concat");
+    opToFuncTable.put("||", "concatOperator");
     opToFuncTable.put("or", "booleanOr");
     opToFuncTable.put("and", "booleanAnd");
     opToFuncTable.put(">", "greater_than");
@@ -56,6 +56,7 @@ public class FunctionCallFactory {
     opToFuncTable.put("is not true", "isnottrue");
     opToFuncTable.put("is false", "isfalse");
     opToFuncTable.put("is not false", "isnotfalse");
+    opToFuncTable.put("similar to", "similar_to");
 
     opToFuncTable.put("!", "not");
     opToFuncTable.put("u-", "negative");

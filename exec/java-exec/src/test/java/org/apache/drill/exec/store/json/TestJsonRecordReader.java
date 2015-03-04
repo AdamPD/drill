@@ -99,4 +99,10 @@ public class TestJsonRecordReader extends BaseTestQuery{
         .baselineValues(6D)
         .build().run();
   }
+
+  @Test
+  public void testEnableAllTextMode() throws Exception {
+    testNoResult("alter session set `store.json.all_text_mode`= true");
+    test("select * from cp.`jsoninput/big_numeric.json`");
+  }
 }
