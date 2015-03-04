@@ -29,6 +29,7 @@ import javax.xml.bind.annotation.XmlRootElement;
 import com.google.common.collect.Lists;
 import com.google.common.collect.Maps;
 import com.google.common.collect.Sets;
+import com.google.common.primitives.Primitives;
 import org.apache.drill.common.config.DrillConfig;
 import org.apache.drill.exec.client.DrillClient;
 import org.apache.drill.exec.coord.ClusterCoordinator;
@@ -89,9 +90,9 @@ public class QueryWrapper {
 
       listener.waitForCompletion();
       if (listener.results.isEmpty()) {
-        listener.results.add(Maps.<String, String>newHashMap());
+        listener.results.add(Maps.<String, Object>newHashMap());
       }
-      final Map<String, String> first = listener.results.get(0);
+      final Map<String, Object> first = listener.results.get(0);
       for (String columnName : listener.columns) {
         if (!first.containsKey(columnName)) {
           first.put(columnName, null);
@@ -104,9 +105,9 @@ public class QueryWrapper {
 
   public static class QueryResult {
     public final Collection<String> columns;
-    public final List<Map<String, String>> rows;
+    public final List<Map<String, Object>> rows;
 
-    public QueryResult(Collection<String> columns, List<Map<String, String>> rows) {
+    public QueryResult(Collection<String> columns, List<Map<String, Object>> rows) {
       this.columns = columns;
       this.rows = rows;
     }
@@ -122,7 +123,7 @@ public class QueryWrapper {
     private volatile Exception exception;
     private final CountDownLatch latch = new CountDownLatch(1);
     private final BufferAllocator allocator;
-    public final List<Map<String, String>> results = Lists.newArrayList();
+    public final List<Map<String, Object>> results = Lists.newArrayList();
     public final Set<String> columns = Sets.newLinkedHashSet();
 
     Listener(BufferAllocator allocator) {
@@ -147,12 +148,12 @@ public class QueryWrapper {
             columns.add(loader.getSchema().getColumn(i).getPath().getAsUnescapedPath());
           }
           for (int i = 0; i < rows; ++i) {
-            final Map<String, String> record = Maps.newHashMap();
+            final Map<String, Object> record = Maps.newHashMap();
             for (VectorWrapper<?> vw : loader) {
               final String field = vw.getValueVector().getMetadata().getNamePart().getName();
               final ValueVector.Accessor accessor = vw.getValueVector().getAccessor();
               final Object value = i < accessor.getValueCount() ? accessor.getObject(i) : null;
-              final String display = value == null ? null : value.toString();
+              final Object display = Primitives.isWrapperType(value.getClass()) ? value : value.toString();
               record.put(field, display);
             }
             results.add(record);

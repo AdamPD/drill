@@ -74,12 +74,12 @@ public class QueryResources {
 
   public static class TabularResult {
     private final List<String> columns;
-    private final List<List<String>> rows;
+    private final List<List<Object>> rows;
 
     public TabularResult(QueryWrapper.QueryResult result) {
-      final List<List<String>> rows = Lists.newArrayList();
-      for (Map<String, String> rowMap:result.rows) {
-        final List<String> row = Lists.newArrayList();
+      final List<List<Object>> rows = Lists.newArrayList();
+      for (Map<String, Object> rowMap:result.rows) {
+        final List<Object> row = Lists.newArrayList();
         for (String col:result.columns) {
           row.add(rowMap.get(col));
         }
@@ -90,7 +90,7 @@ public class QueryResources {
       this.rows = rows;
     }
 
-    public TabularResult(List<String> columns, List<List<String>> rows) {
+    public TabularResult(List<String> columns, List<List<Object>> rows) {
       this.columns = columns;
       this.rows = rows;
     }
@@ -103,7 +103,7 @@ public class QueryResources {
       return columns;
     }
 
-    public List<List<String>> getRows() {
+    public List<List<Object>> getRows() {
       return rows;
     }
   }
