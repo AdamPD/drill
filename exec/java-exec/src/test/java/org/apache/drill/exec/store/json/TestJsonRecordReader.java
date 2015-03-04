@@ -62,6 +62,8 @@ public class TestJsonRecordReader extends BaseTestQuery{
 
   @Test
   public void testMixedNumberTypes() throws Exception {
+    testNoResult("alter session set `store.json.all_text_mode`= false");
+    testNoResult("alter session set `store.json.read_numbers_as_double`= false");
     try {
       testBuilder()
           .sqlQuery("select * from cp.`jsoninput/mixed_number_types.json`")
@@ -79,6 +81,7 @@ public class TestJsonRecordReader extends BaseTestQuery{
   @Test
   public void testMixedNumberTypesInAllTextMode() throws Exception {
     testNoResult("alter session set `store.json.all_text_mode`= true");
+    testNoResult("alter session set `store.json.read_numbers_as_double`= false");
     testBuilder()
         .sqlQuery("select * from cp.`jsoninput/mixed_number_types.json`")
         .unOrdered()
@@ -90,6 +93,7 @@ public class TestJsonRecordReader extends BaseTestQuery{
 
   @Test
   public void testMixedNumberTypesWhenReadingNumbersAsDouble() throws Exception {
+    testNoResult("alter session set `store.json.all_text_mode`= false");
     testNoResult("alter session set `store.json.read_numbers_as_double`= true");
     testBuilder()
         .sqlQuery("select * from cp.`jsoninput/mixed_number_types.json`")
