@@ -22,6 +22,7 @@ import com.google.common.base.Preconditions;
 import com.google.common.base.Stopwatch;
 import com.google.common.collect.Lists;
 import com.google.common.collect.Sets;
+
 import org.apache.drill.common.exceptions.DrillRuntimeException;
 import org.apache.drill.common.exceptions.ExecutionSetupException;
 import org.apache.drill.common.expression.SchemaPath;
@@ -36,6 +37,7 @@ import org.apache.drill.exec.vector.complex.impl.VectorContainerWriter;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
+import java.io.IOException;
 import java.net.UnknownHostException;
 import java.util.Collection;
 import java.util.List;
@@ -82,7 +84,6 @@ public class MongoRecordReader extends AbstractRecordReader {
     // exclude _id field, if not mentioned by user.
     this.fields.put(DrillMongoConstants.ID, Integer.valueOf(0));
     setColumns(projectedColumns);
-    transformColumns(projectedColumns);
     this.fragmentContext = context;
     this.filters = new BasicDBObject();
     Map<String, List<BasicDBObject>> mergedFilters = MongoUtils.mergeFilters(
@@ -164,7 +165,6 @@ public class MongoRecordReader extends AbstractRecordReader {
     int docCount = 0;
     Stopwatch watch = new Stopwatch();
     watch.start();
-    int rowCount = 0;
 
     try {
       String errMsg = "Document '%s' is too big to fit into allocated ValueVector.";
@@ -179,7 +179,7 @@ public class MongoRecordReader extends AbstractRecordReader {
           throw new DrillRuntimeException(String.format(errMsg, replayDoc));
         }
       }
-      for (; rowCount < BaseValueVector.INITIAL_VALUE_ALLOCATION && cursor.hasNext(); rowCount++) {
+      for (; docCount < BaseValueVector.INITIAL_VALUE_ALLOCATION && cursor.hasNext(); docCount++) {
         writer.setPosition(docCount);
         String doc = cursor.next().toString();
         jsonReader.setSource(doc.getBytes(Charsets.UTF_8));
@@ -199,11 +199,12 @@ public class MongoRecordReader extends AbstractRecordReader {
 
       writer.setValueCount(docCount);
       logger.debug("Took {} ms to get {} records",
-          watch.elapsed(TimeUnit.MILLISECONDS), rowCount);
+          watch.elapsed(TimeUnit.MILLISECONDS), docCount);
       return docCount;
-    } catch (Exception e) {
-      logger.error(e.getMessage(), e);
-      throw new DrillRuntimeException("Failure while reading Mongo Record.", e);
+    } catch (IOException e) {
+      String msg = "Failure while reading document. - Parser was at record: " + (docCount + 1);
+      logger.error(msg, e);
+      throw new DrillRuntimeException(msg, e);
     }
   }
 

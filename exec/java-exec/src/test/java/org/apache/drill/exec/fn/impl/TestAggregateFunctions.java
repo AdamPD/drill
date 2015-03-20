@@ -157,4 +157,32 @@ public class TestAggregateFunctions extends BaseTestQuery {
     test("alter session set `planner.slice_target` = 100000");
   }
 
+  @Test
+  public void testAvgWithNullableScalarFunction() throws Exception {
+    String query = " select avg(length(b1)) as col from cp.`jsoninput/nullable1.json`";
+    testBuilder()
+        .sqlQuery(query)
+        .unOrdered()
+        .baselineColumns("col")
+        .baselineValues(3.0d)
+        .go();
+  }
+
+  @Test
+  public void testCountWithAvg() throws Exception {
+    testBuilder()
+        .sqlQuery("select count(a) col1, avg(b) col2 from cp.`jsoninput/nullable3.json`")
+        .unOrdered()
+        .baselineColumns("col1", "col2")
+        .baselineValues(2l, 3.0d)
+        .go();
+
+    testBuilder()
+        .sqlQuery("select count(a) col1, avg(a) col2 from cp.`jsoninput/nullable3.json`")
+        .unOrdered()
+        .baselineColumns("col1", "col2")
+        .baselineValues(2l, 1.0d)
+        .go();
+  }
+
 }

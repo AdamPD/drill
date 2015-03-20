@@ -17,24 +17,23 @@
  */
 package org.apache.drill.exec.expr.fn.impl;
 
+import static org.junit.Assert.assertEquals;
+
 import org.apache.drill.PlanTestBase;
 import org.junit.Test;
 
 public class TestSimpleRepeatedFunctions extends PlanTestBase {
-
   @Test
   public void testIfDrillCanInferReturnTypeOfRepeatedContains() throws Exception {
     final String sql = "select t.arrayval from cp.`nested/nested_1.json` t where repeated_CoNTaInS(t.arrayval, 'c1')";
     final int count = testSql(sql);
-    assert count == 1 : "Unexpected number of records";
+    assertEquals(1, count);
   }
 
   @Test
   public void testIfDrillCanInferReturnTypeOfRepeatedContainsPreceedingTrue() throws Exception {
     final String sql = "select t.arrayval from cp.`nested/nested_1.json` t where true and repeated_CoNTaInS(t.arrayval, 'a1')";
     final int count = testSql(sql);
-    assert count == 1 : "Unexpected number of records";
+    assertEquals(1, count);
   }
-
-
 }

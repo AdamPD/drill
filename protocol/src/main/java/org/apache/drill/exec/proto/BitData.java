@@ -133,10 +133,10 @@ public final class BitData {
     // @@protoc_insertion_point(enum_scope:exec.bit.data.RpcType)
   }
 
-  public interface BitClientHandshakeOrBuilder
-      extends com.google.protobuf.MessageOrBuilder {
+  public interface BitClientHandshakeOrBuilder extends
+      // @@protoc_insertion_point(interface_extends:exec.bit.data.BitClientHandshake)
+      com.google.protobuf.MessageOrBuilder {
 
-    // optional int32 rpc_version = 1;
     /**
      * <code>optional int32 rpc_version = 1;</code>
      */
@@ -146,7 +146,6 @@ public final class BitData {
      */
     int getRpcVersion();
 
-    // optional .exec.shared.RpcChannel channel = 2 [default = BIT_DATA];
     /**
      * <code>optional .exec.shared.RpcChannel channel = 2 [default = BIT_DATA];</code>
      */
@@ -155,27 +154,14 @@ public final class BitData {
      * <code>optional .exec.shared.RpcChannel channel = 2 [default = BIT_DATA];</code>
      */
     org.apache.drill.exec.proto.UserBitShared.RpcChannel getChannel();
-
-    // optional .exec.bit.FragmentHandle handle = 3;
-    /**
-     * <code>optional .exec.bit.FragmentHandle handle = 3;</code>
-     */
-    boolean hasHandle();
-    /**
-     * <code>optional .exec.bit.FragmentHandle handle = 3;</code>
-     */
-    org.apache.drill.exec.proto.ExecProtos.FragmentHandle getHandle();
-    /**
-     * <code>optional .exec.bit.FragmentHandle handle = 3;</code>
-     */
-    org.apache.drill.exec.proto.ExecProtos.FragmentHandleOrBuilder getHandleOrBuilder();
   }
   /**
    * Protobuf type {@code exec.bit.data.BitClientHandshake}
    */
   public static final class BitClientHandshake extends
-      com.google.protobuf.GeneratedMessage
-      implements BitClientHandshakeOrBuilder {
+      com.google.protobuf.GeneratedMessage implements
+      // @@protoc_insertion_point(message_implements:exec.bit.data.BitClientHandshake)
+      BitClientHandshakeOrBuilder {
     // Use BitClientHandshake.newBuilder() to construct.
     private BitClientHandshake(com.google.protobuf.GeneratedMessage.Builder<?> builder) {
       super(builder);
@@ -237,19 +223,6 @@ public final class BitData {
               }
               break;
             }
-            case 26: {
-              org.apache.drill.exec.proto.ExecProtos.FragmentHandle.Builder subBuilder = null;
-              if (((bitField0_ & 0x00000004) == 0x00000004)) {
-                subBuilder = handle_.toBuilder();
-              }
-              handle_ = input.readMessage(org.apache.drill.exec.proto.ExecProtos.FragmentHandle.PARSER, extensionRegistry);
-              if (subBuilder != null) {
-                subBuilder.mergeFrom(handle_);
-                handle_ = subBuilder.buildPartial();
-              }
-              bitField0_ |= 0x00000004;
-              break;
-            }
           }
         }
       } catch (com.google.protobuf.InvalidProtocolBufferException e) {
@@ -290,7 +263,6 @@ public final class BitData {
     }
 
     private int bitField0_;
-    // optional int32 rpc_version = 1;
     public static final int RPC_VERSION_FIELD_NUMBER = 1;
     private int rpcVersion_;
     /**
@@ -306,7 +278,6 @@ public final class BitData {
       return rpcVersion_;
     }
 
-    // optional .exec.shared.RpcChannel channel = 2 [default = BIT_DATA];
     public static final int CHANNEL_FIELD_NUMBER = 2;
     private org.apache.drill.exec.proto.UserBitShared.RpcChannel channel_;
     /**
@@ -322,37 +293,15 @@ public final class BitData {
       return channel_;
     }
 
-    // optional .exec.bit.FragmentHandle handle = 3;
-    public static final int HANDLE_FIELD_NUMBER = 3;
-    private org.apache.drill.exec.proto.ExecProtos.FragmentHandle handle_;
-    /**
-     * <code>optional .exec.bit.FragmentHandle handle = 3;</code>
-     */
-    public boolean hasHandle() {
-      return ((bitField0_ & 0x00000004) == 0x00000004);
-    }
-    /**
-     * <code>optional .exec.bit.FragmentHandle handle = 3;</code>
-     */
-    public org.apache.drill.exec.proto.ExecProtos.FragmentHandle getHandle() {
-      return handle_;
-    }
-    /**
-     * <code>optional .exec.bit.FragmentHandle handle = 3;</code>
-     */
-    public org.apache.drill.exec.proto.ExecProtos.FragmentHandleOrBuilder getHandleOrBuilder() {
-      return handle_;
-    }
-
     private void initFields() {
       rpcVersion_ = 0;
       channel_ = org.apache.drill.exec.proto.UserBitShared.RpcChannel.BIT_DATA;
-      handle_ = org.apache.drill.exec.proto.ExecProtos.FragmentHandle.getDefaultInstance();
     }
     private byte memoizedIsInitialized = -1;
     public final boolean isInitialized() {
       byte isInitialized = memoizedIsInitialized;
-      if (isInitialized != -1) return isInitialized == 1;
+      if (isInitialized == 1) return true;
+      if (isInitialized == 0) return false;
 
       memoizedIsInitialized = 1;
       return true;
@@ -366,9 +315,6 @@ public final class BitData {
       }
       if (((bitField0_ & 0x00000002) == 0x00000002)) {
         output.writeEnum(2, channel_.getNumber());
-      }
-      if (((bitField0_ & 0x00000004) == 0x00000004)) {
-        output.writeMessage(3, handle_);
       }
       getUnknownFields().writeTo(output);
     }
@@ -386,10 +332,6 @@ public final class BitData {
       if (((bitField0_ & 0x00000002) == 0x00000002)) {
         size += com.google.protobuf.CodedOutputStream
           .computeEnumSize(2, channel_.getNumber());
-      }
-      if (((bitField0_ & 0x00000004) == 0x00000004)) {
-        size += com.google.protobuf.CodedOutputStream
-          .computeMessageSize(3, handle_);
       }
       size += getUnknownFields().getSerializedSize();
       memoizedSerializedSize = size;
@@ -473,8 +415,9 @@ public final class BitData {
      * Protobuf type {@code exec.bit.data.BitClientHandshake}
      */
     public static final class Builder extends
-        com.google.protobuf.GeneratedMessage.Builder<Builder>
-       implements org.apache.drill.exec.proto.BitData.BitClientHandshakeOrBuilder {
+        com.google.protobuf.GeneratedMessage.Builder<Builder> implements
+        // @@protoc_insertion_point(builder_implements:exec.bit.data.BitClientHandshake)
+        org.apache.drill.exec.proto.BitData.BitClientHandshakeOrBuilder {
       public static final com.google.protobuf.Descriptors.Descriptor
           getDescriptor() {
         return org.apache.drill.exec.proto.BitData.internal_static_exec_bit_data_BitClientHandshake_descriptor;
@@ -499,7 +442,6 @@ public final class BitData {
       }
       private void maybeForceBuilderInitialization() {
         if (com.google.protobuf.GeneratedMessage.alwaysUseFieldBuilders) {
-          getHandleFieldBuilder();
         }
       }
       private static Builder create() {
@@ -512,12 +454,6 @@ public final class BitData {
         bitField0_ = (bitField0_ & ~0x00000001);
         channel_ = org.apache.drill.exec.proto.UserBitShared.RpcChannel.BIT_DATA;
         bitField0_ = (bitField0_ & ~0x00000002);
-        if (handleBuilder_ == null) {
-          handle_ = org.apache.drill.exec.proto.ExecProtos.FragmentHandle.getDefaultInstance();
-        } else {
-          handleBuilder_.clear();
-        }
-        bitField0_ = (bitField0_ & ~0x00000004);
         return this;
       }
 
@@ -554,14 +490,6 @@ public final class BitData {
           to_bitField0_ |= 0x00000002;
         }
         result.channel_ = channel_;
-        if (((from_bitField0_ & 0x00000004) == 0x00000004)) {
-          to_bitField0_ |= 0x00000004;
-        }
-        if (handleBuilder_ == null) {
-          result.handle_ = handle_;
-        } else {
-          result.handle_ = handleBuilder_.build();
-        }
         result.bitField0_ = to_bitField0_;
         onBuilt();
         return result;
@@ -583,9 +511,6 @@ public final class BitData {
         }
         if (other.hasChannel()) {
           setChannel(other.getChannel());
-        }
-        if (other.hasHandle()) {
-          mergeHandle(other.getHandle());
         }
         this.mergeUnknownFields(other.getUnknownFields());
         return this;
@@ -614,7 +539,6 @@ public final class BitData {
       }
       private int bitField0_;
 
-      // optional int32 rpc_version = 1;
       private int rpcVersion_ ;
       /**
        * <code>optional int32 rpc_version = 1;</code>
@@ -647,7 +571,6 @@ public final class BitData {
         return this;
       }
 
-      // optional .exec.shared.RpcChannel channel = 2 [default = BIT_DATA];
       private org.apache.drill.exec.proto.UserBitShared.RpcChannel channel_ = org.apache.drill.exec.proto.UserBitShared.RpcChannel.BIT_DATA;
       /**
        * <code>optional .exec.shared.RpcChannel channel = 2 [default = BIT_DATA];</code>
@@ -683,123 +606,6 @@ public final class BitData {
         return this;
       }
 
-      // optional .exec.bit.FragmentHandle handle = 3;
-      private org.apache.drill.exec.proto.ExecProtos.FragmentHandle handle_ = org.apache.drill.exec.proto.ExecProtos.FragmentHandle.getDefaultInstance();
-      private com.google.protobuf.SingleFieldBuilder<
-          org.apache.drill.exec.proto.ExecProtos.FragmentHandle, org.apache.drill.exec.proto.ExecProtos.FragmentHandle.Builder, org.apache.drill.exec.proto.ExecProtos.FragmentHandleOrBuilder> handleBuilder_;
-      /**
-       * <code>optional .exec.bit.FragmentHandle handle = 3;</code>
-       */
-      public boolean hasHandle() {
-        return ((bitField0_ & 0x00000004) == 0x00000004);
-      }
-      /**
-       * <code>optional .exec.bit.FragmentHandle handle = 3;</code>
-       */
-      public org.apache.drill.exec.proto.ExecProtos.FragmentHandle getHandle() {
-        if (handleBuilder_ == null) {
-          return handle_;
-        } else {
-          return handleBuilder_.getMessage();
-        }
-      }
-      /**
-       * <code>optional .exec.bit.FragmentHandle handle = 3;</code>
-       */
-      public Builder setHandle(org.apache.drill.exec.proto.ExecProtos.FragmentHandle value) {
-        if (handleBuilder_ == null) {
-          if (value == null) {
-            throw new NullPointerException();
-          }
-          handle_ = value;
-          onChanged();
-        } else {
-          handleBuilder_.setMessage(value);
-        }
-        bitField0_ |= 0x00000004;
-        return this;
-      }
-      /**
-       * <code>optional .exec.bit.FragmentHandle handle = 3;</code>
-       */
-      public Builder setHandle(
-          org.apache.drill.exec.proto.ExecProtos.FragmentHandle.Builder builderForValue) {
-        if (handleBuilder_ == null) {
-          handle_ = builderForValue.build();
-          onChanged();
-        } else {
-          handleBuilder_.setMessage(builderForValue.build());
-        }
-        bitField0_ |= 0x00000004;
-        return this;
-      }
-      /**
-       * <code>optional .exec.bit.FragmentHandle handle = 3;</code>
-       */
-      public Builder mergeHandle(org.apache.drill.exec.proto.ExecProtos.FragmentHandle value) {
-        if (handleBuilder_ == null) {
-          if (((bitField0_ & 0x00000004) == 0x00000004) &&
-              handle_ != org.apache.drill.exec.proto.ExecProtos.FragmentHandle.getDefaultInstance()) {
-            handle_ =
-              org.apache.drill.exec.proto.ExecProtos.FragmentHandle.newBuilder(handle_).mergeFrom(value).buildPartial();
-          } else {
-            handle_ = value;
-          }
-          onChanged();
-        } else {
-          handleBuilder_.mergeFrom(value);
-        }
-        bitField0_ |= 0x00000004;
-        return this;
-      }
-      /**
-       * <code>optional .exec.bit.FragmentHandle handle = 3;</code>
-       */
-      public Builder clearHandle() {
-        if (handleBuilder_ == null) {
-          handle_ = org.apache.drill.exec.proto.ExecProtos.FragmentHandle.getDefaultInstance();
-          onChanged();
-        } else {
-          handleBuilder_.clear();
-        }
-        bitField0_ = (bitField0_ & ~0x00000004);
-        return this;
-      }
-      /**
-       * <code>optional .exec.bit.FragmentHandle handle = 3;</code>
-       */
-      public org.apache.drill.exec.proto.ExecProtos.FragmentHandle.Builder getHandleBuilder() {
-        bitField0_ |= 0x00000004;
-        onChanged();
-        return getHandleFieldBuilder().getBuilder();
-      }
-      /**
-       * <code>optional .exec.bit.FragmentHandle handle = 3;</code>
-       */
-      public org.apache.drill.exec.proto.ExecProtos.FragmentHandleOrBuilder getHandleOrBuilder() {
-        if (handleBuilder_ != null) {
-          return handleBuilder_.getMessageOrBuilder();
-        } else {
-          return handle_;
-        }
-      }
-      /**
-       * <code>optional .exec.bit.FragmentHandle handle = 3;</code>
-       */
-      private com.google.protobuf.SingleFieldBuilder<
-          org.apache.drill.exec.proto.ExecProtos.FragmentHandle, org.apache.drill.exec.proto.ExecProtos.FragmentHandle.Builder, org.apache.drill.exec.proto.ExecProtos.FragmentHandleOrBuilder> 
-          getHandleFieldBuilder() {
-        if (handleBuilder_ == null) {
-          handleBuilder_ = new com.google.protobuf.SingleFieldBuilder<
-              org.apache.drill.exec.proto.ExecProtos.FragmentHandle, org.apache.drill.exec.proto.ExecProtos.FragmentHandle.Builder, org.apache.drill.exec.proto.ExecProtos.FragmentHandleOrBuilder>(
-                  handle_,
-                  getParentForChildren(),
-                  isClean());
-          handle_ = null;
-        }
-        return handleBuilder_;
-      }
-
       // @@protoc_insertion_point(builder_scope:exec.bit.data.BitClientHandshake)
     }
 
@@ -811,10 +617,10 @@ public final class BitData {
     // @@protoc_insertion_point(class_scope:exec.bit.data.BitClientHandshake)
   }
 
-  public interface BitServerHandshakeOrBuilder
-      extends com.google.protobuf.MessageOrBuilder {
+  public interface BitServerHandshakeOrBuilder extends
+      // @@protoc_insertion_point(interface_extends:exec.bit.data.BitServerHandshake)
+      com.google.protobuf.MessageOrBuilder {
 
-    // optional int32 rpc_version = 1;
     /**
      * <code>optional int32 rpc_version = 1;</code>
      */
@@ -828,8 +634,9 @@ public final class BitData {
    * Protobuf type {@code exec.bit.data.BitServerHandshake}
    */
   public static final class BitServerHandshake extends
-      com.google.protobuf.GeneratedMessage
-      implements BitServerHandshakeOrBuilder {
+      com.google.protobuf.GeneratedMessage implements
+      // @@protoc_insertion_point(message_implements:exec.bit.data.BitServerHandshake)
+      BitServerHandshakeOrBuilder {
     // Use BitServerHandshake.newBuilder() to construct.
     private BitServerHandshake(com.google.protobuf.GeneratedMessage.Builder<?> builder) {
       super(builder);
@@ -920,7 +727,6 @@ public final class BitData {
     }
 
     private int bitField0_;
-    // optional int32 rpc_version = 1;
     public static final int RPC_VERSION_FIELD_NUMBER = 1;
     private int rpcVersion_;
     /**
@@ -942,7 +748,8 @@ public final class BitData {
     private byte memoizedIsInitialized = -1;
     public final boolean isInitialized() {
       byte isInitialized = memoizedIsInitialized;
-      if (isInitialized != -1) return isInitialized == 1;
+      if (isInitialized == 1) return true;
+      if (isInitialized == 0) return false;
 
       memoizedIsInitialized = 1;
       return true;
@@ -1049,8 +856,9 @@ public final class BitData {
      * Protobuf type {@code exec.bit.data.BitServerHandshake}
      */
     public static final class Builder extends
-        com.google.protobuf.GeneratedMessage.Builder<Builder>
-       implements org.apache.drill.exec.proto.BitData.BitServerHandshakeOrBuilder {
+        com.google.protobuf.GeneratedMessage.Builder<Builder> implements
+        // @@protoc_insertion_point(builder_implements:exec.bit.data.BitServerHandshake)
+        org.apache.drill.exec.proto.BitData.BitServerHandshakeOrBuilder {
       public static final com.google.protobuf.Descriptors.Descriptor
           getDescriptor() {
         return org.apache.drill.exec.proto.BitData.internal_static_exec_bit_data_BitServerHandshake_descriptor;
@@ -1163,7 +971,6 @@ public final class BitData {
       }
       private int bitField0_;
 
-      // optional int32 rpc_version = 1;
       private int rpcVersion_ ;
       /**
        * <code>optional int32 rpc_version = 1;</code>
@@ -1207,74 +1014,91 @@ public final class BitData {
     // @@protoc_insertion_point(class_scope:exec.bit.data.BitServerHandshake)
   }
 
-  public interface FragmentRecordBatchOrBuilder
-      extends com.google.protobuf.MessageOrBuilder {
+  public interface FragmentRecordBatchOrBuilder extends
+      // @@protoc_insertion_point(interface_extends:exec.bit.data.FragmentRecordBatch)
+      com.google.protobuf.MessageOrBuilder {
 
-    // optional .exec.bit.FragmentHandle handle = 1;
     /**
-     * <code>optional .exec.bit.FragmentHandle handle = 1;</code>
+     * <code>optional .exec.shared.QueryId query_id = 1;</code>
      */
-    boolean hasHandle();
+    boolean hasQueryId();
     /**
-     * <code>optional .exec.bit.FragmentHandle handle = 1;</code>
+     * <code>optional .exec.shared.QueryId query_id = 1;</code>
      */
-    org.apache.drill.exec.proto.ExecProtos.FragmentHandle getHandle();
+    org.apache.drill.exec.proto.UserBitShared.QueryId getQueryId();
     /**
-     * <code>optional .exec.bit.FragmentHandle handle = 1;</code>
+     * <code>optional .exec.shared.QueryId query_id = 1;</code>
      */
-    org.apache.drill.exec.proto.ExecProtos.FragmentHandleOrBuilder getHandleOrBuilder();
+    org.apache.drill.exec.proto.UserBitShared.QueryIdOrBuilder getQueryIdOrBuilder();
 
-    // optional int32 sending_major_fragment_id = 2;
     /**
-     * <code>optional int32 sending_major_fragment_id = 2;</code>
+     * <code>optional int32 receiving_major_fragment_id = 2;</code>
+     */
+    boolean hasReceivingMajorFragmentId();
+    /**
+     * <code>optional int32 receiving_major_fragment_id = 2;</code>
+     */
+    int getReceivingMajorFragmentId();
+
+    /**
+     * <code>repeated int32 receiving_minor_fragment_id = 3;</code>
+     */
+    java.util.List<java.lang.Integer> getReceivingMinorFragmentIdList();
+    /**
+     * <code>repeated int32 receiving_minor_fragment_id = 3;</code>
+     */
+    int getReceivingMinorFragmentIdCount();
+    /**
+     * <code>repeated int32 receiving_minor_fragment_id = 3;</code>
+     */
+    int getReceivingMinorFragmentId(int index);
+
+    /**
+     * <code>optional int32 sending_major_fragment_id = 4;</code>
      */
     boolean hasSendingMajorFragmentId();
     /**
-     * <code>optional int32 sending_major_fragment_id = 2;</code>
+     * <code>optional int32 sending_major_fragment_id = 4;</code>
      */
     int getSendingMajorFragmentId();
 
-    // optional int32 sending_minor_fragment_id = 3;
     /**
-     * <code>optional int32 sending_minor_fragment_id = 3;</code>
+     * <code>optional int32 sending_minor_fragment_id = 5;</code>
      */
     boolean hasSendingMinorFragmentId();
     /**
-     * <code>optional int32 sending_minor_fragment_id = 3;</code>
+     * <code>optional int32 sending_minor_fragment_id = 5;</code>
      */
     int getSendingMinorFragmentId();
 
-    // optional .exec.shared.RecordBatchDef def = 4;
     /**
-     * <code>optional .exec.shared.RecordBatchDef def = 4;</code>
+     * <code>optional .exec.shared.RecordBatchDef def = 6;</code>
      */
     boolean hasDef();
     /**
-     * <code>optional .exec.shared.RecordBatchDef def = 4;</code>
+     * <code>optional .exec.shared.RecordBatchDef def = 6;</code>
      */
     org.apache.drill.exec.proto.UserBitShared.RecordBatchDef getDef();
     /**
-     * <code>optional .exec.shared.RecordBatchDef def = 4;</code>
+     * <code>optional .exec.shared.RecordBatchDef def = 6;</code>
      */
     org.apache.drill.exec.proto.UserBitShared.RecordBatchDefOrBuilder getDefOrBuilder();
 
-    // optional bool isLastBatch = 5;
     /**
-     * <code>optional bool isLastBatch = 5;</code>
+     * <code>optional bool isLastBatch = 7;</code>
      */
     boolean hasIsLastBatch();
     /**
-     * <code>optional bool isLastBatch = 5;</code>
+     * <code>optional bool isLastBatch = 7;</code>
      */
     boolean getIsLastBatch();
 
-    // optional bool isOutOfMemory = 6 [default = false];
     /**
-     * <code>optional bool isOutOfMemory = 6 [default = false];</code>
+     * <code>optional bool isOutOfMemory = 8 [default = false];</code>
      */
     boolean hasIsOutOfMemory();
     /**
-     * <code>optional bool isOutOfMemory = 6 [default = false];</code>
+     * <code>optional bool isOutOfMemory = 8 [default = false];</code>
      */
     boolean getIsOutOfMemory();
   }
@@ -1282,8 +1106,9 @@ public final class BitData {
    * Protobuf type {@code exec.bit.data.FragmentRecordBatch}
    */
   public static final class FragmentRecordBatch extends
-      com.google.protobuf.GeneratedMessage
-      implements FragmentRecordBatchOrBuilder {
+      com.google.protobuf.GeneratedMessage implements
+      // @@protoc_insertion_point(message_implements:exec.bit.data.FragmentRecordBatch)
+      FragmentRecordBatchOrBuilder {
     // Use FragmentRecordBatch.newBuilder() to construct.
     private FragmentRecordBatch(com.google.protobuf.GeneratedMessage.Builder<?> builder) {
       super(builder);
@@ -1330,31 +1155,57 @@ public final class BitData {
               break;
             }
             case 10: {
-              org.apache.drill.exec.proto.ExecProtos.FragmentHandle.Builder subBuilder = null;
+              org.apache.drill.exec.proto.UserBitShared.QueryId.Builder subBuilder = null;
               if (((bitField0_ & 0x00000001) == 0x00000001)) {
-                subBuilder = handle_.toBuilder();
+                subBuilder = queryId_.toBuilder();
               }
-              handle_ = input.readMessage(org.apache.drill.exec.proto.ExecProtos.FragmentHandle.PARSER, extensionRegistry);
+              queryId_ = input.readMessage(org.apache.drill.exec.proto.UserBitShared.QueryId.PARSER, extensionRegistry);
               if (subBuilder != null) {
-                subBuilder.mergeFrom(handle_);
-                handle_ = subBuilder.buildPartial();
+                subBuilder.mergeFrom(queryId_);
+                queryId_ = subBuilder.buildPartial();
               }
               bitField0_ |= 0x00000001;
               break;
             }
             case 16: {
               bitField0_ |= 0x00000002;
-              sendingMajorFragmentId_ = input.readInt32();
+              receivingMajorFragmentId_ = input.readInt32();
               break;
             }
             case 24: {
+              if (!((mutable_bitField0_ & 0x00000004) == 0x00000004)) {
+                receivingMinorFragmentId_ = new java.util.ArrayList<java.lang.Integer>();
+                mutable_bitField0_ |= 0x00000004;
+              }
+              receivingMinorFragmentId_.add(input.readInt32());
+              break;
+            }
+            case 26: {
+              int length = input.readRawVarint32();
+              int limit = input.pushLimit(length);
+              if (!((mutable_bitField0_ & 0x00000004) == 0x00000004) && input.getBytesUntilLimit() > 0) {
+                receivingMinorFragmentId_ = new java.util.ArrayList<java.lang.Integer>();
+                mutable_bitField0_ |= 0x00000004;
+              }
+              while (input.getBytesUntilLimit() > 0) {
+                receivingMinorFragmentId_.add(input.readInt32());
+              }
+              input.popLimit(limit);
+              break;
+            }
+            case 32: {
               bitField0_ |= 0x00000004;
+              sendingMajorFragmentId_ = input.readInt32();
+              break;
+            }
+            case 40: {
+              bitField0_ |= 0x00000008;
               sendingMinorFragmentId_ = input.readInt32();
               break;
             }
-            case 34: {
+            case 50: {
               org.apache.drill.exec.proto.UserBitShared.RecordBatchDef.Builder subBuilder = null;
-              if (((bitField0_ & 0x00000008) == 0x00000008)) {
+              if (((bitField0_ & 0x00000010) == 0x00000010)) {
                 subBuilder = def_.toBuilder();
               }
               def_ = input.readMessage(org.apache.drill.exec.proto.UserBitShared.RecordBatchDef.PARSER, extensionRegistry);
@@ -1362,16 +1213,16 @@ public final class BitData {
                 subBuilder.mergeFrom(def_);
                 def_ = subBuilder.buildPartial();
               }
-              bitField0_ |= 0x00000008;
+              bitField0_ |= 0x00000010;
               break;
             }
-            case 40: {
-              bitField0_ |= 0x00000010;
+            case 56: {
+              bitField0_ |= 0x00000020;
               isLastBatch_ = input.readBool();
               break;
             }
-            case 48: {
-              bitField0_ |= 0x00000020;
+            case 64: {
+              bitField0_ |= 0x00000040;
               isOutOfMemory_ = input.readBool();
               break;
             }
@@ -1383,6 +1234,9 @@ public final class BitData {
         throw new com.google.protobuf.InvalidProtocolBufferException(
             e.getMessage()).setUnfinishedMessage(this);
       } finally {
+        if (((mutable_bitField0_ & 0x00000004) == 0x00000004)) {
+          receivingMinorFragmentId_ = java.util.Collections.unmodifiableList(receivingMinorFragmentId_);
+        }
         this.unknownFields = unknownFields.build();
         makeExtensionsImmutable();
       }
@@ -1415,116 +1269,149 @@ public final class BitData {
     }
 
     private int bitField0_;
-    // optional .exec.bit.FragmentHandle handle = 1;
-    public static final int HANDLE_FIELD_NUMBER = 1;
-    private org.apache.drill.exec.proto.ExecProtos.FragmentHandle handle_;
+    public static final int QUERY_ID_FIELD_NUMBER = 1;
+    private org.apache.drill.exec.proto.UserBitShared.QueryId queryId_;
     /**
-     * <code>optional .exec.bit.FragmentHandle handle = 1;</code>
+     * <code>optional .exec.shared.QueryId query_id = 1;</code>
      */
-    public boolean hasHandle() {
+    public boolean hasQueryId() {
       return ((bitField0_ & 0x00000001) == 0x00000001);
     }
     /**
-     * <code>optional .exec.bit.FragmentHandle handle = 1;</code>
+     * <code>optional .exec.shared.QueryId query_id = 1;</code>
      */
-    public org.apache.drill.exec.proto.ExecProtos.FragmentHandle getHandle() {
-      return handle_;
+    public org.apache.drill.exec.proto.UserBitShared.QueryId getQueryId() {
+      return queryId_;
     }
     /**
-     * <code>optional .exec.bit.FragmentHandle handle = 1;</code>
+     * <code>optional .exec.shared.QueryId query_id = 1;</code>
      */
-    public org.apache.drill.exec.proto.ExecProtos.FragmentHandleOrBuilder getHandleOrBuilder() {
-      return handle_;
+    public org.apache.drill.exec.proto.UserBitShared.QueryIdOrBuilder getQueryIdOrBuilder() {
+      return queryId_;
     }
 
-    // optional int32 sending_major_fragment_id = 2;
-    public static final int SENDING_MAJOR_FRAGMENT_ID_FIELD_NUMBER = 2;
-    private int sendingMajorFragmentId_;
+    public static final int RECEIVING_MAJOR_FRAGMENT_ID_FIELD_NUMBER = 2;
+    private int receivingMajorFragmentId_;
     /**
-     * <code>optional int32 sending_major_fragment_id = 2;</code>
+     * <code>optional int32 receiving_major_fragment_id = 2;</code>
      */
-    public boolean hasSendingMajorFragmentId() {
+    public boolean hasReceivingMajorFragmentId() {
       return ((bitField0_ & 0x00000002) == 0x00000002);
     }
     /**
-     * <code>optional int32 sending_major_fragment_id = 2;</code>
+     * <code>optional int32 receiving_major_fragment_id = 2;</code>
+     */
+    public int getReceivingMajorFragmentId() {
+      return receivingMajorFragmentId_;
+    }
+
+    public static final int RECEIVING_MINOR_FRAGMENT_ID_FIELD_NUMBER = 3;
+    private java.util.List<java.lang.Integer> receivingMinorFragmentId_;
+    /**
+     * <code>repeated int32 receiving_minor_fragment_id = 3;</code>
+     */
+    public java.util.List<java.lang.Integer>
+        getReceivingMinorFragmentIdList() {
+      return receivingMinorFragmentId_;
+    }
+    /**
+     * <code>repeated int32 receiving_minor_fragment_id = 3;</code>
+     */
+    public int getReceivingMinorFragmentIdCount() {
+      return receivingMinorFragmentId_.size();
+    }
+    /**
+     * <code>repeated int32 receiving_minor_fragment_id = 3;</code>
+     */
+    public int getReceivingMinorFragmentId(int index) {
+      return receivingMinorFragmentId_.get(index);
+    }
+
+    public static final int SENDING_MAJOR_FRAGMENT_ID_FIELD_NUMBER = 4;
+    private int sendingMajorFragmentId_;
+    /**
+     * <code>optional int32 sending_major_fragment_id = 4;</code>
+     */
+    public boolean hasSendingMajorFragmentId() {
+      return ((bitField0_ & 0x00000004) == 0x00000004);
+    }
+    /**
+     * <code>optional int32 sending_major_fragment_id = 4;</code>
      */
     public int getSendingMajorFragmentId() {
       return sendingMajorFragmentId_;
     }
 
-    // optional int32 sending_minor_fragment_id = 3;
-    public static final int SENDING_MINOR_FRAGMENT_ID_FIELD_NUMBER = 3;
+    public static final int SENDING_MINOR_FRAGMENT_ID_FIELD_NUMBER = 5;
     private int sendingMinorFragmentId_;
     /**
-     * <code>optional int32 sending_minor_fragment_id = 3;</code>
+     * <code>optional int32 sending_minor_fragment_id = 5;</code>
      */
     public boolean hasSendingMinorFragmentId() {
-      return ((bitField0_ & 0x00000004) == 0x00000004);
+      return ((bitField0_ & 0x00000008) == 0x00000008);
     }
     /**
-     * <code>optional int32 sending_minor_fragment_id = 3;</code>
+     * <code>optional int32 sending_minor_fragment_id = 5;</code>
      */
     public int getSendingMinorFragmentId() {
       return sendingMinorFragmentId_;
     }
 
-    // optional .exec.shared.RecordBatchDef def = 4;
-    public static final int DEF_FIELD_NUMBER = 4;
+    public static final int DEF_FIELD_NUMBER = 6;
     private org.apache.drill.exec.proto.UserBitShared.RecordBatchDef def_;
     /**
-     * <code>optional .exec.shared.RecordBatchDef def = 4;</code>
+     * <code>optional .exec.shared.RecordBatchDef def = 6;</code>
      */
     public boolean hasDef() {
-      return ((bitField0_ & 0x00000008) == 0x00000008);
+      return ((bitField0_ & 0x00000010) == 0x00000010);
     }
     /**
-     * <code>optional .exec.shared.RecordBatchDef def = 4;</code>
+     * <code>optional .exec.shared.RecordBatchDef def = 6;</code>
      */
     public org.apache.drill.exec.proto.UserBitShared.RecordBatchDef getDef() {
       return def_;
     }
     /**
-     * <code>optional .exec.shared.RecordBatchDef def = 4;</code>
+     * <code>optional .exec.shared.RecordBatchDef def = 6;</code>
      */
     public org.apache.drill.exec.proto.UserBitShared.RecordBatchDefOrBuilder getDefOrBuilder() {
       return def_;
     }
 
-    // optional bool isLastBatch = 5;
-    public static final int ISLASTBATCH_FIELD_NUMBER = 5;
+    public static final int ISLASTBATCH_FIELD_NUMBER = 7;
     private boolean isLastBatch_;
     /**
-     * <code>optional bool isLastBatch = 5;</code>
+     * <code>optional bool isLastBatch = 7;</code>
      */
     public boolean hasIsLastBatch() {
-      return ((bitField0_ & 0x00000010) == 0x00000010);
+      return ((bitField0_ & 0x00000020) == 0x00000020);
     }
     /**
-     * <code>optional bool isLastBatch = 5;</code>
+     * <code>optional bool isLastBatch = 7;</code>
      */
     public boolean getIsLastBatch() {
       return isLastBatch_;
     }
 
-    // optional bool isOutOfMemory = 6 [default = false];
-    public static final int ISOUTOFMEMORY_FIELD_NUMBER = 6;
+    public static final int ISOUTOFMEMORY_FIELD_NUMBER = 8;
     private boolean isOutOfMemory_;
     /**
-     * <code>optional bool isOutOfMemory = 6 [default = false];</code>
+     * <code>optional bool isOutOfMemory = 8 [default = false];</code>
      */
     public boolean hasIsOutOfMemory() {
-      return ((bitField0_ & 0x00000020) == 0x00000020);
+      return ((bitField0_ & 0x00000040) == 0x00000040);
     }
     /**
-     * <code>optional bool isOutOfMemory = 6 [default = false];</code>
+     * <code>optional bool isOutOfMemory = 8 [default = false];</code>
      */
     public boolean getIsOutOfMemory() {
       return isOutOfMemory_;
     }
 
     private void initFields() {
-      handle_ = org.apache.drill.exec.proto.ExecProtos.FragmentHandle.getDefaultInstance();
+      queryId_ = org.apache.drill.exec.proto.UserBitShared.QueryId.getDefaultInstance();
+      receivingMajorFragmentId_ = 0;
+      receivingMinorFragmentId_ = java.util.Collections.emptyList();
       sendingMajorFragmentId_ = 0;
       sendingMinorFragmentId_ = 0;
       def_ = org.apache.drill.exec.proto.UserBitShared.RecordBatchDef.getDefaultInstance();
@@ -1534,7 +1421,8 @@ public final class BitData {
     private byte memoizedIsInitialized = -1;
     public final boolean isInitialized() {
       byte isInitialized = memoizedIsInitialized;
-      if (isInitialized != -1) return isInitialized == 1;
+      if (isInitialized == 1) return true;
+      if (isInitialized == 0) return false;
 
       memoizedIsInitialized = 1;
       return true;
@@ -1544,22 +1432,28 @@ public final class BitData {
                         throws java.io.IOException {
       getSerializedSize();
       if (((bitField0_ & 0x00000001) == 0x00000001)) {
-        output.writeMessage(1, handle_);
+        output.writeMessage(1, queryId_);
       }
       if (((bitField0_ & 0x00000002) == 0x00000002)) {
-        output.writeInt32(2, sendingMajorFragmentId_);
+        output.writeInt32(2, receivingMajorFragmentId_);
+      }
+      for (int i = 0; i < receivingMinorFragmentId_.size(); i++) {
+        output.writeInt32(3, receivingMinorFragmentId_.get(i));
       }
       if (((bitField0_ & 0x00000004) == 0x00000004)) {
-        output.writeInt32(3, sendingMinorFragmentId_);
+        output.writeInt32(4, sendingMajorFragmentId_);
       }
       if (((bitField0_ & 0x00000008) == 0x00000008)) {
-        output.writeMessage(4, def_);
+        output.writeInt32(5, sendingMinorFragmentId_);
       }
       if (((bitField0_ & 0x00000010) == 0x00000010)) {
-        output.writeBool(5, isLastBatch_);
+        output.writeMessage(6, def_);
       }
       if (((bitField0_ & 0x00000020) == 0x00000020)) {
-        output.writeBool(6, isOutOfMemory_);
+        output.writeBool(7, isLastBatch_);
+      }
+      if (((bitField0_ & 0x00000040) == 0x00000040)) {
+        output.writeBool(8, isOutOfMemory_);
       }
       getUnknownFields().writeTo(output);
     }
@@ -1572,27 +1466,40 @@ public final class BitData {
       size = 0;
       if (((bitField0_ & 0x00000001) == 0x00000001)) {
         size += com.google.protobuf.CodedOutputStream
-          .computeMessageSize(1, handle_);
+          .computeMessageSize(1, queryId_);
       }
       if (((bitField0_ & 0x00000002) == 0x00000002)) {
         size += com.google.protobuf.CodedOutputStream
-          .computeInt32Size(2, sendingMajorFragmentId_);
+          .computeInt32Size(2, receivingMajorFragmentId_);
+      }
+      {
+        int dataSize = 0;
+        for (int i = 0; i < receivingMinorFragmentId_.size(); i++) {
+          dataSize += com.google.protobuf.CodedOutputStream
+            .computeInt32SizeNoTag(receivingMinorFragmentId_.get(i));
+        }
+        size += dataSize;
+        size += 1 * getReceivingMinorFragmentIdList().size();
       }
       if (((bitField0_ & 0x00000004) == 0x00000004)) {
         size += com.google.protobuf.CodedOutputStream
-          .computeInt32Size(3, sendingMinorFragmentId_);
+          .computeInt32Size(4, sendingMajorFragmentId_);
       }
       if (((bitField0_ & 0x00000008) == 0x00000008)) {
         size += com.google.protobuf.CodedOutputStream
-          .computeMessageSize(4, def_);
+          .computeInt32Size(5, sendingMinorFragmentId_);
       }
       if (((bitField0_ & 0x00000010) == 0x00000010)) {
         size += com.google.protobuf.CodedOutputStream
-          .computeBoolSize(5, isLastBatch_);
+          .computeMessageSize(6, def_);
       }
       if (((bitField0_ & 0x00000020) == 0x00000020)) {
         size += com.google.protobuf.CodedOutputStream
-          .computeBoolSize(6, isOutOfMemory_);
+          .computeBoolSize(7, isLastBatch_);
+      }
+      if (((bitField0_ & 0x00000040) == 0x00000040)) {
+        size += com.google.protobuf.CodedOutputStream
+          .computeBoolSize(8, isOutOfMemory_);
       }
       size += getUnknownFields().getSerializedSize();
       memoizedSerializedSize = size;
@@ -1676,8 +1583,9 @@ public final class BitData {
      * Protobuf type {@code exec.bit.data.FragmentRecordBatch}
      */
     public static final class Builder extends
-        com.google.protobuf.GeneratedMessage.Builder<Builder>
-       implements org.apache.drill.exec.proto.BitData.FragmentRecordBatchOrBuilder {
+        com.google.protobuf.GeneratedMessage.Builder<Builder> implements
+        // @@protoc_insertion_point(builder_implements:exec.bit.data.FragmentRecordBatch)
+        org.apache.drill.exec.proto.BitData.FragmentRecordBatchOrBuilder {
       public static final com.google.protobuf.Descriptors.Descriptor
           getDescriptor() {
         return org.apache.drill.exec.proto.BitData.internal_static_exec_bit_data_FragmentRecordBatch_descriptor;
@@ -1702,7 +1610,7 @@ public final class BitData {
       }
       private void maybeForceBuilderInitialization() {
         if (com.google.protobuf.GeneratedMessage.alwaysUseFieldBuilders) {
-          getHandleFieldBuilder();
+          getQueryIdFieldBuilder();
           getDefFieldBuilder();
         }
       }
@@ -1712,26 +1620,30 @@ public final class BitData {
 
       public Builder clear() {
         super.clear();
-        if (handleBuilder_ == null) {
-          handle_ = org.apache.drill.exec.proto.ExecProtos.FragmentHandle.getDefaultInstance();
+        if (queryIdBuilder_ == null) {
+          queryId_ = org.apache.drill.exec.proto.UserBitShared.QueryId.getDefaultInstance();
         } else {
-          handleBuilder_.clear();
+          queryIdBuilder_.clear();
         }
         bitField0_ = (bitField0_ & ~0x00000001);
-        sendingMajorFragmentId_ = 0;
+        receivingMajorFragmentId_ = 0;
         bitField0_ = (bitField0_ & ~0x00000002);
-        sendingMinorFragmentId_ = 0;
+        receivingMinorFragmentId_ = java.util.Collections.emptyList();
         bitField0_ = (bitField0_ & ~0x00000004);
+        sendingMajorFragmentId_ = 0;
+        bitField0_ = (bitField0_ & ~0x00000008);
+        sendingMinorFragmentId_ = 0;
+        bitField0_ = (bitField0_ & ~0x00000010);
         if (defBuilder_ == null) {
           def_ = org.apache.drill.exec.proto.UserBitShared.RecordBatchDef.getDefaultInstance();
         } else {
           defBuilder_.clear();
         }
-        bitField0_ = (bitField0_ & ~0x00000008);
-        isLastBatch_ = false;
-        bitField0_ = (bitField0_ & ~0x00000010);
-        isOutOfMemory_ = false;
         bitField0_ = (bitField0_ & ~0x00000020);
+        isLastBatch_ = false;
+        bitField0_ = (bitField0_ & ~0x00000040);
+        isOutOfMemory_ = false;
+        bitField0_ = (bitField0_ & ~0x00000080);
         return this;
       }
 
@@ -1763,33 +1675,42 @@ public final class BitData {
         if (((from_bitField0_ & 0x00000001) == 0x00000001)) {
           to_bitField0_ |= 0x00000001;
         }
-        if (handleBuilder_ == null) {
-          result.handle_ = handle_;
+        if (queryIdBuilder_ == null) {
+          result.queryId_ = queryId_;
         } else {
-          result.handle_ = handleBuilder_.build();
+          result.queryId_ = queryIdBuilder_.build();
         }
         if (((from_bitField0_ & 0x00000002) == 0x00000002)) {
           to_bitField0_ |= 0x00000002;
         }
-        result.sendingMajorFragmentId_ = sendingMajorFragmentId_;
-        if (((from_bitField0_ & 0x00000004) == 0x00000004)) {
+        result.receivingMajorFragmentId_ = receivingMajorFragmentId_;
+        if (((bitField0_ & 0x00000004) == 0x00000004)) {
+          receivingMinorFragmentId_ = java.util.Collections.unmodifiableList(receivingMinorFragmentId_);
+          bitField0_ = (bitField0_ & ~0x00000004);
+        }
+        result.receivingMinorFragmentId_ = receivingMinorFragmentId_;
+        if (((from_bitField0_ & 0x00000008) == 0x00000008)) {
           to_bitField0_ |= 0x00000004;
         }
-        result.sendingMinorFragmentId_ = sendingMinorFragmentId_;
-        if (((from_bitField0_ & 0x00000008) == 0x00000008)) {
+        result.sendingMajorFragmentId_ = sendingMajorFragmentId_;
+        if (((from_bitField0_ & 0x00000010) == 0x00000010)) {
           to_bitField0_ |= 0x00000008;
+        }
+        result.sendingMinorFragmentId_ = sendingMinorFragmentId_;
+        if (((from_bitField0_ & 0x00000020) == 0x00000020)) {
+          to_bitField0_ |= 0x00000010;
         }
         if (defBuilder_ == null) {
           result.def_ = def_;
         } else {
           result.def_ = defBuilder_.build();
         }
-        if (((from_bitField0_ & 0x00000010) == 0x00000010)) {
-          to_bitField0_ |= 0x00000010;
+        if (((from_bitField0_ & 0x00000040) == 0x00000040)) {
+          to_bitField0_ |= 0x00000020;
         }
         result.isLastBatch_ = isLastBatch_;
-        if (((from_bitField0_ & 0x00000020) == 0x00000020)) {
-          to_bitField0_ |= 0x00000020;
+        if (((from_bitField0_ & 0x00000080) == 0x00000080)) {
+          to_bitField0_ |= 0x00000040;
         }
         result.isOutOfMemory_ = isOutOfMemory_;
         result.bitField0_ = to_bitField0_;
@@ -1808,8 +1729,21 @@ public final class BitData {
 
       public Builder mergeFrom(org.apache.drill.exec.proto.BitData.FragmentRecordBatch other) {
         if (other == org.apache.drill.exec.proto.BitData.FragmentRecordBatch.getDefaultInstance()) return this;
-        if (other.hasHandle()) {
-          mergeHandle(other.getHandle());
+        if (other.hasQueryId()) {
+          mergeQueryId(other.getQueryId());
+        }
+        if (other.hasReceivingMajorFragmentId()) {
+          setReceivingMajorFragmentId(other.getReceivingMajorFragmentId());
+        }
+        if (!other.receivingMinorFragmentId_.isEmpty()) {
+          if (receivingMinorFragmentId_.isEmpty()) {
+            receivingMinorFragmentId_ = other.receivingMinorFragmentId_;
+            bitField0_ = (bitField0_ & ~0x00000004);
+          } else {
+            ensureReceivingMinorFragmentIdIsMutable();
+            receivingMinorFragmentId_.addAll(other.receivingMinorFragmentId_);
+          }
+          onChanged();
         }
         if (other.hasSendingMajorFragmentId()) {
           setSendingMajorFragmentId(other.getSendingMajorFragmentId());
@@ -1853,201 +1787,295 @@ public final class BitData {
       }
       private int bitField0_;
 
-      // optional .exec.bit.FragmentHandle handle = 1;
-      private org.apache.drill.exec.proto.ExecProtos.FragmentHandle handle_ = org.apache.drill.exec.proto.ExecProtos.FragmentHandle.getDefaultInstance();
+      private org.apache.drill.exec.proto.UserBitShared.QueryId queryId_ = org.apache.drill.exec.proto.UserBitShared.QueryId.getDefaultInstance();
       private com.google.protobuf.SingleFieldBuilder<
-          org.apache.drill.exec.proto.ExecProtos.FragmentHandle, org.apache.drill.exec.proto.ExecProtos.FragmentHandle.Builder, org.apache.drill.exec.proto.ExecProtos.FragmentHandleOrBuilder> handleBuilder_;
+          org.apache.drill.exec.proto.UserBitShared.QueryId, org.apache.drill.exec.proto.UserBitShared.QueryId.Builder, org.apache.drill.exec.proto.UserBitShared.QueryIdOrBuilder> queryIdBuilder_;
       /**
-       * <code>optional .exec.bit.FragmentHandle handle = 1;</code>
+       * <code>optional .exec.shared.QueryId query_id = 1;</code>
        */
-      public boolean hasHandle() {
+      public boolean hasQueryId() {
         return ((bitField0_ & 0x00000001) == 0x00000001);
       }
       /**
-       * <code>optional .exec.bit.FragmentHandle handle = 1;</code>
+       * <code>optional .exec.shared.QueryId query_id = 1;</code>
        */
-      public org.apache.drill.exec.proto.ExecProtos.FragmentHandle getHandle() {
-        if (handleBuilder_ == null) {
-          return handle_;
+      public org.apache.drill.exec.proto.UserBitShared.QueryId getQueryId() {
+        if (queryIdBuilder_ == null) {
+          return queryId_;
         } else {
-          return handleBuilder_.getMessage();
+          return queryIdBuilder_.getMessage();
         }
       }
       /**
-       * <code>optional .exec.bit.FragmentHandle handle = 1;</code>
+       * <code>optional .exec.shared.QueryId query_id = 1;</code>
        */
-      public Builder setHandle(org.apache.drill.exec.proto.ExecProtos.FragmentHandle value) {
-        if (handleBuilder_ == null) {
+      public Builder setQueryId(org.apache.drill.exec.proto.UserBitShared.QueryId value) {
+        if (queryIdBuilder_ == null) {
           if (value == null) {
             throw new NullPointerException();
           }
-          handle_ = value;
+          queryId_ = value;
           onChanged();
         } else {
-          handleBuilder_.setMessage(value);
+          queryIdBuilder_.setMessage(value);
         }
         bitField0_ |= 0x00000001;
         return this;
       }
       /**
-       * <code>optional .exec.bit.FragmentHandle handle = 1;</code>
+       * <code>optional .exec.shared.QueryId query_id = 1;</code>
        */
-      public Builder setHandle(
-          org.apache.drill.exec.proto.ExecProtos.FragmentHandle.Builder builderForValue) {
-        if (handleBuilder_ == null) {
-          handle_ = builderForValue.build();
+      public Builder setQueryId(
+          org.apache.drill.exec.proto.UserBitShared.QueryId.Builder builderForValue) {
+        if (queryIdBuilder_ == null) {
+          queryId_ = builderForValue.build();
           onChanged();
         } else {
-          handleBuilder_.setMessage(builderForValue.build());
+          queryIdBuilder_.setMessage(builderForValue.build());
         }
         bitField0_ |= 0x00000001;
         return this;
       }
       /**
-       * <code>optional .exec.bit.FragmentHandle handle = 1;</code>
+       * <code>optional .exec.shared.QueryId query_id = 1;</code>
        */
-      public Builder mergeHandle(org.apache.drill.exec.proto.ExecProtos.FragmentHandle value) {
-        if (handleBuilder_ == null) {
+      public Builder mergeQueryId(org.apache.drill.exec.proto.UserBitShared.QueryId value) {
+        if (queryIdBuilder_ == null) {
           if (((bitField0_ & 0x00000001) == 0x00000001) &&
-              handle_ != org.apache.drill.exec.proto.ExecProtos.FragmentHandle.getDefaultInstance()) {
-            handle_ =
-              org.apache.drill.exec.proto.ExecProtos.FragmentHandle.newBuilder(handle_).mergeFrom(value).buildPartial();
+              queryId_ != org.apache.drill.exec.proto.UserBitShared.QueryId.getDefaultInstance()) {
+            queryId_ =
+              org.apache.drill.exec.proto.UserBitShared.QueryId.newBuilder(queryId_).mergeFrom(value).buildPartial();
           } else {
-            handle_ = value;
+            queryId_ = value;
           }
           onChanged();
         } else {
-          handleBuilder_.mergeFrom(value);
+          queryIdBuilder_.mergeFrom(value);
         }
         bitField0_ |= 0x00000001;
         return this;
       }
       /**
-       * <code>optional .exec.bit.FragmentHandle handle = 1;</code>
+       * <code>optional .exec.shared.QueryId query_id = 1;</code>
        */
-      public Builder clearHandle() {
-        if (handleBuilder_ == null) {
-          handle_ = org.apache.drill.exec.proto.ExecProtos.FragmentHandle.getDefaultInstance();
+      public Builder clearQueryId() {
+        if (queryIdBuilder_ == null) {
+          queryId_ = org.apache.drill.exec.proto.UserBitShared.QueryId.getDefaultInstance();
           onChanged();
         } else {
-          handleBuilder_.clear();
+          queryIdBuilder_.clear();
         }
         bitField0_ = (bitField0_ & ~0x00000001);
         return this;
       }
       /**
-       * <code>optional .exec.bit.FragmentHandle handle = 1;</code>
+       * <code>optional .exec.shared.QueryId query_id = 1;</code>
        */
-      public org.apache.drill.exec.proto.ExecProtos.FragmentHandle.Builder getHandleBuilder() {
+      public org.apache.drill.exec.proto.UserBitShared.QueryId.Builder getQueryIdBuilder() {
         bitField0_ |= 0x00000001;
         onChanged();
-        return getHandleFieldBuilder().getBuilder();
+        return getQueryIdFieldBuilder().getBuilder();
       }
       /**
-       * <code>optional .exec.bit.FragmentHandle handle = 1;</code>
+       * <code>optional .exec.shared.QueryId query_id = 1;</code>
        */
-      public org.apache.drill.exec.proto.ExecProtos.FragmentHandleOrBuilder getHandleOrBuilder() {
-        if (handleBuilder_ != null) {
-          return handleBuilder_.getMessageOrBuilder();
+      public org.apache.drill.exec.proto.UserBitShared.QueryIdOrBuilder getQueryIdOrBuilder() {
+        if (queryIdBuilder_ != null) {
+          return queryIdBuilder_.getMessageOrBuilder();
         } else {
-          return handle_;
+          return queryId_;
         }
       }
       /**
-       * <code>optional .exec.bit.FragmentHandle handle = 1;</code>
+       * <code>optional .exec.shared.QueryId query_id = 1;</code>
        */
       private com.google.protobuf.SingleFieldBuilder<
-          org.apache.drill.exec.proto.ExecProtos.FragmentHandle, org.apache.drill.exec.proto.ExecProtos.FragmentHandle.Builder, org.apache.drill.exec.proto.ExecProtos.FragmentHandleOrBuilder> 
-          getHandleFieldBuilder() {
-        if (handleBuilder_ == null) {
-          handleBuilder_ = new com.google.protobuf.SingleFieldBuilder<
-              org.apache.drill.exec.proto.ExecProtos.FragmentHandle, org.apache.drill.exec.proto.ExecProtos.FragmentHandle.Builder, org.apache.drill.exec.proto.ExecProtos.FragmentHandleOrBuilder>(
-                  handle_,
+          org.apache.drill.exec.proto.UserBitShared.QueryId, org.apache.drill.exec.proto.UserBitShared.QueryId.Builder, org.apache.drill.exec.proto.UserBitShared.QueryIdOrBuilder> 
+          getQueryIdFieldBuilder() {
+        if (queryIdBuilder_ == null) {
+          queryIdBuilder_ = new com.google.protobuf.SingleFieldBuilder<
+              org.apache.drill.exec.proto.UserBitShared.QueryId, org.apache.drill.exec.proto.UserBitShared.QueryId.Builder, org.apache.drill.exec.proto.UserBitShared.QueryIdOrBuilder>(
+                  getQueryId(),
                   getParentForChildren(),
                   isClean());
-          handle_ = null;
+          queryId_ = null;
         }
-        return handleBuilder_;
+        return queryIdBuilder_;
       }
 
-      // optional int32 sending_major_fragment_id = 2;
-      private int sendingMajorFragmentId_ ;
+      private int receivingMajorFragmentId_ ;
       /**
-       * <code>optional int32 sending_major_fragment_id = 2;</code>
+       * <code>optional int32 receiving_major_fragment_id = 2;</code>
        */
-      public boolean hasSendingMajorFragmentId() {
+      public boolean hasReceivingMajorFragmentId() {
         return ((bitField0_ & 0x00000002) == 0x00000002);
       }
       /**
-       * <code>optional int32 sending_major_fragment_id = 2;</code>
+       * <code>optional int32 receiving_major_fragment_id = 2;</code>
+       */
+      public int getReceivingMajorFragmentId() {
+        return receivingMajorFragmentId_;
+      }
+      /**
+       * <code>optional int32 receiving_major_fragment_id = 2;</code>
+       */
+      public Builder setReceivingMajorFragmentId(int value) {
+        bitField0_ |= 0x00000002;
+        receivingMajorFragmentId_ = value;
+        onChanged();
+        return this;
+      }
+      /**
+       * <code>optional int32 receiving_major_fragment_id = 2;</code>
+       */
+      public Builder clearReceivingMajorFragmentId() {
+        bitField0_ = (bitField0_ & ~0x00000002);
+        receivingMajorFragmentId_ = 0;
+        onChanged();
+        return this;
+      }
+
+      private java.util.List<java.lang.Integer> receivingMinorFragmentId_ = java.util.Collections.emptyList();
+      private void ensureReceivingMinorFragmentIdIsMutable() {
+        if (!((bitField0_ & 0x00000004) == 0x00000004)) {
+          receivingMinorFragmentId_ = new java.util.ArrayList<java.lang.Integer>(receivingMinorFragmentId_);
+          bitField0_ |= 0x00000004;
+         }
+      }
+      /**
+       * <code>repeated int32 receiving_minor_fragment_id = 3;</code>
+       */
+      public java.util.List<java.lang.Integer>
+          getReceivingMinorFragmentIdList() {
+        return java.util.Collections.unmodifiableList(receivingMinorFragmentId_);
+      }
+      /**
+       * <code>repeated int32 receiving_minor_fragment_id = 3;</code>
+       */
+      public int getReceivingMinorFragmentIdCount() {
+        return receivingMinorFragmentId_.size();
+      }
+      /**
+       * <code>repeated int32 receiving_minor_fragment_id = 3;</code>
+       */
+      public int getReceivingMinorFragmentId(int index) {
+        return receivingMinorFragmentId_.get(index);
+      }
+      /**
+       * <code>repeated int32 receiving_minor_fragment_id = 3;</code>
+       */
+      public Builder setReceivingMinorFragmentId(
+          int index, int value) {
+        ensureReceivingMinorFragmentIdIsMutable();
+        receivingMinorFragmentId_.set(index, value);
+        onChanged();
+        return this;
+      }
+      /**
+       * <code>repeated int32 receiving_minor_fragment_id = 3;</code>
+       */
+      public Builder addReceivingMinorFragmentId(int value) {
+        ensureReceivingMinorFragmentIdIsMutable();
+        receivingMinorFragmentId_.add(value);
+        onChanged();
+        return this;
+      }
+      /**
+       * <code>repeated int32 receiving_minor_fragment_id = 3;</code>
+       */
+      public Builder addAllReceivingMinorFragmentId(
+          java.lang.Iterable<? extends java.lang.Integer> values) {
+        ensureReceivingMinorFragmentIdIsMutable();
+        com.google.protobuf.AbstractMessageLite.Builder.addAll(
+            values, receivingMinorFragmentId_);
+        onChanged();
+        return this;
+      }
+      /**
+       * <code>repeated int32 receiving_minor_fragment_id = 3;</code>
+       */
+      public Builder clearReceivingMinorFragmentId() {
+        receivingMinorFragmentId_ = java.util.Collections.emptyList();
+        bitField0_ = (bitField0_ & ~0x00000004);
+        onChanged();
+        return this;
+      }
+
+      private int sendingMajorFragmentId_ ;
+      /**
+       * <code>optional int32 sending_major_fragment_id = 4;</code>
+       */
+      public boolean hasSendingMajorFragmentId() {
+        return ((bitField0_ & 0x00000008) == 0x00000008);
+      }
+      /**
+       * <code>optional int32 sending_major_fragment_id = 4;</code>
        */
       public int getSendingMajorFragmentId() {
         return sendingMajorFragmentId_;
       }
       /**
-       * <code>optional int32 sending_major_fragment_id = 2;</code>
+       * <code>optional int32 sending_major_fragment_id = 4;</code>
        */
       public Builder setSendingMajorFragmentId(int value) {
-        bitField0_ |= 0x00000002;
+        bitField0_ |= 0x00000008;
         sendingMajorFragmentId_ = value;
         onChanged();
         return this;
       }
       /**
-       * <code>optional int32 sending_major_fragment_id = 2;</code>
+       * <code>optional int32 sending_major_fragment_id = 4;</code>
        */
       public Builder clearSendingMajorFragmentId() {
-        bitField0_ = (bitField0_ & ~0x00000002);
+        bitField0_ = (bitField0_ & ~0x00000008);
         sendingMajorFragmentId_ = 0;
         onChanged();
         return this;
       }
 
-      // optional int32 sending_minor_fragment_id = 3;
       private int sendingMinorFragmentId_ ;
       /**
-       * <code>optional int32 sending_minor_fragment_id = 3;</code>
+       * <code>optional int32 sending_minor_fragment_id = 5;</code>
        */
       public boolean hasSendingMinorFragmentId() {
-        return ((bitField0_ & 0x00000004) == 0x00000004);
+        return ((bitField0_ & 0x00000010) == 0x00000010);
       }
       /**
-       * <code>optional int32 sending_minor_fragment_id = 3;</code>
+       * <code>optional int32 sending_minor_fragment_id = 5;</code>
        */
       public int getSendingMinorFragmentId() {
         return sendingMinorFragmentId_;
       }
       /**
-       * <code>optional int32 sending_minor_fragment_id = 3;</code>
+       * <code>optional int32 sending_minor_fragment_id = 5;</code>
        */
       public Builder setSendingMinorFragmentId(int value) {
-        bitField0_ |= 0x00000004;
+        bitField0_ |= 0x00000010;
         sendingMinorFragmentId_ = value;
         onChanged();
         return this;
       }
       /**
-       * <code>optional int32 sending_minor_fragment_id = 3;</code>
+       * <code>optional int32 sending_minor_fragment_id = 5;</code>
        */
       public Builder clearSendingMinorFragmentId() {
-        bitField0_ = (bitField0_ & ~0x00000004);
+        bitField0_ = (bitField0_ & ~0x00000010);
         sendingMinorFragmentId_ = 0;
         onChanged();
         return this;
       }
 
-      // optional .exec.shared.RecordBatchDef def = 4;
       private org.apache.drill.exec.proto.UserBitShared.RecordBatchDef def_ = org.apache.drill.exec.proto.UserBitShared.RecordBatchDef.getDefaultInstance();
       private com.google.protobuf.SingleFieldBuilder<
           org.apache.drill.exec.proto.UserBitShared.RecordBatchDef, org.apache.drill.exec.proto.UserBitShared.RecordBatchDef.Builder, org.apache.drill.exec.proto.UserBitShared.RecordBatchDefOrBuilder> defBuilder_;
       /**
-       * <code>optional .exec.shared.RecordBatchDef def = 4;</code>
+       * <code>optional .exec.shared.RecordBatchDef def = 6;</code>
        */
       public boolean hasDef() {
-        return ((bitField0_ & 0x00000008) == 0x00000008);
+        return ((bitField0_ & 0x00000020) == 0x00000020);
       }
       /**
-       * <code>optional .exec.shared.RecordBatchDef def = 4;</code>
+       * <code>optional .exec.shared.RecordBatchDef def = 6;</code>
        */
       public org.apache.drill.exec.proto.UserBitShared.RecordBatchDef getDef() {
         if (defBuilder_ == null) {
@@ -2057,7 +2085,7 @@ public final class BitData {
         }
       }
       /**
-       * <code>optional .exec.shared.RecordBatchDef def = 4;</code>
+       * <code>optional .exec.shared.RecordBatchDef def = 6;</code>
        */
       public Builder setDef(org.apache.drill.exec.proto.UserBitShared.RecordBatchDef value) {
         if (defBuilder_ == null) {
@@ -2069,11 +2097,11 @@ public final class BitData {
         } else {
           defBuilder_.setMessage(value);
         }
-        bitField0_ |= 0x00000008;
+        bitField0_ |= 0x00000020;
         return this;
       }
       /**
-       * <code>optional .exec.shared.RecordBatchDef def = 4;</code>
+       * <code>optional .exec.shared.RecordBatchDef def = 6;</code>
        */
       public Builder setDef(
           org.apache.drill.exec.proto.UserBitShared.RecordBatchDef.Builder builderForValue) {
@@ -2083,15 +2111,15 @@ public final class BitData {
         } else {
           defBuilder_.setMessage(builderForValue.build());
         }
-        bitField0_ |= 0x00000008;
+        bitField0_ |= 0x00000020;
         return this;
       }
       /**
-       * <code>optional .exec.shared.RecordBatchDef def = 4;</code>
+       * <code>optional .exec.shared.RecordBatchDef def = 6;</code>
        */
       public Builder mergeDef(org.apache.drill.exec.proto.UserBitShared.RecordBatchDef value) {
         if (defBuilder_ == null) {
-          if (((bitField0_ & 0x00000008) == 0x00000008) &&
+          if (((bitField0_ & 0x00000020) == 0x00000020) &&
               def_ != org.apache.drill.exec.proto.UserBitShared.RecordBatchDef.getDefaultInstance()) {
             def_ =
               org.apache.drill.exec.proto.UserBitShared.RecordBatchDef.newBuilder(def_).mergeFrom(value).buildPartial();
@@ -2102,11 +2130,11 @@ public final class BitData {
         } else {
           defBuilder_.mergeFrom(value);
         }
-        bitField0_ |= 0x00000008;
+        bitField0_ |= 0x00000020;
         return this;
       }
       /**
-       * <code>optional .exec.shared.RecordBatchDef def = 4;</code>
+       * <code>optional .exec.shared.RecordBatchDef def = 6;</code>
        */
       public Builder clearDef() {
         if (defBuilder_ == null) {
@@ -2115,19 +2143,19 @@ public final class BitData {
         } else {
           defBuilder_.clear();
         }
-        bitField0_ = (bitField0_ & ~0x00000008);
+        bitField0_ = (bitField0_ & ~0x00000020);
         return this;
       }
       /**
-       * <code>optional .exec.shared.RecordBatchDef def = 4;</code>
+       * <code>optional .exec.shared.RecordBatchDef def = 6;</code>
        */
       public org.apache.drill.exec.proto.UserBitShared.RecordBatchDef.Builder getDefBuilder() {
-        bitField0_ |= 0x00000008;
+        bitField0_ |= 0x00000020;
         onChanged();
         return getDefFieldBuilder().getBuilder();
       }
       /**
-       * <code>optional .exec.shared.RecordBatchDef def = 4;</code>
+       * <code>optional .exec.shared.RecordBatchDef def = 6;</code>
        */
       public org.apache.drill.exec.proto.UserBitShared.RecordBatchDefOrBuilder getDefOrBuilder() {
         if (defBuilder_ != null) {
@@ -2137,7 +2165,7 @@ public final class BitData {
         }
       }
       /**
-       * <code>optional .exec.shared.RecordBatchDef def = 4;</code>
+       * <code>optional .exec.shared.RecordBatchDef def = 6;</code>
        */
       private com.google.protobuf.SingleFieldBuilder<
           org.apache.drill.exec.proto.UserBitShared.RecordBatchDef, org.apache.drill.exec.proto.UserBitShared.RecordBatchDef.Builder, org.apache.drill.exec.proto.UserBitShared.RecordBatchDefOrBuilder> 
@@ -2145,7 +2173,7 @@ public final class BitData {
         if (defBuilder_ == null) {
           defBuilder_ = new com.google.protobuf.SingleFieldBuilder<
               org.apache.drill.exec.proto.UserBitShared.RecordBatchDef, org.apache.drill.exec.proto.UserBitShared.RecordBatchDef.Builder, org.apache.drill.exec.proto.UserBitShared.RecordBatchDefOrBuilder>(
-                  def_,
+                  getDef(),
                   getParentForChildren(),
                   isClean());
           def_ = null;
@@ -2153,67 +2181,65 @@ public final class BitData {
         return defBuilder_;
       }
 
-      // optional bool isLastBatch = 5;
       private boolean isLastBatch_ ;
       /**
-       * <code>optional bool isLastBatch = 5;</code>
+       * <code>optional bool isLastBatch = 7;</code>
        */
       public boolean hasIsLastBatch() {
-        return ((bitField0_ & 0x00000010) == 0x00000010);
+        return ((bitField0_ & 0x00000040) == 0x00000040);
       }
       /**
-       * <code>optional bool isLastBatch = 5;</code>
+       * <code>optional bool isLastBatch = 7;</code>
        */
       public boolean getIsLastBatch() {
         return isLastBatch_;
       }
       /**
-       * <code>optional bool isLastBatch = 5;</code>
+       * <code>optional bool isLastBatch = 7;</code>
        */
       public Builder setIsLastBatch(boolean value) {
-        bitField0_ |= 0x00000010;
+        bitField0_ |= 0x00000040;
         isLastBatch_ = value;
         onChanged();
         return this;
       }
       /**
-       * <code>optional bool isLastBatch = 5;</code>
+       * <code>optional bool isLastBatch = 7;</code>
        */
       public Builder clearIsLastBatch() {
-        bitField0_ = (bitField0_ & ~0x00000010);
+        bitField0_ = (bitField0_ & ~0x00000040);
         isLastBatch_ = false;
         onChanged();
         return this;
       }
 
-      // optional bool isOutOfMemory = 6 [default = false];
       private boolean isOutOfMemory_ ;
       /**
-       * <code>optional bool isOutOfMemory = 6 [default = false];</code>
+       * <code>optional bool isOutOfMemory = 8 [default = false];</code>
        */
       public boolean hasIsOutOfMemory() {
-        return ((bitField0_ & 0x00000020) == 0x00000020);
+        return ((bitField0_ & 0x00000080) == 0x00000080);
       }
       /**
-       * <code>optional bool isOutOfMemory = 6 [default = false];</code>
+       * <code>optional bool isOutOfMemory = 8 [default = false];</code>
        */
       public boolean getIsOutOfMemory() {
         return isOutOfMemory_;
       }
       /**
-       * <code>optional bool isOutOfMemory = 6 [default = false];</code>
+       * <code>optional bool isOutOfMemory = 8 [default = false];</code>
        */
       public Builder setIsOutOfMemory(boolean value) {
-        bitField0_ |= 0x00000020;
+        bitField0_ |= 0x00000080;
         isOutOfMemory_ = value;
         onChanged();
         return this;
       }
       /**
-       * <code>optional bool isOutOfMemory = 6 [default = false];</code>
+       * <code>optional bool isOutOfMemory = 8 [default = false];</code>
        */
       public Builder clearIsOutOfMemory() {
-        bitField0_ = (bitField0_ & ~0x00000020);
+        bitField0_ = (bitField0_ & ~0x00000080);
         isOutOfMemory_ = false;
         onChanged();
         return this;
@@ -2230,17 +2256,17 @@ public final class BitData {
     // @@protoc_insertion_point(class_scope:exec.bit.data.FragmentRecordBatch)
   }
 
-  private static com.google.protobuf.Descriptors.Descriptor
+  private static final com.google.protobuf.Descriptors.Descriptor
     internal_static_exec_bit_data_BitClientHandshake_descriptor;
   private static
     com.google.protobuf.GeneratedMessage.FieldAccessorTable
       internal_static_exec_bit_data_BitClientHandshake_fieldAccessorTable;
-  private static com.google.protobuf.Descriptors.Descriptor
+  private static final com.google.protobuf.Descriptors.Descriptor
     internal_static_exec_bit_data_BitServerHandshake_descriptor;
   private static
     com.google.protobuf.GeneratedMessage.FieldAccessorTable
       internal_static_exec_bit_data_BitServerHandshake_fieldAccessorTable;
-  private static com.google.protobuf.Descriptors.Descriptor
+  private static final com.google.protobuf.Descriptors.Descriptor
     internal_static_exec_bit_data_FragmentRecordBatch_descriptor;
   private static
     com.google.protobuf.GeneratedMessage.FieldAccessorTable
@@ -2256,47 +2282,30 @@ public final class BitData {
     java.lang.String[] descriptorData = {
       "\n\rBitData.proto\022\rexec.bit.data\032\025Executio" +
       "nProtos.proto\032\022Coordination.proto\032\023UserB" +
-      "itShared.proto\"\207\001\n\022BitClientHandshake\022\023\n" +
-      "\013rpc_version\030\001 \001(\005\0222\n\007channel\030\002 \001(\0162\027.ex" +
-      "ec.shared.RpcChannel:\010BIT_DATA\022(\n\006handle" +
-      "\030\003 \001(\0132\030.exec.bit.FragmentHandle\")\n\022BitS" +
-      "erverHandshake\022\023\n\013rpc_version\030\001 \001(\005\"\342\001\n\023" +
-      "FragmentRecordBatch\022(\n\006handle\030\001 \001(\0132\030.ex" +
-      "ec.bit.FragmentHandle\022!\n\031sending_major_f" +
-      "ragment_id\030\002 \001(\005\022!\n\031sending_minor_fragme",
-      "nt_id\030\003 \001(\005\022(\n\003def\030\004 \001(\0132\033.exec.shared.R" +
-      "ecordBatchDef\022\023\n\013isLastBatch\030\005 \001(\010\022\034\n\ris" +
-      "OutOfMemory\030\006 \001(\010:\005false*D\n\007RpcType\022\r\n\tH" +
-      "ANDSHAKE\020\000\022\007\n\003ACK\020\001\022\013\n\007GOODBYE\020\002\022\024\n\020REQ_" +
-      "RECORD_BATCH\020\003B(\n\033org.apache.drill.exec." +
-      "protoB\007BitDataH\001"
+      "itShared.proto\"]\n\022BitClientHandshake\022\023\n\013" +
+      "rpc_version\030\001 \001(\005\0222\n\007channel\030\002 \001(\0162\027.exe" +
+      "c.shared.RpcChannel:\010BIT_DATA\")\n\022BitServ" +
+      "erHandshake\022\023\n\013rpc_version\030\001 \001(\005\"\252\002\n\023Fra" +
+      "gmentRecordBatch\022&\n\010query_id\030\001 \001(\0132\024.exe" +
+      "c.shared.QueryId\022#\n\033receiving_major_frag" +
+      "ment_id\030\002 \001(\005\022#\n\033receiving_minor_fragmen" +
+      "t_id\030\003 \003(\005\022!\n\031sending_major_fragment_id\030",
+      "\004 \001(\005\022!\n\031sending_minor_fragment_id\030\005 \001(\005" +
+      "\022(\n\003def\030\006 \001(\0132\033.exec.shared.RecordBatchD" +
+      "ef\022\023\n\013isLastBatch\030\007 \001(\010\022\034\n\risOutOfMemory" +
+      "\030\010 \001(\010:\005false*D\n\007RpcType\022\r\n\tHANDSHAKE\020\000\022" +
+      "\007\n\003ACK\020\001\022\013\n\007GOODBYE\020\002\022\024\n\020REQ_RECORD_BATC" +
+      "H\020\003B(\n\033org.apache.drill.exec.protoB\007BitD" +
+      "ataH\001"
     };
     com.google.protobuf.Descriptors.FileDescriptor.InternalDescriptorAssigner assigner =
-      new com.google.protobuf.Descriptors.FileDescriptor.InternalDescriptorAssigner() {
-        public com.google.protobuf.ExtensionRegistry assignDescriptors(
-            com.google.protobuf.Descriptors.FileDescriptor root) {
-          descriptor = root;
-          internal_static_exec_bit_data_BitClientHandshake_descriptor =
-            getDescriptor().getMessageTypes().get(0);
-          internal_static_exec_bit_data_BitClientHandshake_fieldAccessorTable = new
-            com.google.protobuf.GeneratedMessage.FieldAccessorTable(
-              internal_static_exec_bit_data_BitClientHandshake_descriptor,
-              new java.lang.String[] { "RpcVersion", "Channel", "Handle", });
-          internal_static_exec_bit_data_BitServerHandshake_descriptor =
-            getDescriptor().getMessageTypes().get(1);
-          internal_static_exec_bit_data_BitServerHandshake_fieldAccessorTable = new
-            com.google.protobuf.GeneratedMessage.FieldAccessorTable(
-              internal_static_exec_bit_data_BitServerHandshake_descriptor,
-              new java.lang.String[] { "RpcVersion", });
-          internal_static_exec_bit_data_FragmentRecordBatch_descriptor =
-            getDescriptor().getMessageTypes().get(2);
-          internal_static_exec_bit_data_FragmentRecordBatch_fieldAccessorTable = new
-            com.google.protobuf.GeneratedMessage.FieldAccessorTable(
-              internal_static_exec_bit_data_FragmentRecordBatch_descriptor,
-              new java.lang.String[] { "Handle", "SendingMajorFragmentId", "SendingMinorFragmentId", "Def", "IsLastBatch", "IsOutOfMemory", });
-          return null;
-        }
-      };
+        new com.google.protobuf.Descriptors.FileDescriptor.    InternalDescriptorAssigner() {
+          public com.google.protobuf.ExtensionRegistry assignDescriptors(
+              com.google.protobuf.Descriptors.FileDescriptor root) {
+            descriptor = root;
+            return null;
+          }
+        };
     com.google.protobuf.Descriptors.FileDescriptor
       .internalBuildGeneratedFileFrom(descriptorData,
         new com.google.protobuf.Descriptors.FileDescriptor[] {
@@ -2304,6 +2313,27 @@ public final class BitData {
           org.apache.drill.exec.proto.CoordinationProtos.getDescriptor(),
           org.apache.drill.exec.proto.UserBitShared.getDescriptor(),
         }, assigner);
+    internal_static_exec_bit_data_BitClientHandshake_descriptor =
+      getDescriptor().getMessageTypes().get(0);
+    internal_static_exec_bit_data_BitClientHandshake_fieldAccessorTable = new
+      com.google.protobuf.GeneratedMessage.FieldAccessorTable(
+        internal_static_exec_bit_data_BitClientHandshake_descriptor,
+        new java.lang.String[] { "RpcVersion", "Channel", });
+    internal_static_exec_bit_data_BitServerHandshake_descriptor =
+      getDescriptor().getMessageTypes().get(1);
+    internal_static_exec_bit_data_BitServerHandshake_fieldAccessorTable = new
+      com.google.protobuf.GeneratedMessage.FieldAccessorTable(
+        internal_static_exec_bit_data_BitServerHandshake_descriptor,
+        new java.lang.String[] { "RpcVersion", });
+    internal_static_exec_bit_data_FragmentRecordBatch_descriptor =
+      getDescriptor().getMessageTypes().get(2);
+    internal_static_exec_bit_data_FragmentRecordBatch_fieldAccessorTable = new
+      com.google.protobuf.GeneratedMessage.FieldAccessorTable(
+        internal_static_exec_bit_data_FragmentRecordBatch_descriptor,
+        new java.lang.String[] { "QueryId", "ReceivingMajorFragmentId", "ReceivingMinorFragmentId", "SendingMajorFragmentId", "SendingMinorFragmentId", "Def", "IsLastBatch", "IsOutOfMemory", });
+    org.apache.drill.exec.proto.ExecProtos.getDescriptor();
+    org.apache.drill.exec.proto.CoordinationProtos.getDescriptor();
+    org.apache.drill.exec.proto.UserBitShared.getDescriptor();
   }
 
   // @@protoc_insertion_point(outer_class_scope)

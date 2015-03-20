@@ -33,7 +33,7 @@ public class ${className} {
 
 <#list extract.fromTypes as fromUnit>
 <#list extract.toTypes as toUnit>
-<#if fromUnit == "Date" || fromUnit == "Time" || fromUnit == "TimeStamp" || fromUnit == "TimeStampTZ">
+<#if fromUnit == "Date" || fromUnit == "Time" || fromUnit == "TimeStamp">
 <#if !(fromUnit == "Time" && (toUnit == "Year" || toUnit == "Month" || toUnit == "Day"))>
   @FunctionTemplate(name = "extract${toUnit}", scope = FunctionTemplate.FunctionScope.SIMPLE,
       nulls = FunctionTemplate.NullHandling.NULL_IF_NULL)
@@ -47,16 +47,12 @@ public class ${className} {
     </#if>
     @Workspace org.joda.time.MutableDateTime dateTime;
 
-    public void setup(RecordBatch incoming) {
+    public void setup() {
       dateTime = new org.joda.time.MutableDateTime(org.joda.time.DateTimeZone.UTC);
     }
 
     public void eval() {
       dateTime.setMillis(in.value);
-
-    <#if fromUnit == "TimeStampTZ">
-      dateTime.setZoneRetainFields(org.joda.time.DateTimeZone.forID(org.apache.drill.exec.expr.fn.impl.DateUtility.timezoneList[in.index]));
-    </#if>
 
     <#if toUnit == "Second">
       out.value = dateTime.getSecondOfMinute();
@@ -87,7 +83,7 @@ public class ${className} {
     @Output BigIntHolder out;
     </#if>
 
-    public void setup(RecordBatch incoming) { }
+    public void setup() { }
 
     public void eval() {
   <#if fromUnit == "Interval">

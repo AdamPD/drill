@@ -32,13 +32,10 @@ import org.apache.drill.exec.expr.holders.RepeatedBitHolder;
 import org.apache.drill.exec.expr.holders.RepeatedFloat4Holder;
 import org.apache.drill.exec.expr.holders.RepeatedFloat8Holder;
 import org.apache.drill.exec.expr.holders.RepeatedIntHolder;
-import org.apache.drill.exec.expr.holders.RepeatedListHolder;
-import org.apache.drill.exec.expr.holders.RepeatedMapHolder;
 import org.apache.drill.exec.expr.holders.RepeatedTinyIntHolder;
 import org.apache.drill.exec.expr.holders.RepeatedVarCharHolder;
 import org.apache.drill.exec.expr.holders.TinyIntHolder;
 import org.apache.drill.exec.expr.holders.VarCharHolder;
-import org.apache.drill.exec.record.RecordBatch;
 
 public class SimpleRepeatedFunctions {
 
@@ -57,7 +54,7 @@ public class SimpleRepeatedFunctions {
     @Output
     IntHolder out;
 
-    public void setup(RecordBatch b) {
+    public void setup() {
     }
 
     public void eval() {
@@ -72,7 +69,7 @@ public class SimpleRepeatedFunctions {
     @Output
     IntHolder out;
 
-    public void setup(RecordBatch b) {
+    public void setup() {
     }
 
     public void eval() {
@@ -90,7 +87,7 @@ public class SimpleRepeatedFunctions {
     @Output
     IntHolder out;
 
-    public void setup(RecordBatch b) {
+    public void setup() {
     }
 
     public void eval() {
@@ -107,7 +104,7 @@ public class SimpleRepeatedFunctions {
     @Output
     IntHolder out;
 
-    public void setup(RecordBatch b) {
+    public void setup() {
     }
 
     public void eval() {
@@ -124,7 +121,7 @@ public class SimpleRepeatedFunctions {
     @Output
     IntHolder out;
 
-    public void setup(RecordBatch b) {
+    public void setup() {
     }
 
     public void eval() {
@@ -140,7 +137,7 @@ public class SimpleRepeatedFunctions {
     @Output
     IntHolder out;
 
-    public void setup(RecordBatch b) {
+    public void setup() {
     }
 
     public void eval() {
@@ -156,7 +153,7 @@ public class SimpleRepeatedFunctions {
     @Output
     IntHolder out;
 
-    public void setup(RecordBatch b) {
+    public void setup() {
     }
 
     public void eval() {
@@ -170,7 +167,7 @@ public class SimpleRepeatedFunctions {
     @Param RepeatedIntHolder input;
     @Output IntHolder out;
 
-    public void setup(RecordBatch b) {
+    public void setup() {
     }
 
     public void eval() {
@@ -184,7 +181,7 @@ public class SimpleRepeatedFunctions {
     @Param RepeatedVarCharHolder input;
     @Output IntHolder out;
 
-    public void setup(RecordBatch b) {
+    public void setup() {
     }
 
     public void eval() {
@@ -199,7 +196,7 @@ public class SimpleRepeatedFunctions {
     @Param BigIntHolder targetValue;
     @Output BitHolder out;
 
-    public void setup(RecordBatch b) {
+    public void setup() {
     }
 
     public void eval() {
@@ -221,7 +218,7 @@ public class SimpleRepeatedFunctions {
     @Param IntHolder targetValue;
     @Output BitHolder out;
 
-    public void setup(RecordBatch b) {
+    public void setup() {
     }
 
     public void eval() {
@@ -243,7 +240,7 @@ public class SimpleRepeatedFunctions {
     @Param TinyIntHolder targetValue;
     @Output BitHolder out;
 
-    public void setup(RecordBatch b) {
+    public void setup() {
     }
 
     public void eval() {
@@ -264,7 +261,7 @@ public class SimpleRepeatedFunctions {
     @Param BitHolder targetValue;
     @Output BitHolder out;
 
-    public void setup(RecordBatch b) {
+    public void setup() {
     }
 
     public void eval() {
@@ -286,7 +283,7 @@ public class SimpleRepeatedFunctions {
     @Param Float4Holder targetValue;
     @Output BitHolder out;
 
-    public void setup(RecordBatch b) {
+    public void setup() {
     }
 
     public void eval() {
@@ -308,7 +305,7 @@ public class SimpleRepeatedFunctions {
     @Param Float8Holder targetValue;
     @Output BitHolder out;
 
-    public void setup(RecordBatch b) {
+    public void setup() {
     }
 
     public void eval() {
@@ -329,26 +326,27 @@ public class SimpleRepeatedFunctions {
     @Param RepeatedVarCharHolder listToSearch;
     @Param VarCharHolder targetValue;
     @Workspace VarCharHolder currVal;
+    @Workspace java.util.regex.Matcher matcher;
 
     @Output BitHolder out;
 
-    public void setup(RecordBatch b) {
+    public void setup() {
       currVal = new VarCharHolder();
+      matcher = java.util.regex.Pattern.compile(
+          org.apache.drill.exec.expr.fn.impl.StringFunctionHelpers.toStringFromUTF8(targetValue.start,  targetValue.end,  targetValue.buffer)).matcher("");
     }
 
     public void eval() {
       for (int i = listToSearch.start; i < listToSearch.end; i++) {
         out.value = 0;
         listToSearch.vector.getAccessor().get(i, currVal);
-        if (org.apache.drill.exec.expr.fn.impl.ByteFunctionHelpers.compare(
-            currVal.buffer, currVal.start, currVal.end, targetValue.buffer, targetValue.start, targetValue.end) == 0 ) {
-          out.value = 1;
-          break;
-        }
-      }
+        String in = org.apache.drill.exec.expr.fn.impl.StringFunctionHelpers.toStringFromUTF8(currVal.start, currVal.end, currVal.buffer);
+        matcher.reset(in);
+          if(matcher.find()) {
+             out.value = 1;
+             break;
+          }
+       }
     }
-
   }
-
-
 }

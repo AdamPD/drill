@@ -23,7 +23,6 @@ import java.util.List;
 
 import org.apache.drill.common.exceptions.ExecutionSetupException;
 import org.apache.drill.exec.ExecConstants;
-import org.apache.drill.exec.exception.SchemaChangeException;
 import org.apache.drill.exec.memory.OutOfMemoryException;
 import org.apache.drill.exec.ops.FragmentContext;
 import org.apache.drill.exec.ops.MetricDef;
@@ -58,7 +57,7 @@ public class ScreenCreator implements RootCreator<Screen>{
 
 
   static class ScreenRoot extends BaseRootExec {
-    static final org.slf4j.Logger logger = org.slf4j.LoggerFactory.getLogger(ScreenRoot.class);
+//    private static final org.slf4j.Logger logger = org.slf4j.LoggerFactory.getLogger(ScreenRoot.class);
     volatile boolean ok = true;
 
     private final SendingAccountor sendCount = new SendingAccountor();
@@ -67,7 +66,6 @@ public class ScreenCreator implements RootCreator<Screen>{
     final FragmentContext context;
     final UserClientConnection connection;
     private RecordMaterializer materializer;
-    private boolean first = true;
 
     public enum Metric implements MetricDef {
       BYTES_SENT;
@@ -80,6 +78,7 @@ public class ScreenCreator implements RootCreator<Screen>{
 
     public ScreenRoot(FragmentContext context, RecordBatch incoming, Screen config) throws OutOfMemoryException {
       super(context, config);
+      // TODO  Edit:  That "as such" doesn't make sense.
       assert context.getConnection() != null : "A screen root should only be run on the driving node which is connected directly to the client.  As such, this should always be true.";
       this.context = context;
       this.incoming = incoming;
@@ -88,15 +87,15 @@ public class ScreenCreator implements RootCreator<Screen>{
 
     @Override
     public boolean innerNext() {
-      if(!ok){
+      if (!ok) {
         stop();
         context.fail(this.listener.ex);
         return false;
       }
 
       IterOutcome outcome = next(incoming);
-//      logger.debug("Screen Outcome {}", outcome);
-      switch(outcome){
+      logger.trace("Screen Outcome {}", outcome);
+      switch (outcome) {
       case STOP: {
         this.internalStop();
         boolean verbose = context.getOptions().getOption(ExecConstants.ENABLE_VERBOSE_ERRORS_KEY).bool_val;
@@ -146,7 +145,7 @@ public class ScreenCreator implements RootCreator<Screen>{
       }
       case OK_NEW_SCHEMA:
         materializer = new VectorRecordMaterializer(context, incoming);
-        // fall through.
+        //$FALL-THROUGH$
       case OK:
 //        context.getStats().batchesCompleted.inc(1);
 //        context.getStats().recordsCompleted.inc(incoming.getRecordCount());
@@ -160,7 +159,6 @@ public class ScreenCreator implements RootCreator<Screen>{
         }
         sendCount.increment();
 
-        first = false;
         return true;
       default:
         throw new UnsupportedOperationException();
@@ -180,7 +178,7 @@ public class ScreenCreator implements RootCreator<Screen>{
 
     @Override
     public void stop() {
-      if(!oContext.isClosed()){
+      if (!oContext.isClosed()) {
         internalStop();
       }
       sendCount.waitForSendComplete();
@@ -214,7 +212,6 @@ public class ScreenCreator implements RootCreator<Screen>{
     RecordBatch getIncoming() {
       return incoming;
     }
-
 
 
   }

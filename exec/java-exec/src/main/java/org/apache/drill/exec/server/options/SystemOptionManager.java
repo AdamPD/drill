@@ -26,6 +26,7 @@ import java.util.concurrent.ConcurrentMap;
 import org.apache.commons.collections.IteratorUtils;
 import org.apache.drill.common.config.DrillConfig;
 import org.apache.drill.exec.ExecConstants;
+import org.apache.drill.exec.compile.ClassTransformer;
 import org.apache.drill.exec.compile.QueryClassLoader;
 import org.apache.drill.exec.planner.physical.PlannerSettings;
 import org.apache.drill.exec.server.options.OptionValue.OptionType;
@@ -37,10 +38,9 @@ import org.eigenbase.sql.SqlLiteral;
 import com.google.common.collect.Maps;
 
 public class SystemOptionManager implements OptionManager {
+  private static final org.slf4j.Logger logger = org.slf4j.LoggerFactory.getLogger(SystemOptionManager.class);
 
-  static final org.slf4j.Logger logger = org.slf4j.LoggerFactory.getLogger(SystemOptionManager.class);
-
-  private final OptionValidator[] VALIDATORS = {
+  private static final OptionValidator[] VALIDATORS = {
       PlannerSettings.EXCHANGE,
       PlannerSettings.HASHAGG,
       PlannerSettings.STREAMAGG,
@@ -49,13 +49,19 @@ public class SystemOptionManager implements OptionManager {
       PlannerSettings.MULTIPHASE,
       PlannerSettings.BROADCAST,
       PlannerSettings.BROADCAST_THRESHOLD,
+      PlannerSettings.BROADCAST_FACTOR,
       PlannerSettings.JOIN_ROW_COUNT_ESTIMATE_FACTOR,
+      PlannerSettings.MUX_EXCHANGE,
+      PlannerSettings.DEMUX_EXCHANGE,
       PlannerSettings.PRODUCER_CONSUMER,
       PlannerSettings.PRODUCER_CONSUMER_QUEUE_SIZE,
       PlannerSettings.HASH_SINGLE_KEY,
       PlannerSettings.IDENTIFIER_MAX_LENGTH,
       PlannerSettings.HASH_JOIN_SWAP,
       PlannerSettings.HASH_JOIN_SWAP_MARGIN_FACTOR,
+      PlannerSettings.PARTITION_SENDER_THREADS_FACTOR,
+      PlannerSettings.PARTITION_SENDER_MAX_THREADS,
+      PlannerSettings.PARTITION_SENDER_SET_THREADS,
       ExecConstants.CAST_TO_NULLABLE_NUMERIC_OPTION,
       ExecConstants.OUTPUT_FORMAT_VALIDATOR,
       ExecConstants.PARQUET_BLOCK_SIZE_VALIDATOR,
@@ -89,79 +95,79 @@ public class SystemOptionManager implements OptionManager {
       QueryClassLoader.JAVA_COMPILER_VALIDATOR,
       QueryClassLoader.JAVA_COMPILER_JANINO_MAXSIZE,
       QueryClassLoader.JAVA_COMPILER_DEBUG,
-      ExecConstants.ENABLE_VERBOSE_ERRORS
+      ExecConstants.ENABLE_VERBOSE_ERRORS,
+      ExecConstants.ENABLE_WINDOW_FUNCTIONS_VALIDATOR,
+      ExecConstants.DRILLBIT_EXCEPTION_INJECTIONS_VALIDATOR,
+      ClassTransformer.SCALAR_REPLACEMENT_VALIDATOR,
   };
 
-  public final PStoreConfig<OptionValue> config;
-
+  private final PStoreConfig<OptionValue> config;
   private PStore<OptionValue> options;
   private SystemOptionAdmin admin;
   private final ConcurrentMap<String, OptionValidator> knownOptions = Maps.newConcurrentMap();
   private final PStoreProvider provider;
 
-  public SystemOptionManager(DrillConfig config, PStoreProvider provider) {
+  public SystemOptionManager(final DrillConfig config, final PStoreProvider provider) {
     this.provider = provider;
-    this.config =  PStoreConfig //
-        .newJacksonBuilder(config.getMapper(), OptionValue.class) //
-        .name("sys.options") //
+    this.config =  PStoreConfig.newJacksonBuilder(config.getMapper(), OptionValue.class)
+        .name("sys.options")
         .build();
   }
 
-  public SystemOptionManager init() throws IOException{
-    this.options = provider.getStore(config);
-    this.admin = new SystemOptionAdmin();
+  public SystemOptionManager init() throws IOException {
+    options = provider.getStore(config);
+    admin = new SystemOptionAdmin();
     return this;
   }
 
   @Override
   public Iterator<OptionValue> iterator() {
-    Map<String, OptionValue> buildList = Maps.newHashMap();
+    final Map<String, OptionValue> buildList = Maps.newHashMap();
     for(OptionValidator v : knownOptions.values()){
       buildList.put(v.getOptionName(), v.getDefault());
     }
     for(Map.Entry<String, OptionValue> v : options){
-      OptionValue value = v.getValue();
+      final OptionValue value = v.getValue();
       buildList.put(value.name, value);
     }
     return buildList.values().iterator();
   }
 
   @Override
-  public OptionValue getOption(String name) {
+  public OptionValue getOption(final String name) {
     // check local space
-    OptionValue v = options.get(name);
+    final OptionValue v = options.get(name);
     if(v != null){
       return v;
     }
 
     // otherwise, return default.
     OptionValidator validator = knownOptions.get(name);
-    if(validator == null){
+    if(validator == null) {
       return null;
-    }else{
+    } else {
       return validator.getDefault();
     }
   }
 
   @Override
-  public void setOption(OptionValue value) {
+  public void setOption(final OptionValue value) {
     assert value.type == OptionType.SYSTEM;
     admin.validate(value);
     setOptionInternal(value);
   }
 
-  private void setOptionInternal(OptionValue value){
-    if(!value.equals(knownOptions.get(value.name))){
+  private void setOptionInternal(final OptionValue value) {
+    if (!value.equals(knownOptions.get(value.name))) {
       options.put(value.name, value);
     }
   }
 
 
   @Override
-  public void setOption(String name, SqlLiteral literal, OptionType type) {
-    assert type == OptionValue.OptionType.SYSTEM;
-    OptionValue v = admin.validate(name, literal);
-    v.type = type;
+  public void setOption(final String name, final SqlLiteral literal, final OptionType type) {
+    assert type == OptionValue.OptionType.SYSTEM || type == OptionValue.OptionType.SESSION;
+    final OptionValue v = admin.validate(name, literal, type);
     setOptionInternal(v);
   }
 
@@ -180,40 +186,34 @@ public class SystemOptionManager implements OptionManager {
     return admin;
   }
 
-  private class SystemOptionAdmin implements OptionAdmin{
-
+  private class SystemOptionAdmin implements OptionAdmin {
     public SystemOptionAdmin() {
       for(OptionValidator v : VALIDATORS) {
         knownOptions.put(v.getOptionName(), v);
       }
 
-      for(Entry<String, OptionValue> v : options){
-        OptionValue value = v.getValue();
-        OptionValidator defaultValidator = knownOptions.get(v.getKey());
-        if(defaultValidator == null){
+      for(Entry<String, OptionValue> v : options) {
+        final OptionValue value = v.getValue();
+        final OptionValidator defaultValidator = knownOptions.get(v.getKey());
+        if (defaultValidator == null) {
           // deprecated option, delete.
           options.delete(value.name);
           logger.warn("Deleting deprecated option `{}`.", value.name);
-        }else if(value.equals(defaultValidator)){
-          // option set with default value, remove storage of record.
-          options.delete(value.name);
-          logger.warn("Deleting option `{}` set to default value.", value.name);
         }
-
-      }
-
-    }
-
-    @Override
-    public void registerOptionType(OptionValidator validator) {
-      if (null != knownOptions.putIfAbsent(validator.getOptionName(), validator) ) {
-        throw new IllegalArgumentException("Only one option is allowed to be registered with name: " + validator.getOptionName());
       }
     }
 
     @Override
-    public void validate(OptionValue v) throws SetOptionException {
-      OptionValidator validator = knownOptions.get(v.name);
+    public void registerOptionType(final OptionValidator validator) {
+      if (null != knownOptions.putIfAbsent(validator.getOptionName(), validator)) {
+        throw new IllegalArgumentException("Only one option is allowed to be registered with name: "
+            + validator.getOptionName());
+      }
+    }
+
+    @Override
+    public void validate(final OptionValue v) throws SetOptionException {
+      final OptionValidator validator = knownOptions.get(v.name);
       if (validator == null) {
         throw new SetOptionException("Unknown option " + v.name);
       }
@@ -221,14 +221,13 @@ public class SystemOptionManager implements OptionManager {
     }
 
     @Override
-    public OptionValue validate(String name, SqlLiteral value) throws SetOptionException {
-      OptionValidator validator = knownOptions.get(name);
+    public OptionValue validate(final String name, final SqlLiteral value, final OptionType optionType)
+        throws SetOptionException {
+      final OptionValidator validator = knownOptions.get(name);
       if (validator == null) {
         throw new SetOptionException("Unknown option: " + name);
       }
-      return validator.validate(value);
+      return validator.validate(value, optionType);
     }
-
   }
-
 }

@@ -162,6 +162,7 @@ public class SpoolingRawBatchBuffer implements RawBatchBuffer {
         return batch;
       } catch (InterruptedException e) {
         return null;
+        // TODO InterruptedException
       }
     }
     if (w == null) {
@@ -271,7 +272,7 @@ public class SpoolingRawBatchBuffer implements RawBatchBuffer {
       BitData.FragmentRecordBatch header = BitData.FragmentRecordBatch.parseDelimitedFrom(stream);
       DrillBuf buf = allocator.buffer(bodyLength);
       buf.writeBytes(stream, bodyLength);
-      batch = new RawFragmentBatch(null, header, buf, null);
+      batch = new RawFragmentBatch(header, buf, null);
       buf.release();
       available = true;
       latch.countDown();

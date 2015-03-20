@@ -49,23 +49,24 @@ import org.apache.drill.exec.expr.holders.NullableIntervalHolder;
 import org.apache.drill.exec.expr.holders.NullableIntervalYearHolder;
 import org.apache.drill.exec.expr.holders.NullableTimeHolder;
 import org.apache.drill.exec.expr.holders.NullableTimeStampHolder;
-import org.apache.drill.exec.expr.holders.NullableTimeStampTZHolder;
 import org.apache.drill.exec.expr.holders.NullableVarBinaryHolder;
 import org.apache.drill.exec.expr.holders.NullableVarCharHolder;
 import org.apache.drill.exec.expr.holders.TimeHolder;
 import org.apache.drill.exec.expr.holders.TimeStampHolder;
-import org.apache.drill.exec.expr.holders.TimeStampTZHolder;
 import org.apache.drill.exec.expr.holders.VarBinaryHolder;
 import org.apache.drill.exec.expr.holders.VarCharHolder;
 
 import com.google.common.collect.ImmutableSet;
 
+/**
+ * Reference list of classes we will perform scalar replacement on.
+ */
 public class ScalarReplacementTypes {
-
-  private ScalarReplacementTypes(){}
+  // This class only has static utilities.
+  private ScalarReplacementTypes() {
+  }
 
   static {
-
     Class<?>[] classList = {
         BitHolder.class,
         IntHolder.class,
@@ -84,7 +85,6 @@ public class ScalarReplacementTypes {
         DateHolder.class,
         TimeHolder.class,
         TimeStampHolder.class,
-        TimeStampTZHolder.class,
         VarCharHolder.class,
         VarBinaryHolder.class,
         NullableBitHolder.class,
@@ -106,7 +106,6 @@ public class ScalarReplacementTypes {
         NullableDateHolder.class,
         NullableTimeHolder.class,
         NullableTimeStampHolder.class,
-        NullableTimeStampTZHolder.class
     };
 
     CLASSES = ImmutableSet.copyOf(classList);
@@ -114,4 +113,20 @@ public class ScalarReplacementTypes {
 
   public static final ImmutableSet<Class<?>> CLASSES;
 
+  /**
+   * Determine if a class is a holder class.
+   *
+   * @param className the name of the class
+   * @return true if the class belongs to the CLASSES set.
+   */
+  public static boolean isHolder(final String className) {
+    try {
+      final Class<?> clazz = Class.forName(className);
+      return CLASSES.contains(clazz);
+    } catch (ClassNotFoundException e) {
+      // do nothing
+    }
+
+    return false;
+  }
 }

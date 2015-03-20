@@ -44,17 +44,14 @@ import org.apache.drill.exec.expr.holders.NullableFloat8Holder;
 import org.apache.drill.exec.expr.holders.NullableIntHolder;
 import org.apache.drill.exec.expr.holders.NullableTimeHolder;
 import org.apache.drill.exec.expr.holders.NullableTimeStampHolder;
-import org.apache.drill.exec.expr.holders.NullableTimeStampTZHolder;
 import org.apache.drill.exec.expr.holders.NullableVar16CharHolder;
 import org.apache.drill.exec.expr.holders.NullableVarBinaryHolder;
 import org.apache.drill.exec.expr.holders.NullableVarCharHolder;
 import org.apache.drill.exec.expr.holders.TimeHolder;
 import org.apache.drill.exec.expr.holders.TimeStampHolder;
-import org.apache.drill.exec.expr.holders.TimeStampTZHolder;
 import org.apache.drill.exec.expr.holders.Var16CharHolder;
 import org.apache.drill.exec.expr.holders.VarBinaryHolder;
 import org.apache.drill.exec.expr.holders.VarCharHolder;
-import org.apache.drill.exec.record.RecordBatch;
 
 public class HashFunctions {
 
@@ -64,7 +61,7 @@ public class HashFunctions {
     @Param NullableFloat4Holder in;
     @Output IntHolder out;
 
-    public void setup(RecordBatch incoming) {
+    public void setup() {
     }
 
     public void eval() {
@@ -82,7 +79,7 @@ public class HashFunctions {
     @Param Float4Holder in;
     @Output IntHolder out;
 
-    public void setup(RecordBatch incoming) {
+    public void setup() {
     }
 
     public void eval() {
@@ -96,7 +93,7 @@ public class HashFunctions {
     @Param NullableFloat8Holder in;
     @Output IntHolder out;
 
-    public void setup(RecordBatch incoming) {
+    public void setup() {
     }
 
     public void eval() {
@@ -114,7 +111,7 @@ public class HashFunctions {
     @Param Float8Holder in;
     @Output IntHolder out;
 
-    public void setup(RecordBatch incoming) {
+    public void setup() {
     }
 
     public void eval() {
@@ -128,7 +125,7 @@ public class HashFunctions {
     @Param NullableVarBinaryHolder in;
     @Output IntHolder out;
 
-    public void setup(RecordBatch incoming) {
+    public void setup() {
     }
 
     public void eval() {
@@ -146,7 +143,7 @@ public class HashFunctions {
     @Param NullableVarCharHolder in;
     @Output IntHolder out;
 
-    public void setup(RecordBatch incoming) {
+    public void setup() {
     }
 
     public void eval() {
@@ -164,7 +161,7 @@ public class HashFunctions {
     @Param NullableVar16CharHolder in;
     @Output IntHolder out;
 
-    public void setup(RecordBatch incoming) {
+    public void setup() {
     }
 
     public void eval() {
@@ -182,7 +179,7 @@ public class HashFunctions {
     @Param NullableBigIntHolder in;
     @Output IntHolder out;
 
-    public void setup(RecordBatch incoming) {
+    public void setup() {
     }
 
     public void eval() {
@@ -200,7 +197,7 @@ public class HashFunctions {
     @Param NullableIntHolder in;
     @Output IntHolder out;
 
-    public void setup(RecordBatch incoming) {
+    public void setup() {
     }
 
     public void eval() {
@@ -219,7 +216,7 @@ public class HashFunctions {
     @Param VarBinaryHolder in;
     @Output IntHolder out;
 
-    public void setup(RecordBatch incoming) {
+    public void setup() {
     }
 
     public void eval() {
@@ -233,7 +230,7 @@ public class HashFunctions {
     @Param VarCharHolder in;
     @Output IntHolder out;
 
-    public void setup(RecordBatch incoming) {
+    public void setup() {
     }
 
     public void eval() {
@@ -247,7 +244,7 @@ public class HashFunctions {
     @Param Var16CharHolder in;
     @Output IntHolder out;
 
-    public void setup(RecordBatch incoming) {
+    public void setup() {
     }
 
     public void eval() {
@@ -261,7 +258,7 @@ public class HashFunctions {
     @Param BigIntHolder in;
     @Output IntHolder out;
 
-    public void setup(RecordBatch incoming) {
+    public void setup() {
     }
 
     public void eval() {
@@ -274,7 +271,7 @@ public class HashFunctions {
     @Param IntHolder in;
     @Output IntHolder out;
 
-    public void setup(RecordBatch incoming) {
+    public void setup() {
     }
 
     public void eval() {
@@ -287,7 +284,7 @@ public class HashFunctions {
     @Param  DateHolder in;
     @Output IntHolder out;
 
-    public void setup(RecordBatch incoming) {
+    public void setup() {
     }
 
     public void eval() {
@@ -300,7 +297,7 @@ public class HashFunctions {
     @Param  NullableDateHolder in;
     @Output IntHolder out;
 
-    public void setup(RecordBatch incoming) {
+    public void setup() {
     }
 
     public void eval() {
@@ -317,7 +314,7 @@ public class HashFunctions {
     @Param  TimeStampHolder in;
     @Output IntHolder out;
 
-    public void setup(RecordBatch incoming) {
+    public void setup() {
     }
 
     public void eval() {
@@ -330,7 +327,7 @@ public class HashFunctions {
     @Param  NullableTimeStampHolder in;
     @Output IntHolder out;
 
-    public void setup(RecordBatch incoming) {
+    public void setup() {
     }
 
     public void eval() {
@@ -347,7 +344,7 @@ public class HashFunctions {
     @Param  TimeHolder in;
     @Output IntHolder out;
 
-    public void setup(RecordBatch incoming) {
+    public void setup() {
     }
 
     public void eval() {
@@ -360,7 +357,7 @@ public class HashFunctions {
     @Param  NullableTimeHolder in;
     @Output IntHolder out;
 
-    public void setup(RecordBatch incoming) {
+    public void setup() {
     }
 
     public void eval() {
@@ -373,41 +370,11 @@ public class HashFunctions {
   }
 
   @FunctionTemplate(name = "hash", scope = FunctionScope.SIMPLE, nulls = FunctionTemplate.NullHandling.INTERNAL)
-  public static class TimeStampTZHash implements DrillSimpleFunc {
-    @Param  TimeStampTZHolder in;
-    @Output IntHolder out;
-
-    public void setup(RecordBatch incoming) {
-    }
-
-    public void eval() {
-      out.value = org.apache.drill.exec.expr.fn.impl.XXHash.hash32(in.value ^ in.index, 0);
-    }
-  }
-
-  @FunctionTemplate(name = "hash", scope = FunctionScope.SIMPLE, nulls = FunctionTemplate.NullHandling.INTERNAL)
-  public static class NullableTimeStampTZHash implements DrillSimpleFunc {
-    @Param  NullableTimeStampTZHolder in;
-    @Output IntHolder out;
-
-    public void setup(RecordBatch incoming) {
-    }
-
-    public void eval() {
-      if (in.isSet == 0) {
-        out.value = 0;
-      } else {
-        out.value = org.apache.drill.exec.expr.fn.impl.XXHash.hash32(in.value ^ in.index, 0);
-      }
-    }
-  }
-
-  @FunctionTemplate(name = "hash", scope = FunctionScope.SIMPLE, nulls = FunctionTemplate.NullHandling.INTERNAL)
   public static class Decimal9Hash implements DrillSimpleFunc {
     @Param  Decimal9Holder in;
     @Output IntHolder out;
 
-    public void setup(RecordBatch incoming) {
+    public void setup() {
     }
 
     public void eval() {
@@ -420,7 +387,7 @@ public class HashFunctions {
     @Param  NullableDecimal9Holder in;
     @Output IntHolder out;
 
-    public void setup(RecordBatch incoming) {
+    public void setup() {
     }
 
     public void eval() {
@@ -437,7 +404,7 @@ public class HashFunctions {
     @Param  Decimal18Holder in;
     @Output IntHolder out;
 
-    public void setup(RecordBatch incoming) {
+    public void setup() {
     }
 
     public void eval() {
@@ -450,7 +417,7 @@ public class HashFunctions {
     @Param  NullableDecimal18Holder in;
     @Output IntHolder out;
 
-    public void setup(RecordBatch incoming) {
+    public void setup() {
     }
 
     public void eval() {
@@ -467,7 +434,7 @@ public class HashFunctions {
     @Param  Decimal28SparseHolder in;
     @Output IntHolder out;
 
-    public void setup(RecordBatch incoming) {
+    public void setup() {
     }
 
     public void eval() {
@@ -485,7 +452,7 @@ public class HashFunctions {
     @Param  NullableDecimal28SparseHolder in;
     @Output IntHolder out;
 
-    public void setup(RecordBatch incoming) {
+    public void setup() {
     }
 
     public void eval() {
@@ -506,7 +473,7 @@ public class HashFunctions {
     @Param  Decimal38SparseHolder in;
     @Output IntHolder out;
 
-    public void setup(RecordBatch incoming) {
+    public void setup() {
     }
 
     public void eval() {
@@ -524,7 +491,7 @@ public class HashFunctions {
     @Param  NullableDecimal38SparseHolder in;
     @Output IntHolder out;
 
-    public void setup(RecordBatch incoming) {
+    public void setup() {
     }
 
     public void eval() {
@@ -546,7 +513,7 @@ public class HashFunctions {
     @Param NullableBitHolder in;
     @Output IntHolder out;
 
-    public void setup(RecordBatch incoming) {
+    public void setup() {
     }
 
     public void eval() {
@@ -564,7 +531,7 @@ public class HashFunctions {
     @Param BitHolder in;
     @Output IntHolder out;
 
-    public void setup(RecordBatch incoming) {
+    public void setup() {
     }
 
     public void eval() {

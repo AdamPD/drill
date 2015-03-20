@@ -19,11 +19,12 @@ package org.apache.drill.exec.memory;
 
 import io.netty.buffer.ByteBufAllocator;
 import io.netty.buffer.DrillBuf;
+import io.netty.buffer.UnsafeDirectLittleEndian;
 
 import java.io.Closeable;
 
 import org.apache.drill.exec.ops.FragmentContext;
-import org.apache.drill.exec.proto.ExecProtos.FragmentHandle;
+import org.apache.drill.exec.util.Pointer;
 
 /**
  * Wrapper class to deal with byte buffer allocation. Ensures users only use designated methods. Also allows inser
@@ -53,6 +54,16 @@ public interface BufferAllocator extends Closeable {
 
   public abstract ByteBufAllocator getUnderlyingAllocator();
 
+  /**
+   * Create a child allocator nested below this one.
+   *
+   * @param context - owning fragment for this allocator
+   * @param initialReservation - specified in bytes
+   * @param maximumReservation - specified in bytes
+   * @param applyFragmentLimit - flag to conditionally enable fragment memory limits
+   * @return - a new buffer allocator owned by the parent it was spawned from
+   * @throws OutOfMemoryException - when off-heap memory has been exhausted
+   */
   public abstract BufferAllocator getChildAllocator(FragmentContext context, long initialReservation,
       long maximumReservation, boolean applyFragmentLimit) throws OutOfMemoryException;
 
@@ -63,6 +74,12 @@ public interface BufferAllocator extends Closeable {
    */
   public boolean takeOwnership(DrillBuf buf) ;
 
+  /**
+   * Take over ownership of fragment accounting.  Always takes over ownership.
+   * @param buf
+   * @return false if over allocation.
+   */
+  public boolean takeOwnership(DrillBuf buf, Pointer<DrillBuf> bufOut);
 
   public PreAllocator getNewPreAllocator();
 

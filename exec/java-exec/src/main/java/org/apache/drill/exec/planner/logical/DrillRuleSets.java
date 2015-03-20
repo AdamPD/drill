@@ -24,6 +24,7 @@ import java.util.List;
 import net.hydromatic.optiq.tools.RuleSet;
 
 import org.apache.drill.exec.ops.QueryContext;
+import org.apache.drill.exec.planner.logical.partition.PruneScanRule;
 import org.apache.drill.exec.planner.physical.ConvertCountToDirectScan;
 import org.apache.drill.exec.planner.physical.FilterPrule;
 import org.apache.drill.exec.planner.physical.HashAggPrule;
@@ -38,15 +39,14 @@ import org.apache.drill.exec.planner.physical.ScreenPrule;
 import org.apache.drill.exec.planner.physical.SortConvertPrule;
 import org.apache.drill.exec.planner.physical.SortPrule;
 import org.apache.drill.exec.planner.physical.StreamAggPrule;
-import org.apache.drill.exec.planner.physical.StreamingWindowPrule;
+import org.apache.drill.exec.planner.physical.WindowPrule;
 import org.apache.drill.exec.planner.physical.UnionAllPrule;
 import org.apache.drill.exec.planner.physical.WriterPrule;
 import org.eigenbase.rel.RelFactories;
+import org.eigenbase.rel.rules.MergeFilterRule;
+import org.eigenbase.rel.rules.MergeProjectRule;
 import org.eigenbase.rel.rules.PushFilterPastJoinRule;
-import org.eigenbase.rel.rules.PushFilterPastProjectRule;
 import org.eigenbase.rel.rules.PushJoinThroughJoinRule;
-import org.eigenbase.rel.rules.PushProjectPastFilterRule;
-import org.eigenbase.rel.rules.PushProjectPastJoinRule;
 import org.eigenbase.rel.rules.RemoveDistinctAggregateRule;
 import org.eigenbase.rel.rules.RemoveDistinctRule;
 import org.eigenbase.rel.rules.RemoveSortRule;
@@ -75,7 +75,7 @@ public class DrillRuleSets {
       // End support for WHERE style joins.
 
       //Add back rules
-
+      DrillMergeFilterRule.INSTANCE,
       ExpandConversionRule.INSTANCE,
 //      SwapJoinRule.INSTANCE,
       RemoveDistinctRule.INSTANCE,
@@ -104,8 +104,11 @@ public class DrillRuleSets {
 //      PushSortPastProjectRule.INSTANCE, //
 
       DrillPushProjIntoScan.INSTANCE,
-      DrillPushPartitionFilterIntoScan.FILTER_ON_PROJECT,
-      DrillPushPartitionFilterIntoScan.FILTER_ON_SCAN,
+
+//      DrillPushPartitionFilterIntoScan.FILTER_ON_PROJECT,
+//      DrillPushPartitionFilterIntoScan.FILTER_ON_SCAN,
+      PruneScanRule.getFilterOnProject(context),
+      PruneScanRule.getFilterOnScan(context),
 
       ////////////////////////////////
       DrillScanRule.INSTANCE,
@@ -144,9 +147,12 @@ public class DrillRuleSets {
     ruleList.add(FilterPrule.INSTANCE);
     ruleList.add(LimitPrule.INSTANCE);
     ruleList.add(WriterPrule.INSTANCE);
-    ruleList.add(StreamingWindowPrule.INSTANCE);
+    ruleList.add(WindowPrule.INSTANCE);
     ruleList.add(PushLimitToTopN.INSTANCE);
     ruleList.add(UnionAllPrule.INSTANCE);
+
+
+
     // ruleList.add(UnionDistinctPrule.INSTANCE);
 
     PlannerSettings ps = qcontext.getPlannerSettings();
@@ -160,11 +166,20 @@ public class DrillRuleSets {
     }
 
     if (ps.isHashJoinEnabled()) {
-      ruleList.add(HashJoinPrule.INSTANCE);
+      ruleList.add(HashJoinPrule.DIST_INSTANCE);
+
+      if(ps.isBroadcastJoinEnabled()){
+        ruleList.add(HashJoinPrule.BROADCAST_INSTANCE);
+      }
     }
 
     if (ps.isMergeJoinEnabled()) {
-      ruleList.add(MergeJoinPrule.INSTANCE);
+      ruleList.add(MergeJoinPrule.DIST_INSTANCE);
+
+      if(ps.isBroadcastJoinEnabled()){
+        ruleList.add(MergeJoinPrule.BROADCAST_INSTANCE);
+      }
+
     }
 
     return new DrillRuleSet(ImmutableSet.copyOf(ruleList));

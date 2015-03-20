@@ -17,12 +17,17 @@
  */
 package org.apache.drill.exec.planner.sql.parser;
 
+import org.apache.drill.exec.ExecConstants;
 import org.apache.drill.exec.exception.UnsupportedOperatorCollector;
+import org.apache.drill.exec.planner.StarColumnHelper;
 import org.apache.drill.exec.work.foreman.SqlUnsupportedException;
+import org.eigenbase.sql.SqlCall;
 import org.eigenbase.sql.SqlKind;
 import org.eigenbase.sql.SqlJoin;
 import org.eigenbase.sql.JoinType;
 import org.eigenbase.sql.SqlNode;
+import org.eigenbase.sql.SqlNodeList;
+import org.eigenbase.sql.SqlSelect;
 import org.eigenbase.sql.type.SqlTypeName;
 import org.eigenbase.sql.util.SqlShuttle;
 import org.eigenbase.sql.SqlDataTypeSpec;
@@ -62,7 +67,8 @@ public class UnsupportedOperatorsVisitor extends SqlShuttle {
     for(String strType : disabledType) {
       if(type.getTypeName().getSimple().equalsIgnoreCase(strType)) {
         unsupportedOperatorCollector.setException(SqlUnsupportedException.ExceptionType.DATA_TYPE,
-            "1959", type.getTypeName().getSimple());
+            type.getTypeName().getSimple() + " is not supported\n" +
+            "See Apache Drill JIRA: DRILL-1959");
         throw new UnsupportedOperationException();
       }
     }
@@ -71,20 +77,22 @@ public class UnsupportedOperatorsVisitor extends SqlShuttle {
   }
 
   @Override
-  public SqlNode visit(org.eigenbase.sql.SqlCall sqlCall) {
+  public SqlNode visit(SqlCall sqlCall) {
     // Disable unsupported Intersect, Except
     if(sqlCall.getKind() == SqlKind.INTERSECT || sqlCall.getKind() == SqlKind.EXCEPT) {
       unsupportedOperatorCollector.setException(SqlUnsupportedException.ExceptionType.RELATIONAL,
-          "1921", sqlCall.getOperator().getName());
+          sqlCall.getOperator().getName() + " is not supported\n" +
+          "See Apache Drill JIRA: DRILL-1921");
       throw new UnsupportedOperationException();
     }
 
     // Disable unsupported Union
     if(sqlCall.getKind() == SqlKind.UNION) {
       SqlSetOperator op = (SqlSetOperator) sqlCall.getOperator();
-      if (!op.isAll()) {
+      if(!op.isAll()) {
         unsupportedOperatorCollector.setException(SqlUnsupportedException.ExceptionType.RELATIONAL,
-            "1921", sqlCall.getOperator().getName());
+            sqlCall.getOperator().getName() + " is not supported\n" +
+            "See Apache Drill JIRA: DRILL-1921");
         throw new UnsupportedOperationException();
       }
     }
@@ -96,14 +104,16 @@ public class UnsupportedOperatorsVisitor extends SqlShuttle {
       // Block Natural Join
       if(join.isNatural()) {
         unsupportedOperatorCollector.setException(SqlUnsupportedException.ExceptionType.RELATIONAL,
-            "1986", "NATURAL " + sqlCall.getOperator().getName());
+            "NATURAL JOIN is not supported\n" +
+            "See Apache Drill JIRA: DRILL-1986");
         throw new UnsupportedOperationException();
       }
 
       // Block Cross Join
       if(join.getJoinType() == JoinType.CROSS) {
         unsupportedOperatorCollector.setException(SqlUnsupportedException.ExceptionType.RELATIONAL,
-            "1921", "CROSS " + sqlCall.getOperator().getName());
+            "CROSS JOIN is not supported\n" +
+            "See Apache Drill JIRA: DRILL-1921");
         throw new UnsupportedOperationException();
       }
     }
@@ -112,7 +122,8 @@ public class UnsupportedOperatorsVisitor extends SqlShuttle {
     for(String strOperator : disabledOperators) {
       if(sqlCall.getOperator().isName(strOperator)) {
         unsupportedOperatorCollector.setException(SqlUnsupportedException.ExceptionType.FUNCTION,
-            "2115", sqlCall.getOperator().getName());
+            sqlCall.getOperator().getName() + " is not supported\n" +
+            "See Apache Drill JIRA: DRILL-2115");
         throw new UnsupportedOperationException();
       }
     }

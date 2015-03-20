@@ -53,7 +53,7 @@ public class G${type}ToChar implements DrillSimpleFunc {
     @Workspace org.joda.time.format.DateTimeFormatter format;
     @Output VarCharHolder out;
 
-    public void setup(RecordBatch b) {
+    public void setup() {
         temp = new org.joda.time.MutableDateTime(0, org.joda.time.DateTimeZone.UTC);
         buffer = buffer.reallocIfNeeded(100);
 
@@ -66,9 +66,6 @@ public class G${type}ToChar implements DrillSimpleFunc {
 
     public void eval() {
         temp.setMillis(left.value);
-        <#if type == "TimeStampTZ">
-        temp.setZoneRetainFields(org.joda.time.DateTimeZone.forID(org.apache.drill.exec.expr.fn.impl.DateUtility.timezoneList[left.index]));
-        </#if>
 
         // print current value in the desired format
         String str = format.print(temp);

@@ -25,15 +25,14 @@ import io.netty.buffer.UnsafeDirectLittleEndian;
 import java.util.IdentityHashMap;
 import java.util.HashMap;
 import java.util.Map;
-
 import java.util.Map.Entry;
 
 import org.apache.drill.common.config.DrillConfig;
 import org.apache.drill.exec.ExecConstants;
 import org.apache.drill.exec.ops.FragmentContext;
-
 import org.apache.drill.exec.proto.ExecProtos.FragmentHandle;
 import org.apache.drill.exec.util.AssertionUtil;
+import org.apache.drill.exec.util.Pointer;
 
 public class TopLevelAllocator implements BufferAllocator {
   static final org.slf4j.Logger logger = org.slf4j.LoggerFactory.getLogger(TopLevelAllocator.class);
@@ -73,6 +72,13 @@ public class TopLevelAllocator implements BufferAllocator {
   @Override
   public boolean takeOwnership(DrillBuf buf) {
     return buf.transferAccounting(acct);
+  }
+
+  @Override
+  public boolean takeOwnership(DrillBuf buf, Pointer<DrillBuf> out) {
+    DrillBuf b = new DrillBuf(this, acct, buf);
+    out.value = b;
+    return acct.transferIn(b, b.capacity());
   }
 
   public DrillBuf buffer(int min, int max) {
@@ -185,9 +191,10 @@ public class TopLevelAllocator implements BufferAllocator {
                           boolean applyFragmentLimit) throws OutOfMemoryException{
       assert max >= pre;
       this.applyFragmentLimit=applyFragmentLimit;
-      childAcct = new Accountor(context.getConfig(), errorOnLeak, context, parentAccountor, max, pre, applyFragmentLimit);
+      DrillConfig drillConf = context != null ? context.getConfig() : null;
+      childAcct = new Accountor(drillConf, errorOnLeak, context, parentAccountor, max, pre, applyFragmentLimit);
       this.fragmentContext=context;
-      this.handle = context.getHandle();
+      this.handle = context != null ? context.getHandle() : null;
       thisMap = map;
       this.empty = DrillBuf.getEmpty(this, childAcct);
     }
@@ -195,6 +202,13 @@ public class TopLevelAllocator implements BufferAllocator {
     @Override
     public boolean takeOwnership(DrillBuf buf) {
       return buf.transferAccounting(childAcct);
+    }
+
+    @Override
+    public boolean takeOwnership(DrillBuf buf, Pointer<DrillBuf> out) {
+      DrillBuf b = new DrillBuf(this, acct, buf);
+      out.value = b;
+      return acct.transferIn(b, b.capacity());
     }
 
     @Override

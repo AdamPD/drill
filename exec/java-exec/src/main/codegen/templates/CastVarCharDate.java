@@ -18,7 +18,7 @@
 <@pp.dropOutputFile />
 
 <#list cast.types as type>
-<#if type.major == "VarCharDate" || type.major == "VarBinaryDate">  <#-- Template to convert from VarChar/ VarBinary to Date, Time, TimeStamp, TimeStampTZ -->
+<#if type.major == "VarCharDate" || type.major == "VarBinaryDate">  <#-- Template to convert from VarChar/ VarBinary to Date, Time, TimeStamp -->
 
 <@pp.changeOutputFile name="/org/apache/drill/exec/expr/fn/impl/gcast/Cast${type.from}To${type.to}.java" />
 
@@ -51,7 +51,7 @@ public class Cast${type.from}To${type.to} implements DrillSimpleFunc {
   @Param ${type.from}Holder in;
   @Output ${type.to}Holder out;
   
-  public void setup(RecordBatch incoming) {
+  public void setup() {
   }
 
   public void eval() {
@@ -68,12 +68,6 @@ public class Cast${type.from}To${type.to} implements DrillSimpleFunc {
       <#elseif type.to == "TimeStamp">
       org.joda.time.format.DateTimeFormatter f = org.apache.drill.exec.expr.fn.impl.DateUtility.getDateTimeFormatter();
       out.value = org.joda.time.DateTime.parse(input, f).withZoneRetainFields(org.joda.time.DateTimeZone.UTC).getMillis();
-
-      <#elseif type.to == "TimeStampTZ">
-      org.joda.time.format.DateTimeFormatter f = org.apache.drill.exec.expr.fn.impl.DateUtility.getDateTimeFormatter();
-      org.joda.time.DateTime dt = org.joda.time.DateTime.parse(input, f);
-      out.value = dt.getMillis();
-      out.index = org.apache.drill.exec.expr.fn.impl.DateUtility.getIndex(dt.getZone().toString());
 
       <#elseif type.to == "Time">
       org.joda.time.format.DateTimeFormatter f = org.apache.drill.exec.expr.fn.impl.DateUtility.getTimeFormatter();

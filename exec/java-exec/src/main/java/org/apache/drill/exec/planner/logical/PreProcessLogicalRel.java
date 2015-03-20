@@ -21,6 +21,7 @@ import java.util.ArrayList;
 import java.util.List;
 
 import org.apache.drill.exec.exception.UnsupportedOperatorCollector;
+import org.apache.drill.exec.planner.StarColumnHelper;
 import org.apache.drill.exec.planner.sql.DrillOperatorTable;
 import org.apache.drill.exec.work.foreman.SqlUnsupportedException;
 import org.eigenbase.rel.AggregateCall;
@@ -28,7 +29,10 @@ import org.eigenbase.rel.AggregateRel;
 import org.eigenbase.rel.ProjectRel;
 import org.eigenbase.rel.RelNode;
 import org.eigenbase.rel.RelShuttleImpl;
+import org.eigenbase.rel.UnionRel;
+import org.eigenbase.reltype.RelDataType;
 import org.eigenbase.reltype.RelDataTypeFactory;
+import org.eigenbase.reltype.RelDataTypeField;
 import org.eigenbase.rex.RexBuilder;
 import org.eigenbase.rex.RexCall;
 import org.eigenbase.rex.RexLiteral;
@@ -60,7 +64,7 @@ public class PreProcessLogicalRel extends RelShuttleImpl {
 
   public static PreProcessLogicalRel getVisitor() {
     if(INSTANCE == null) {
-      throw new IllegalStateException("RewriteProjectRel is not initialized properly");
+      throw new IllegalStateException("PreProcessLogicalRel is not initialized properly");
     }
 
     return INSTANCE;
@@ -78,7 +82,8 @@ public class PreProcessLogicalRel extends RelShuttleImpl {
     for(AggregateCall aggregateCall : aggregate.getAggCallList()) {
       if(aggregateCall.getAggregation() instanceof SqlSingleValueAggFunction) {
         unsupportedOperatorCollector.setException(SqlUnsupportedException.ExceptionType.FUNCTION,
-            "1937", "Non-scalar sub-query used in an expression");
+            "Non-scalar sub-query used in an expression\n" +
+            "See Apache Drill JIRA: DRILL-1937");
         throw new UnsupportedOperationException();
       }
     }
@@ -135,6 +140,22 @@ public class PreProcessLogicalRel extends RelShuttleImpl {
     }
 
     return visitChild(project, 0, project.getChild());
+  }
+
+  @Override
+  public RelNode visit(UnionRel union) {
+    for(RelNode child : union.getInputs()) {
+      for(RelDataTypeField dataField : child.getRowType().getFieldList()) {
+        if(dataField.getName().contains(StarColumnHelper.STAR_COLUMN)) {
+          unsupportedOperatorCollector.setException(SqlUnsupportedException.ExceptionType.RELATIONAL,
+              "Union-All over schema-less tables must specify the columns explicitly\n" +
+              "See Apache Drill JIRA: DRILL-2414");
+          throw new UnsupportedOperationException();
+        }
+      }
+    }
+
+    return visitChildren(union);
   }
 
   public void convertException() throws SqlUnsupportedException {

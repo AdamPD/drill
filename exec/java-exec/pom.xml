@@ -38,6 +38,12 @@
       <version>${project.version}</version>
       <scope>test</scope>
     </dependency>
+    <dependency>
+      <groupId>org.apache.drill.contrib.data</groupId>
+      <artifactId>window-test-data</artifactId>
+      <version>${project.version}</version>
+      <scope>test</scope>
+    </dependency>
     <!-- <dependency> -->
     <!-- <groupId>org.ow2.asm</groupId> -->
     <!-- <artifactId>asm-commons</artifactId> -->
@@ -140,7 +146,7 @@
     <dependency>
       <groupId>com.twitter</groupId>
       <artifactId>parquet-column</artifactId>
-      <version>1.5.1-drill-r6</version>
+      <version>${parquet.version}</version>
       <exclusions>
         <exclusion>
           <groupId>org.apache.hadoop</groupId>
@@ -155,7 +161,7 @@
     <dependency>
       <groupId>com.twitter</groupId>
       <artifactId>parquet-hadoop</artifactId>
-      <version>1.5.1-drill-r4</version>
+      <version>${parquet.version}</version>
       <exclusions>
         <exclusion>
           <groupId>org.apache.hadoop</groupId>
@@ -185,7 +191,7 @@
     <dependency>
       <groupId>com.twitter</groupId>
       <artifactId>parquet-common</artifactId>
-      <version>1.5.1-drill-r4</version>
+      <version>${parquet.version}</version>
       <exclusions>
         <exclusion>
           <groupId>org.apache.hadoop</groupId>
@@ -200,7 +206,7 @@
     <dependency>
       <groupId>com.twitter</groupId>
       <artifactId>parquet-jackson</artifactId>
-      <version>1.5.1-drill-r4</version>
+      <version>${parquet.version}</version>
       <exclusions>
         <exclusion>
           <groupId>org.apache.hadoop</groupId>
@@ -215,7 +221,7 @@
     <dependency>
       <groupId>com.twitter</groupId>
       <artifactId>parquet-encoding</artifactId>
-      <version>1.5.1-drill-r4</version>
+      <version>${parquet.version}</version>
       <exclusions>
         <exclusion>
           <groupId>org.apache.hadoop</groupId>
@@ -230,7 +236,7 @@
     <dependency>
       <groupId>com.twitter</groupId>
       <artifactId>parquet-generator</artifactId>
-      <version>1.5.1-drill-r4</version>
+      <version>${parquet.version}</version>
       <exclusions>
         <exclusion>
           <groupId>org.apache.hadoop</groupId>

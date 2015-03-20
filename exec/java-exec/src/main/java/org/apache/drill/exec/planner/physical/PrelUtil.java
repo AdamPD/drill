@@ -58,6 +58,8 @@ import com.google.common.collect.Sets;
 
 public class PrelUtil {
 
+  public static final String HASH_EXPR_NAME = "E_X_P_R_H_A_S_H_F_I_E_L_D";
+
   public static List<Ordering> getOrdering(RelCollation collation, RelDataType rowType) {
     List<Ordering> orderExpr = Lists.newArrayList();
 
@@ -78,6 +80,11 @@ public class PrelUtil {
     assert fields.size() > 0;
 
     final List<String> childFields = rowType.getFieldNames();
+
+    // If we already included a field with hash - no need to calculate hash further down
+    if ( childFields.contains(HASH_EXPR_NAME)) {
+      return new FieldReference(HASH_EXPR_NAME);
+    }
 
     FieldReference fr = new FieldReference(childFields.get(fields.get(0).getFieldId()), ExpressionPosition.UNKNOWN);
     FunctionCall func = new FunctionCall("hash",  ImmutableList.of((LogicalExpression)fr), ExpressionPosition.UNKNOWN);
@@ -116,6 +123,14 @@ public class PrelUtil {
       }
     }
     return new SelectionVectorRemoverPrel(prel);
+  }
+
+  public static int getLastUsedColumnReference(List<RexNode> projects) {
+    LastUsedRefVisitor lastUsed = new LastUsedRefVisitor();
+    for (RexNode rex : projects) {
+      rex.accept(lastUsed);
+    }
+    return lastUsed.getLastUsedReference();
   }
 
   public static ProjectPushInfo getColumns(RelDataType rowType, List<RexNode> projects) {
@@ -231,6 +246,34 @@ public class PrelUtil {
 
     public RelDataType createNewRowType(RelDataTypeFactory factory) {
       return factory.createStructType(types, fieldNames);
+    }
+  }
+
+  // Simple visitor class to determine the last used reference in the expression
+  private static class LastUsedRefVisitor extends RexVisitorImpl {
+
+    int lastUsedRef = -1;
+
+    protected LastUsedRefVisitor() {
+      super(true);
+    }
+
+    @Override
+    public Void visitInputRef(RexInputRef inputRef) {
+      lastUsedRef = Math.max(lastUsedRef, inputRef.getIndex());
+      return null;
+    }
+
+    @Override
+    public Void visitCall(RexCall call) {
+      for (RexNode operand : call.operands) {
+        operand.accept(this);
+      }
+      return null;
+    }
+
+    public int getLastUsedReference() {
+      return lastUsedRef;
     }
   }
 

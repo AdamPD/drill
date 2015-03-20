@@ -108,12 +108,15 @@ public class MergeJoinPrel  extends JoinPrel {
 
   @Override
   public SelectionVectorMode[] getSupportedEncodings() {
-    return SelectionVectorMode.NONE_AND_TWO;
+    // currently, MergeJoin operator is not handling incoming batch containing SV2 or SV4, so
+    // it requires a SVRemover
+    return SelectionVectorMode.DEFAULT;
   }
 
   @Override
   public SelectionVectorMode getEncoding() {
     return SelectionVectorMode.NONE;
   }
+
 
 }

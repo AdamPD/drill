@@ -35,6 +35,10 @@ import com.google.common.collect.Lists;
 public class Materializer extends AbstractPhysicalVisitor<PhysicalOperator, Materializer.IndexedFragmentNode, ExecutionSetupException>{
   static final org.slf4j.Logger logger = org.slf4j.LoggerFactory.getLogger(Materializer.class);
 
+  public static final Materializer INSTANCE = new Materializer();
+
+  private Materializer() {
+  }
 
   @Override
   public PhysicalOperator visitExchange(Exchange exchange, IndexedFragmentNode iNode) throws ExecutionSetupException {
@@ -45,6 +49,7 @@ public class Materializer extends AbstractPhysicalVisitor<PhysicalOperator, Mate
       PhysicalOperator child = exchange.getChild().accept(this, iNode);
       PhysicalOperator materializedSender = exchange.getSender(iNode.getMinorFragmentId(), child);
       materializedSender.setOperatorId(0);
+      materializedSender.setCost(exchange.getCost());
 //      logger.debug("Visit sending exchange, materialized {} with child {}.", materializedSender, child);
       return materializedSender;
 
@@ -53,6 +58,7 @@ public class Materializer extends AbstractPhysicalVisitor<PhysicalOperator, Mate
       PhysicalOperator materializedReceiver = exchange.getReceiver(iNode.getMinorFragmentId());
       materializedReceiver.setOperatorId(Short.MAX_VALUE & exchange.getOperatorId());
 //      logger.debug("Visit receiving exchange, materialized receiver: {}.", materializedReceiver);
+      materializedReceiver.setCost(exchange.getCost());
       return materializedReceiver;
     }
   }
@@ -96,6 +102,7 @@ public class Materializer extends AbstractPhysicalVisitor<PhysicalOperator, Mate
       children.add(child.accept(this, iNode));
     }
     PhysicalOperator newOp = op.getNewWithChildren(children);
+    newOp.setCost(op.getCost());
     newOp.setOperatorId(Short.MAX_VALUE & op.getOperatorId());
     return newOp;
   }

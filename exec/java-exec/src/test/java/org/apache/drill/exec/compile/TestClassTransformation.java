@@ -43,7 +43,7 @@ public class TestClassTransformation extends BaseTestQuery {
 
   @BeforeClass
   public static void beforeTestClassTransformation() throws Exception {
-    sessionOptions = new SessionOptionManager(bit.getContext().getOptionManager());
+    sessionOptions = new SessionOptionManager(getDrillbitContext().getOptionManager());
   }
 
   @Test
@@ -104,7 +104,7 @@ public class TestClassTransformation extends BaseTestQuery {
   private void compilationInnerClass(QueryClassLoader loader) throws Exception{
     CodeGenerator<ExampleInner> cg = newCodeGenerator(ExampleInner.class, ExampleTemplateWithInner.class);
 
-    ClassTransformer ct = new ClassTransformer();
+    ClassTransformer ct = new ClassTransformer(sessionOptions);
     Class<? extends ExampleInner> c = (Class<? extends ExampleInner>) ct.getImplementationClass(loader, cg.getDefinition(), cg.generateAndGet(), cg.getMaterializedClassName());
     ExampleInner t = (ExampleInner) c.newInstance();
     t.doOutside();
@@ -113,7 +113,7 @@ public class TestClassTransformation extends BaseTestQuery {
 
   private <T, X extends T> CodeGenerator<T> newCodeGenerator(Class<T> iface, Class<X> impl) {
     final TemplateClassDefinition<T> template = new TemplateClassDefinition<T>(iface, impl);
-    CodeGenerator<T> cg = CodeGenerator.get(template, bit.getContext().getFunctionImplementationRegistry());
+    CodeGenerator<T> cg = CodeGenerator.get(template, getDrillbitContext().getFunctionImplementationRegistry());
 
     ClassGenerator<T> root = cg.getRoot();
     root.setMappingSet(new MappingSet(new GeneratorMapping("doOutside", null, null, null)));

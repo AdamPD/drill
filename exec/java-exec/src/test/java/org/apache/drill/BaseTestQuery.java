@@ -23,17 +23,13 @@ import java.util.List;
 import java.util.Properties;
 import java.util.concurrent.CountDownLatch;
 import java.util.concurrent.atomic.AtomicInteger;
-import java.util.regex.Matcher;
-import java.util.regex.Pattern;
 
+import com.google.common.base.Preconditions;
 import org.apache.drill.common.config.DrillConfig;
-import org.apache.drill.common.util.TestTools;
 import org.apache.drill.exec.ExecConstants;
 import org.apache.drill.exec.ExecTest;
 import org.apache.drill.exec.client.DrillClient;
-import org.apache.drill.exec.client.PrintingResultsListener;
 import org.apache.drill.exec.client.QuerySubmitter;
-import org.apache.drill.exec.client.QuerySubmitter.Format;
 import org.apache.drill.exec.exception.SchemaChangeException;
 import org.apache.drill.exec.memory.BufferAllocator;
 import org.apache.drill.exec.memory.TopLevelAllocator;
@@ -45,11 +41,11 @@ import org.apache.drill.exec.rpc.user.ConnectionThrottle;
 import org.apache.drill.exec.rpc.user.QueryResultBatch;
 import org.apache.drill.exec.rpc.user.UserResultsListener;
 import org.apache.drill.exec.server.Drillbit;
+import org.apache.drill.exec.server.DrillbitContext;
 import org.apache.drill.exec.server.RemoteServiceSet;
 import org.apache.drill.exec.util.VectorUtil;
 import org.junit.AfterClass;
 import org.junit.BeforeClass;
-import org.junit.Rule;
 import org.junit.rules.TestRule;
 import org.junit.rules.TestWatcher;
 import org.junit.runner.Description;
@@ -57,8 +53,15 @@ import org.junit.runner.Description;
 import com.google.common.base.Charsets;
 import com.google.common.io.Resources;
 
-public class BaseTestQuery extends ExecTest{
-  static final org.slf4j.Logger logger = org.slf4j.LoggerFactory.getLogger(BaseTestQuery.class);
+public class BaseTestQuery extends ExecTest {
+  private static final org.slf4j.Logger logger = org.slf4j.LoggerFactory.getLogger(BaseTestQuery.class);
+
+  /**
+   * Number of Drillbits in test cluster. Default is 1.
+   *
+   * Tests can update the cluster size through {@link #setDrillbitCount(int)}
+   */
+  private static int drillbitCount = 1;
 
   private int[] columnWidths = new int[] { 8 };
 
@@ -84,11 +87,36 @@ public class BaseTestQuery extends ExecTest{
   };
 
   protected static DrillClient client;
-  protected static Drillbit bit;
+  protected static Drillbit[] bits;
   protected static RemoteServiceSet serviceSet;
   protected static DrillConfig config;
   protected static QuerySubmitter submitter = new QuerySubmitter();
   protected static BufferAllocator allocator;
+
+  protected static void setDrillbitCount(int newDrillbitCount) {
+    Preconditions.checkArgument(newDrillbitCount > 0, "Number of Drillbits must be at least one");
+    if (drillbitCount != newDrillbitCount) {
+      // TODO: Currently we have to shutdown the existing Drillbit cluster before starting a new one with the given
+      // Drillbit count. Revisit later to avoid stopping the cluster.
+      try {
+        closeClient();
+        drillbitCount = newDrillbitCount;
+        openClient();
+      } catch(Exception e) {
+        throw new RuntimeException("Failure while changing the number of Drillbits in test cluster.", e);
+      }
+    }
+  }
+
+  /**
+   * Useful for tests that require a DrillbitContext to get/add storage plugins, options etc.
+   *
+   * @return DrillbitContext of first Drillbit in the cluster.
+   */
+  protected static DrillbitContext getDrillbitContext() {
+    Preconditions.checkState(bits != null && bits[0] != null, "Drillbits are not setup.");
+    return bits[0].getContext();
+  }
 
   static void resetClientAndBit() throws Exception{
     closeClient();
@@ -96,7 +124,7 @@ public class BaseTestQuery extends ExecTest{
   }
 
   @BeforeClass
-  public static void openClient() throws Exception{
+  public static void openClient() throws Exception {
     config = DrillConfig.create(TEST_CONFIGURATIONS);
     allocator = new TopLevelAllocator(config);
     if (config.hasPath(ENABLE_FULL_CACHE) && config.getBoolean(ENABLE_FULL_CACHE)) {
@@ -104,25 +132,25 @@ public class BaseTestQuery extends ExecTest{
     } else {
       serviceSet = RemoteServiceSet.getLocalServiceSet();
     }
-    bit = new Drillbit(config, serviceSet);
-    bit.run();
-    client = new DrillClient(config, serviceSet.getCoordinator());
-    client.connect();
-    List<QueryResultBatch> results = client.runQuery(QueryType.SQL, String.format("alter session set `%s` = 2", ExecConstants.MAX_WIDTH_PER_NODE_KEY));
-    for (QueryResultBatch b : results) {
-      b.release();
+
+    bits = new Drillbit[drillbitCount];
+    for(int i = 0; i < drillbitCount; i++) {
+      bits[i] = new Drillbit(config, serviceSet);
+      bits[i].run();
     }
+
+    client = QueryTestUtil.createClient(config,  serviceSet, 2);
   }
 
-  protected BufferAllocator getAllocator() {
+  protected static BufferAllocator getAllocator() {
     return allocator;
   }
 
-  public TestBuilder newTest() {
+  public static TestBuilder newTest() {
     return testBuilder();
   }
 
-  public TestBuilder testBuilder() {
+  public static TestBuilder testBuilder() {
     return new TestBuilder(allocator);
   }
 
@@ -131,9 +159,15 @@ public class BaseTestQuery extends ExecTest{
     if (client != null) {
       client.close();
     }
-    if (bit != null) {
-      bit.close();
+
+    if (bits != null) {
+      for(Drillbit bit : bits) {
+        if (bit != null) {
+          bit.close();
+        }
+      }
     }
+
     if(serviceSet != null) {
       serviceSet.close();
     }
@@ -142,46 +176,42 @@ public class BaseTestQuery extends ExecTest{
     }
   }
 
-  protected void runSQL(String sql) throws Exception {
+  protected static void runSQL(String sql) throws Exception {
     SilentListener listener = new SilentListener();
     testWithListener(QueryType.SQL, sql, listener);
     listener.waitForCompletion();
   }
 
-  protected List<QueryResultBatch> testSqlWithResults(String sql) throws Exception{
+  protected static List<QueryResultBatch> testSqlWithResults(String sql) throws Exception{
     return testRunAndReturn(QueryType.SQL, sql);
   }
 
-  protected List<QueryResultBatch> testLogicalWithResults(String logical) throws Exception{
+  protected static List<QueryResultBatch> testLogicalWithResults(String logical) throws Exception{
     return testRunAndReturn(QueryType.LOGICAL, logical);
   }
 
-  protected List<QueryResultBatch> testPhysicalWithResults(String physical) throws Exception{
+  protected static List<QueryResultBatch> testPhysicalWithResults(String physical) throws Exception{
     return testRunAndReturn(QueryType.PHYSICAL, physical);
   }
 
   public static List<QueryResultBatch>  testRunAndReturn(QueryType type, String query) throws Exception{
-    query = normalizeQuery(query);
+    query = QueryTestUtil.normalizeQuery(query);
     return client.runQuery(type, query);
   }
 
-  public static int testRunAndPrint(QueryType type, String query) throws Exception{
-    query = normalizeQuery(query);
-    PrintingResultsListener resultListener = new PrintingResultsListener(client.getConfig(), Format.TSV, VectorUtil.DEFAULT_COLUMN_WIDTH);
-    client.runQuery(type, query, resultListener);
-    return resultListener.await();
+  public static int testRunAndPrint(final QueryType type, final String query) throws Exception {
+    return QueryTestUtil.testRunAndPrint(client, type, query);
   }
 
-  protected void testWithListener(QueryType type, String query, UserResultsListener resultListener) {
-    query = normalizeQuery(query);
-    client.runQuery(type, query, resultListener);
+  protected static void testWithListener(QueryType type, String query, UserResultsListener resultListener) {
+    QueryTestUtil.testWithListener(client, type, query, resultListener);
   }
 
-  protected void testNoResult(String query, Object... args) throws Exception {
+  protected static void testNoResult(String query, Object... args) throws Exception {
     testNoResult(1, query, args);
   }
 
-  protected void testNoResult(int interation, String query, Object... args) throws Exception {
+  protected static void testNoResult(int interation, String query, Object... args) throws Exception {
     query = String.format(query, args);
     logger.debug("Running query:\n--------------\n"+query);
     for (int i = 0; i < interation; i++) {
@@ -193,54 +223,38 @@ public class BaseTestQuery extends ExecTest{
   }
 
   public static void test(String query, Object... args) throws Exception {
-    test(String.format(query, args));
+    QueryTestUtil.test(client, String.format(query, args));
   }
 
-  public static void test(String query) throws Exception{
-    query = normalizeQuery(query);
-    String[] queries = query.split(";");
-    for (String q : queries) {
-      if (q.trim().isEmpty()) {
-        continue;
-      }
-      testRunAndPrint(QueryType.SQL, q);
-    }
+  public static void test(final String query) throws Exception {
+    QueryTestUtil.test(client, query);
   }
 
-  public static String normalizeQuery(String query) {
-    if (query.contains("${WORKING_PATH}")) {
-      return query.replaceAll(Pattern.quote("${WORKING_PATH}"), Matcher.quoteReplacement(TestTools.getWorkingPath()));
-    } else if (query.contains("[WORKING_PATH]")) {
-      return query.replaceAll(Pattern.quote("[WORKING_PATH]"), Matcher.quoteReplacement(TestTools.getWorkingPath()));
-    }
-    return query;
-  }
-
-  protected int testLogical(String query) throws Exception{
+  protected static int testLogical(String query) throws Exception{
     return testRunAndPrint(QueryType.LOGICAL, query);
   }
 
-  protected int testPhysical(String query) throws Exception{
+  protected static int testPhysical(String query) throws Exception{
     return testRunAndPrint(QueryType.PHYSICAL, query);
   }
 
-  protected int testSql(String query) throws Exception{
+  protected static int testSql(String query) throws Exception{
     return testRunAndPrint(QueryType.SQL, query);
   }
 
-  protected void testPhysicalFromFile(String file) throws Exception{
+  protected static void testPhysicalFromFile(String file) throws Exception{
     testPhysical(getFile(file));
   }
 
-  protected List<QueryResultBatch> testPhysicalFromFileWithResults(String file) throws Exception {
+  protected static List<QueryResultBatch> testPhysicalFromFileWithResults(String file) throws Exception {
     return testRunAndReturn(QueryType.PHYSICAL, getFile(file));
   }
 
-  protected void testLogicalFromFile(String file) throws Exception{
+  protected static void testLogicalFromFile(String file) throws Exception{
     testLogical(getFile(file));
   }
 
-  protected void testSqlFromFile(String file) throws Exception{
+  protected static void testSqlFromFile(String file) throws Exception{
     test(getFile(file));
   }
 
@@ -314,7 +328,8 @@ public class BaseTestQuery extends ExecTest{
     return rowCount;
   }
 
-  protected String getResultString(List<QueryResultBatch> results, String delimiter) throws SchemaChangeException {
+  protected static String getResultString(List<QueryResultBatch> results, String delimiter)
+      throws SchemaChangeException {
     StringBuilder formattedResults = new StringBuilder();
     boolean includeHeader = true;
     RecordBatchLoader loader = new RecordBatchLoader(getAllocator());
