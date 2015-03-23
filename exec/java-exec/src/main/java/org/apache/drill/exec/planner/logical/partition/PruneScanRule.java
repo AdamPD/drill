@@ -17,13 +17,18 @@
  */
 package org.apache.drill.exec.planner.logical.partition;
 
+import java.io.IOException;
 import java.util.BitSet;
 import java.util.Collections;
 import java.util.Iterator;
 import java.util.List;
 import java.util.Map;
 
+import net.hydromatic.optiq.jdbc.OptiqSchema;
+import net.hydromatic.optiq.prepare.RelOptTableImpl;
 import net.hydromatic.optiq.util.BitSets;
+
+import net.hydromatic.optiq.rules.java.JavaRules.EnumerableTableAccessRel;
 
 import org.apache.drill.common.expression.ErrorCollectorImpl;
 import org.apache.drill.common.expression.LogicalExpression;
@@ -31,18 +36,14 @@ import org.apache.drill.common.types.TypeProtos.MinorType;
 import org.apache.drill.common.types.Types;
 import org.apache.drill.exec.expr.ExpressionTreeMaterializer;
 import org.apache.drill.exec.expr.fn.interpreter.InterpreterEvaluator;
-import org.apache.drill.exec.expr.holders.NullableVarCharHolder;
 import org.apache.drill.exec.memory.BufferAllocator;
 import org.apache.drill.exec.ops.QueryContext;
 import org.apache.drill.exec.physical.base.FileGroupScan;
 import org.apache.drill.exec.physical.base.GroupScan;
 import org.apache.drill.exec.planner.FileSystemPartitionDescriptor;
-import org.apache.drill.exec.planner.logical.DrillFilterRel;
 import org.apache.drill.exec.planner.logical.DrillOptiq;
 import org.apache.drill.exec.planner.logical.DrillParseContext;
-import org.apache.drill.exec.planner.logical.DrillProjectRel;
-import org.apache.drill.exec.planner.logical.DrillRel;
-import org.apache.drill.exec.planner.logical.DrillScanRel;
+import org.apache.drill.exec.planner.logical.DrillTable;
 import org.apache.drill.exec.planner.logical.RelOptHelper;
 import org.apache.drill.exec.planner.physical.PlannerSettings;
 import org.apache.drill.exec.record.MaterializedField;
@@ -51,10 +52,12 @@ import org.apache.drill.exec.store.dfs.FileSelection;
 import org.apache.drill.exec.store.dfs.FormatSelection;
 import org.apache.drill.exec.vector.NullableBitVector;
 import org.apache.drill.exec.vector.NullableVarCharVector;
+import org.eigenbase.rel.FilterRel;
+import org.eigenbase.rel.ProjectRel;
 import org.eigenbase.rel.RelNode;
 import org.eigenbase.relopt.RelOptRule;
 import org.eigenbase.relopt.RelOptRuleCall;
-import org.eigenbase.relopt.RelOptRuleOperand;
+import org.eigenbase.relopt.RelOptTable;
 import org.eigenbase.relopt.RelOptUtil;
 import org.eigenbase.rex.RexNode;
 
@@ -62,75 +65,37 @@ import com.google.common.base.Charsets;
 import com.google.common.collect.Lists;
 import com.google.common.collect.Maps;
 
-public abstract class PruneScanRule extends RelOptRule {
+public class PruneScanRule extends RelOptRule {
   static final org.slf4j.Logger logger = org.slf4j.LoggerFactory.getLogger(PruneScanRule.class);
 
-  public static final RelOptRule getFilterOnProject(QueryContext context){
-      return new PruneScanRule(
-          RelOptHelper.some(DrillFilterRel.class, RelOptHelper.some(DrillProjectRel.class, RelOptHelper.any(DrillScanRel.class))),
-          "PruneScanRule:Filter_On_Project",
-          context) {
-
-      @Override
-        public boolean matches(RelOptRuleCall call) {
-          final DrillScanRel scan = (DrillScanRel) call.rel(2);
-          GroupScan groupScan = scan.getGroupScan();
-          // this rule is applicable only for dfs based partition pruning
-          return groupScan instanceof FileGroupScan && groupScan.supportsPartitionFilterPushdown();
-        }
-
-      @Override
-      public void onMatch(RelOptRuleCall call) {
-        final DrillFilterRel filterRel = (DrillFilterRel) call.rel(0);
-        final DrillProjectRel projectRel = (DrillProjectRel) call.rel(1);
-        final DrillScanRel scanRel = (DrillScanRel) call.rel(2);
-        doOnMatch(call, filterRel, projectRel, scanRel);
-      };
-    };
+  public static final RelOptRule getFilter(QueryContext context) {
+    return new PruneScanRule(context);
   }
 
-  public static final RelOptRule getFilterOnScan(QueryContext context){
-    return new PruneScanRule(
-          RelOptHelper.some(DrillFilterRel.class, RelOptHelper.any(DrillScanRel.class)),
-          "PruneScanRule:Filter_On_Scan", context) {
-
-      @Override
-        public boolean matches(RelOptRuleCall call) {
-          final DrillScanRel scan = (DrillScanRel) call.rel(1);
-          GroupScan groupScan = scan.getGroupScan();
-          // this rule is applicable only for dfs based partition pruning
-          return groupScan instanceof FileGroupScan && groupScan.supportsPartitionFilterPushdown();
-        }
-
-      @Override
-      public void onMatch(RelOptRuleCall call) {
-        final DrillFilterRel filterRel = (DrillFilterRel) call.rel(0);
-        final DrillScanRel scanRel = (DrillScanRel) call.rel(1);
-        doOnMatch(call, filterRel, null, scanRel);
-      }
-    };
+  @Override
+  public boolean matches(RelOptRuleCall call) {
+    final EnumerableTableAccessRel scan = (EnumerableTableAccessRel) call.rel(1);
+    return scan.getTable().unwrap(DrillTable.class).getSelection() instanceof FormatSelection;
   }
 
   final QueryContext context;
 
-  private PruneScanRule(RelOptRuleOperand operand, String id, QueryContext context) {
-    super(operand, id);
+  private PruneScanRule(QueryContext context) {
+    super(RelOptHelper.some(FilterRel.class, RelOptHelper.any(EnumerableTableAccessRel.class)), "PruneScanRule");
     this.context = context;
   }
 
-  protected void doOnMatch(RelOptRuleCall call, DrillFilterRel filterRel, DrillProjectRel projectRel, DrillScanRel scanRel) {
+  @Override
+  public void onMatch(RelOptRuleCall call) {
+    final FilterRel filterRel = (FilterRel) call.rel(0);
+    final EnumerableTableAccessRel scanRel = (EnumerableTableAccessRel) call.rel(1);
+    final DrillTable table = scanRel.getTable().unwrap(DrillTable.class);
+
     PlannerSettings settings = context.getPlannerSettings();
     FileSystemPartitionDescriptor descriptor = new FileSystemPartitionDescriptor(settings.getFsPartitionColumnLabel());
     final BufferAllocator allocator = context.getAllocator();
 
-
-    RexNode condition = null;
-    if(projectRel == null){
-      condition = filterRel.getCondition();
-    }else{
-      // get the filter as if it were below the projection.
-      condition = RelOptUtil.pushFilterPastProject(filterRel.getCondition(), projectRel);
-    }
+    RexNode condition = filterRel.getCondition();
 
     Map<Integer, String> dirNames = Maps.newHashMap();
     List<String> fieldNames = scanRel.getRowType().getFieldNames();
@@ -162,7 +127,7 @@ public abstract class PruneScanRule extends RelOptRule {
     }
 
     // set up the partitions
-    final FormatSelection origSelection = (FormatSelection)scanRel.getDrillTable().getSelection();
+    final FormatSelection origSelection = (FormatSelection)table.getSelection();
     final List<String> files = origSelection.getAsFiles();
     final String selectionRoot = origSelection.getSelection().selectionRoot;
     List<PathPartition> partitions = Lists.newLinkedList();
@@ -243,23 +208,7 @@ public abstract class PruneScanRule extends RelOptRule {
 
 
       final FileSelection newFileSelection = new FileSelection(newFiles, origSelection.getSelection().selectionRoot, true);
-      final FileGroupScan newScan = ((FileGroupScan)scanRel.getGroupScan()).clone(newFileSelection);
-      final DrillScanRel newScanRel =
-          new DrillScanRel(scanRel.getCluster(),
-              scanRel.getTraitSet().plus(DrillRel.DRILL_LOGICAL),
-              scanRel.getTable(),
-              newScan,
-              scanRel.getRowType(),
-              scanRel.getColumns());
-
-      RelNode inputRel = newScanRel;
-
-      if(projectRel != null){
-        inputRel = projectRel.copy(projectRel.getTraitSet(), Collections.singletonList(inputRel));
-      }
-
-      final RelNode newFilter = filterRel.copy(filterRel.getTraitSet(), Collections.singletonList(inputRel));
-      call.transformTo(newFilter);
+      table.modifySelection(new FormatSelection(((FormatSelection)table.getSelection()).getFormat(), newFileSelection));
 
     }catch(Exception e){
       logger.warn("Exception while trying to prune partition.", e);

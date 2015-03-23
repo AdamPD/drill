@@ -103,12 +103,11 @@ public class DrillRuleSets {
 //      PushJoinThroughJoinRule.LEFT, //
 //      PushSortPastProjectRule.INSTANCE, //
 
-      DrillPushProjIntoScan.INSTANCE,
-
 //      DrillPushPartitionFilterIntoScan.FILTER_ON_PROJECT,
 //      DrillPushPartitionFilterIntoScan.FILTER_ON_SCAN,
-      PruneScanRule.getFilterOnProject(context),
-      PruneScanRule.getFilterOnScan(context),
+      PruneScanRule.getFilter(context),
+
+      DrillPushProjIntoScan.INSTANCE,
 
       ////////////////////////////////
       DrillScanRule.INSTANCE,
