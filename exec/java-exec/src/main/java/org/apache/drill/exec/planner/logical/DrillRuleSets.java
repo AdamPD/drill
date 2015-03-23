@@ -105,7 +105,8 @@ public class DrillRuleSets {
 
 //      DrillPushPartitionFilterIntoScan.FILTER_ON_PROJECT,
 //      DrillPushPartitionFilterIntoScan.FILTER_ON_SCAN,
-      PruneScanRule.getFilter(context),
+      PruneScanRule.getFilterOnProject(context),
+      PruneScanRule.getFilterOnScan(context),
 
       DrillPushProjIntoScan.INSTANCE,
 

@@ -40,6 +40,7 @@ import org.apache.drill.exec.memory.BufferAllocator;
 import org.apache.drill.exec.ops.QueryContext;
 import org.apache.drill.exec.physical.base.FileGroupScan;
 import org.apache.drill.exec.physical.base.GroupScan;
+import org.apache.drill.exec.physical.config.Project;
 import org.apache.drill.exec.planner.FileSystemPartitionDescriptor;
 import org.apache.drill.exec.planner.logical.DrillOptiq;
 import org.apache.drill.exec.planner.logical.DrillParseContext;
@@ -57,6 +58,7 @@ import org.eigenbase.rel.ProjectRel;
 import org.eigenbase.rel.RelNode;
 import org.eigenbase.relopt.RelOptRule;
 import org.eigenbase.relopt.RelOptRuleCall;
+import org.eigenbase.relopt.RelOptRuleOperand;
 import org.eigenbase.relopt.RelOptTable;
 import org.eigenbase.relopt.RelOptUtil;
 import org.eigenbase.rex.RexNode;
@@ -65,37 +67,72 @@ import com.google.common.base.Charsets;
 import com.google.common.collect.Lists;
 import com.google.common.collect.Maps;
 
-public class PruneScanRule extends RelOptRule {
+public abstract class PruneScanRule extends RelOptRule {
   static final org.slf4j.Logger logger = org.slf4j.LoggerFactory.getLogger(PruneScanRule.class);
 
-  public static final RelOptRule getFilter(QueryContext context) {
-    return new PruneScanRule(context);
+  public static final RelOptRule getFilterOnProject(QueryContext context){
+    return new PruneScanRule(
+            RelOptHelper.some(FilterRel.class, RelOptHelper.some(ProjectRel.class, RelOptHelper.any(EnumerableTableAccessRel.class))),
+            "PruneScanRule:Filter_On_Project",
+            context) {
+
+      @Override
+      public boolean matches(RelOptRuleCall call) {
+        final EnumerableTableAccessRel scan = (EnumerableTableAccessRel) call.rel(2);
+        return scan.getTable().unwrap(DrillTable.class).getSelection() instanceof FormatSelection;
+      }
+
+      @Override
+      public void onMatch(RelOptRuleCall call) {
+        final FilterRel filterRel = (FilterRel) call.rel(0);
+        final ProjectRel projectRel = (ProjectRel) call.rel(1);
+        final EnumerableTableAccessRel scanRel = (EnumerableTableAccessRel) call.rel(2);
+        doOnMatch(call, filterRel, projectRel, scanRel);
+      };
+    };
   }
 
-  @Override
-  public boolean matches(RelOptRuleCall call) {
-    final EnumerableTableAccessRel scan = (EnumerableTableAccessRel) call.rel(1);
-    return scan.getTable().unwrap(DrillTable.class).getSelection() instanceof FormatSelection;
+  public static final RelOptRule getFilterOnScan(QueryContext context) {
+    return new PruneScanRule(
+            RelOptHelper.some(FilterRel.class, RelOptHelper.any(EnumerableTableAccessRel.class)),
+            "PruneScanRule:Filter_On_Scan", context) {
+
+      @Override
+      public boolean matches(RelOptRuleCall call) {
+        final EnumerableTableAccessRel scan = (EnumerableTableAccessRel) call.rel(1);
+        return scan.getTable().unwrap(DrillTable.class).getSelection() instanceof FormatSelection;
+      }
+
+      @Override
+      public void onMatch(RelOptRuleCall call) {
+        final FilterRel filterRel = (FilterRel) call.rel(0);
+        final EnumerableTableAccessRel scanRel = (EnumerableTableAccessRel) call.rel(1);
+        doOnMatch(call, filterRel, null, scanRel);
+      }
+    };
   }
 
   final QueryContext context;
 
-  private PruneScanRule(QueryContext context) {
-    super(RelOptHelper.some(FilterRel.class, RelOptHelper.any(EnumerableTableAccessRel.class)), "PruneScanRule");
+  private PruneScanRule(RelOptRuleOperand operand, String id, QueryContext context) {
+    super(operand, id);
     this.context = context;
   }
 
-  @Override
-  public void onMatch(RelOptRuleCall call) {
-    final FilterRel filterRel = (FilterRel) call.rel(0);
-    final EnumerableTableAccessRel scanRel = (EnumerableTableAccessRel) call.rel(1);
+  public void doOnMatch(RelOptRuleCall call, FilterRel filterRel, ProjectRel projectRel, EnumerableTableAccessRel scanRel) {
     final DrillTable table = scanRel.getTable().unwrap(DrillTable.class);
 
     PlannerSettings settings = context.getPlannerSettings();
     FileSystemPartitionDescriptor descriptor = new FileSystemPartitionDescriptor(settings.getFsPartitionColumnLabel());
     final BufferAllocator allocator = context.getAllocator();
 
-    RexNode condition = filterRel.getCondition();
+    RexNode condition = null;
+    if(projectRel == null){
+      condition = filterRel.getCondition();
+    }else{
+      // get the filter as if it were below the projection.
+      condition = RelOptUtil.pushFilterPastProject(filterRel.getCondition(), projectRel);
+    }
 
     Map<Integer, String> dirNames = Maps.newHashMap();
     List<String> fieldNames = scanRel.getRowType().getFieldNames();
