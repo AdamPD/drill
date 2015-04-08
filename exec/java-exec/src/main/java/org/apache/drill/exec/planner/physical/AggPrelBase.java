@@ -162,7 +162,7 @@ public abstract class AggPrelBase extends AggregateRelBase implements Prel {
   protected LogicalExpression toDrill(AggregateCall call, List<String> fn) {
     List<LogicalExpression> args = Lists.newArrayList();
     for (Integer i : call.getArgList()) {
-      args.add(new FieldReference(fn.get(i)));
+      args.add(FieldReference.getWithQuotedRef(fn.get(i)));
     }
 
     // for count(1).
