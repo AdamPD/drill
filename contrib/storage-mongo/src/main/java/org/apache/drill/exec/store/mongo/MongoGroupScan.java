@@ -277,6 +277,8 @@ public class MongoGroupScan extends AbstractGroupScan implements
         chunksList.add(chunkInfo);
         chunksInverseMapping.put(address.getHost(), chunksList);
       }
+    } catch (UnknownHostException e) {
+      throw new DrillRuntimeException(e.getMessage(), e);
     } finally {
       if (client != null) {
         client.close();

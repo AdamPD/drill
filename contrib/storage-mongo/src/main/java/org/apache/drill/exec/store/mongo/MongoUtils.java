@@ -28,7 +28,7 @@ import com.google.common.collect.Lists;
 import com.google.common.collect.Maps;
 import com.mongodb.BasicDBObject;
 import com.mongodb.DBObject;
-import com.mongodb.LazyDBObject;
+import com.mongodb.LazyWriteableDBObject;
 
 public class MongoUtils {
 
@@ -53,7 +53,7 @@ public class MongoUtils {
   }
 
   public static BasicDBObject deserializeFilter(byte[] filterBytes) {
-    DBObject dbo = new LazyDBObject(filterBytes,
+    DBObject dbo = new LazyWriteableDBObject(filterBytes,
         new LazyBSONCallback());
     BasicDBObject result = new BasicDBObject();
     result.putAll(dbo);
