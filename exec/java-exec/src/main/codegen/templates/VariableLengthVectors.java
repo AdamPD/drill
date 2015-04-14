@@ -16,6 +16,8 @@
  * limitations under the License.
  */
 
+import java.lang.Override;
+
 import org.apache.drill.exec.vector.BaseDataValueVector;
 import org.apache.drill.exec.vector.BaseValueVector;
 import org.apache.drill.exec.vector.VariableWidthVector;
@@ -55,6 +57,8 @@ public final class ${minor.class}Vector extends BaseDataValueVector implements V
   private static final int MIN_BYTE_COUNT = 4096;
   
   private final UInt${type.width}Vector offsetVector;
+  private final FieldReader reader = new ${minor.class}ReaderImpl(${minor.class}Vector.this);
+
   private final Accessor accessor;
   private final Mutator mutator;
   
@@ -70,6 +74,11 @@ public final class ${minor.class}Vector extends BaseDataValueVector implements V
     this.oAccessor = offsetVector.getAccessor();
     this.accessor = new Accessor();
     this.mutator = new Mutator();
+  }
+
+  @Override
+  public FieldReader getReader(){
+    return reader;
   }
 
   public int getBufferSize(){
@@ -201,7 +210,7 @@ public final class ${minor.class}Vector extends BaseDataValueVector implements V
     
     int outputStart = offsetVector.data.get${(minor.javaType!type.javaType)?cap_first}(thisIndex * ${type.width});
     
-    if(data.capacity() < outputStart + len) {
+    while(data.capacity() < outputStart + len) {
         reAlloc();
     }
 
@@ -316,12 +325,8 @@ public final class ${minor.class}Vector extends BaseDataValueVector implements V
   }
   
   public final class Accessor extends BaseValueVector.BaseAccessor implements VariableWidthAccessor {
-    final FieldReader reader = new ${minor.class}ReaderImpl(${minor.class}Vector.this);
     final UInt${type.width}Vector.Accessor oAccessor = offsetVector.getAccessor();
-    public FieldReader getReader(){
-      return reader;
-    }
-    
+
     public long getStartEnd(int index){
       return oAccessor.getTwoAsLong(index);
     }
@@ -418,7 +423,7 @@ public final class ${minor.class}Vector extends BaseDataValueVector implements V
       assert index >= 0;
 
       int currentOffset = offsetVector.getAccessor().get(index);
-      if (data.capacity() < currentOffset + bytes.length) {
+      while (data.capacity() < currentOffset + bytes.length) {
         reAlloc();
       }
       offsetVector.getMutator().setSafe(index + 1, currentOffset + bytes.length);
@@ -446,7 +451,7 @@ public final class ${minor.class}Vector extends BaseDataValueVector implements V
 
       int currentOffset = offsetVector.getAccessor().get(index);
 
-      if (data.capacity() < currentOffset + length) {
+      while (data.capacity() < currentOffset + length) {
         reAlloc();
       }
       offsetVector.getMutator().setSafe(index + 1, currentOffset + length);
@@ -455,7 +460,7 @@ public final class ${minor.class}Vector extends BaseDataValueVector implements V
 
     public void setValueLengthSafe(int index, int length) {
       int offset = offsetVector.getAccessor().get(index);
-      if(data.capacity() < offset + length ) {
+      while(data.capacity() < offset + length ) {
         reAlloc();
       }
       offsetVector.getMutator().setSafe(index + 1, offsetVector.getAccessor().get(index) + length);
@@ -467,7 +472,7 @@ public final class ${minor.class}Vector extends BaseDataValueVector implements V
       
       int outputStart = offsetVector.data.get${(minor.javaType!type.javaType)?cap_first}(index * ${type.width});
       
-      if(data.capacity() < outputStart + len) {
+      while(data.capacity() < outputStart + len) {
         reAlloc();
       }
       
@@ -485,7 +490,7 @@ public final class ${minor.class}Vector extends BaseDataValueVector implements V
       
       int outputStart = offsetVector.data.get${(minor.javaType!type.javaType)?cap_first}(index * ${type.width});
       
-      if(data.capacity() < outputStart + len) {
+      while(data.capacity() < outputStart + len) {
         reAlloc();
       }
       
@@ -501,7 +506,7 @@ public final class ${minor.class}Vector extends BaseDataValueVector implements V
       
       int outputStart = offsetVector.data.get${(minor.javaType!type.javaType)?cap_first}(index * ${type.width});
       
-      if(data.capacity() < outputStart + len) {
+      while(data.capacity() < outputStart + len) {
         reAlloc();
       }
       

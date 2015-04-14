@@ -26,7 +26,7 @@ import org.apache.drill.BaseTestQuery;
 import org.apache.drill.common.util.FileUtils;
 import org.apache.drill.exec.ExecConstants;
 import org.apache.drill.exec.record.RecordBatchLoader;
-import org.apache.drill.exec.rpc.user.QueryResultBatch;
+import org.apache.drill.exec.rpc.user.QueryDataBatch;
 import org.apache.drill.exec.vector.BigIntVector;
 import org.apache.drill.exec.vector.VarCharVector;
 import org.apache.hadoop.conf.Configuration;
@@ -40,6 +40,7 @@ import com.google.common.base.Charsets;
 import com.google.common.io.Files;
 
 public class TestWriter extends BaseTestQuery {
+  private static final org.slf4j.Logger logger = org.slf4j.LoggerFactory.getLogger(TestWriter.class);
 
   static FileSystem fs;
   static String ALTER_SESSION = String.format("ALTER SESSION SET `%s` = 'csv'", ExecConstants.OUTPUT_FORMAT_OPTION);
@@ -47,7 +48,7 @@ public class TestWriter extends BaseTestQuery {
   @BeforeClass
   public static void initFs() throws Exception {
     Configuration conf = new Configuration();
-    conf.set("fs.name.default", "local");
+    conf.set(FileSystem.FS_DEFAULT_NAME_KEY, "local");
 
     fs = FileSystem.get(conf);
   }
@@ -62,11 +63,11 @@ public class TestWriter extends BaseTestQuery {
 
     String plan = Files.toString(FileUtils.getResourceAsFile("/writer/simple_csv_writer.json"), Charsets.UTF_8);
 
-    List<QueryResultBatch> results = testPhysicalWithResults(plan);
+    List<QueryDataBatch> results = testPhysicalWithResults(plan);
 
     RecordBatchLoader batchLoader = new RecordBatchLoader(getAllocator());
 
-    QueryResultBatch batch = results.get(0);
+    QueryDataBatch batch = results.get(0);
     assertTrue(batchLoader.load(batch.getHeader().getDef(), batch.getData()));
 
     VarCharVector fragmentIdV = (VarCharVector) batchLoader.getValueAccessorById(VarCharVector.class, 0).getValueVector();
@@ -85,7 +86,7 @@ public class TestWriter extends BaseTestQuery {
     FileStatus[] fileStatuses = fs.globStatus(new Path(path.toString(), "*.csv"));
     assertTrue(2 == fileStatuses.length);
 
-    for (QueryResultBatch b : results) {
+    for (QueryDataBatch b : results) {
       b.release();
     }
     batchLoader.clear();
@@ -93,78 +94,91 @@ public class TestWriter extends BaseTestQuery {
 
   @Test
   public void simpleCTAS() throws Exception {
+    final String tableName = "simplectas";
     runSQL("Use dfs_test.tmp");
     runSQL(ALTER_SESSION);
 
-    String testQuery = "CREATE TABLE simplectas AS SELECT * FROM cp.`employee.json`";
+    final String testQuery = String.format("CREATE TABLE %s AS SELECT * FROM cp.`employee.json`", tableName);
 
-    ctasHelper("/tmp/drilltest/simplectas", testQuery, 1155);
+    testCTASQueryHelper(tableName, testQuery, 1155);
   }
 
   @Test
   public void complex1CTAS() throws Exception {
+    final String tableName = "complex1ctas";
     runSQL("Use dfs_test.tmp");
     runSQL(ALTER_SESSION);
-    String testQuery = "CREATE TABLE complex1ctas AS SELECT first_name, last_name, position_id FROM cp.`employee.json`";
+    final String testQuery = String.format("CREATE TABLE %s AS SELECT first_name, last_name, " +
+        "position_id FROM cp.`employee.json`", tableName);
 
-    ctasHelper("/tmp/drilltest/complex1ctas", testQuery, 1155);
+    testCTASQueryHelper(tableName, testQuery, 1155);
   }
 
   @Test
   public void complex2CTAS() throws Exception {
+    final String tableName = "complex1ctas";
     runSQL("Use dfs_test.tmp");
     runSQL(ALTER_SESSION);
-    String testQuery = "CREATE TABLE complex2ctas AS SELECT CAST(`birth_date` as Timestamp) FROM cp.`employee.json` GROUP BY birth_date";
+    final String testQuery = String.format("CREATE TABLE %s AS SELECT CAST(`birth_date` as Timestamp) FROM " +
+        "cp.`employee.json` GROUP BY birth_date", tableName);
 
-    ctasHelper("/tmp/drilltest/complex2ctas", testQuery, 52);
+    testCTASQueryHelper(tableName, testQuery, 52);
   }
 
   @Test
   public void simpleCTASWithSchemaInTableName() throws Exception {
+    final String tableName = "/test/simplectas2";
     runSQL(ALTER_SESSION);
-    String testQuery = "CREATE TABLE dfs_test.tmp.`/test/simplectas2` AS SELECT * FROM cp.`employee.json`";
+    final String testQuery =
+        String.format("CREATE TABLE dfs_test.tmp.`%s` AS SELECT * FROM cp.`employee.json`",tableName);
 
-    ctasHelper("/tmp/drilltest/test/simplectas2", testQuery, 1155);
+    testCTASQueryHelper(tableName, testQuery, 1155);
   }
 
   @Test
   public void simpleParquetDecimal() throws Exception {
-//    String testQuery = "CREATE TABLE dfs_test.tmp.`simpleparquetdecimal` AS SELECT full_name FROM cp.`employee.json`";
-    String testQuery = "CREATE TABLE dfs_test.tmp.`simpleparquetdecimal` AS SELECT cast(salary as decimal(30,2)) * -1 as salary FROM cp.`employee.json`";
-//    String testQuery = "select * from dfs_test.tmp.`simpleparquetdecimal`";
-    ctasHelper("/tmp/drilltest/simpleparquetdecimal", testQuery, 1155);
+    final String tableName = "simpleparquetdecimal";
+    final String testQuery = String.format("CREATE TABLE dfs_test.tmp.`%s` AS SELECT cast(salary as " +
+        "decimal(30,2)) * -1 as salary FROM cp.`employee.json`", tableName);
+    testCTASQueryHelper(tableName, testQuery, 1155);
   }
 
-  private void ctasHelper(String tableDir, String testQuery, int expectedOutputCount) throws Exception {
-    Path tableLocation = new Path(tableDir);
-    if (fs.exists(tableLocation)) {
-      fs.delete(tableLocation, true);
-    }
+  private void testCTASQueryHelper(String tableName, String testQuery, int expectedOutputCount) throws Exception {
+    try {
+      List<QueryDataBatch> results = testSqlWithResults(testQuery);
 
-    List<QueryResultBatch> results = testSqlWithResults(testQuery);
+      RecordBatchLoader batchLoader = new RecordBatchLoader(getAllocator());
 
-    RecordBatchLoader batchLoader = new RecordBatchLoader(getAllocator());
+      int recordsWritten = 0;
+      for (QueryDataBatch batch : results) {
+        batchLoader.load(batch.getHeader().getDef(), batch.getData());
 
-    int recordsWritten = 0;
-    for (QueryResultBatch batch : results) {
-      batchLoader.load(batch.getHeader().getDef(), batch.getData());
+        if (batchLoader.getRecordCount() <= 0) {
+          continue;
+        }
 
-      if (batchLoader.getRecordCount() <= 0) {
-        continue;
+        BigIntVector recordWrittenV = (BigIntVector) batchLoader.getValueAccessorById(BigIntVector.class, 1).getValueVector();
+
+        for (int i = 0; i < batchLoader.getRecordCount(); i++) {
+          recordsWritten += recordWrittenV.getAccessor().get(i);
+        }
+
+        batchLoader.clear();
+        batch.release();
       }
 
-      BigIntVector recordWrittenV = (BigIntVector) batchLoader.getValueAccessorById(BigIntVector.class, 1).getValueVector();
-
-      for (int i = 0; i < batchLoader.getRecordCount(); i++) {
-        recordsWritten += recordWrittenV.getAccessor().get(i);
+      assertEquals(expectedOutputCount, recordsWritten);
+    } finally {
+      try {
+        Path path = new Path(getDfsTestTmpSchemaLocation(), tableName);
+        if (fs.exists(path)) {
+          fs.delete(path, true);
+        }
+      } catch (Exception e) {
+        // ignore exceptions.
+        logger.warn("Failed to delete the table [{}, {}] created as part of the test",
+            getDfsTestTmpSchemaLocation(), tableName);
       }
-
-      batchLoader.clear();
-      batch.release();
     }
-
-//    assertTrue(fs.exists(tableLocation));
-    assertEquals(expectedOutputCount, recordsWritten);
   }
-
 }

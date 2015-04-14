@@ -17,11 +17,14 @@
  */
 package org.apache.drill.exec.store.mongo;
 
-import com.google.common.base.Charsets;
-import com.google.common.base.Preconditions;
-import com.google.common.base.Stopwatch;
-import com.google.common.collect.Lists;
-import com.google.common.collect.Sets;
+import java.io.IOException;
+import java.net.UnknownHostException;
+import java.util.Collection;
+import java.util.List;
+import java.util.Map;
+import java.util.Map.Entry;
+import java.util.Set;
+import java.util.concurrent.TimeUnit;
 
 import org.apache.drill.common.exceptions.DrillRuntimeException;
 import org.apache.drill.common.exceptions.ExecutionSetupException;
@@ -37,14 +40,10 @@ import org.apache.drill.exec.vector.complex.impl.VectorContainerWriter;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
-import java.io.IOException;
-import java.net.UnknownHostException;
-import java.util.Collection;
-import java.util.List;
-import java.util.Map;
-import java.util.Map.Entry;
-import java.util.Set;
-import java.util.concurrent.TimeUnit;
+import com.google.common.base.Charsets;
+import com.google.common.base.Stopwatch;
+import com.google.common.collect.Lists;
+import com.google.common.collect.Sets;
 import com.mongodb.BasicDBObject;
 import com.mongodb.DB;
 import com.mongodb.DBCollection;
@@ -73,12 +72,10 @@ public class MongoRecordReader extends AbstractRecordReader {
 
   private Boolean enableAllTextMode;
   private Boolean readNumbersAsDouble;
-  private boolean replay = false;
-  private String replayDoc = null;
 
   public MongoRecordReader(MongoSubScan.MongoSubScanSpec subScanSpec,
-      List<SchemaPath> projectedColumns, FragmentContext context,
-      MongoClientOptions clientOptions) {
+                           List<SchemaPath> projectedColumns, FragmentContext context,
+                           MongoClientOptions clientOptions) {
     this.clientOptions = clientOptions;
     this.fields = new BasicDBObject();
     // exclude _id field, if not mentioned by user.
@@ -87,7 +84,7 @@ public class MongoRecordReader extends AbstractRecordReader {
     this.fragmentContext = context;
     this.filters = new BasicDBObject();
     Map<String, List<BasicDBObject>> mergedFilters = MongoUtils.mergeFilters(
-        subScanSpec.getMinFilters(), subScanSpec.getMaxFilters());
+            subScanSpec.getMinFilters(), subScanSpec.getMaxFilters());
     buildFilters(subScanSpec.getFilter(), mergedFilters);
     enableAllTextMode = fragmentContext.getOptions().getOption(ExecConstants.MONGO_ALL_TEXT_MODE).bool_val;
     readNumbersAsDouble = fragmentContext.getOptions().getOption(ExecConstants.MONGO_READER_READ_NUMBERS_AS_DOUBLE).bool_val;
@@ -96,7 +93,7 @@ public class MongoRecordReader extends AbstractRecordReader {
 
   @Override
   protected Collection<SchemaPath> transformColumns(
-      Collection<SchemaPath> projectedColumns) {
+          Collection<SchemaPath> projectedColumns) {
     Set<SchemaPath> transformed = Sets.newLinkedHashSet();
     if (!isStarQuery()) {
       for (SchemaPath column : projectedColumns ) {
@@ -111,7 +108,7 @@ public class MongoRecordReader extends AbstractRecordReader {
   }
 
   private void buildFilters(BasicDBObject pushdownFilters,
-      Map<String, List<BasicDBObject>> mergedFilters) {
+                            Map<String, List<BasicDBObject>> mergedFilters) {
     for (Entry<String, List<BasicDBObject>> entry : mergedFilters.entrySet()) {
       List<BasicDBObject> list = entry.getValue();
       if (list.size() == 1) {
@@ -125,7 +122,7 @@ public class MongoRecordReader extends AbstractRecordReader {
     if (pushdownFilters != null && !pushdownFilters.toMap().isEmpty()) {
       if (!mergedFilters.isEmpty()) {
         this.filters = MongoUtils.andFilterAtIndex(this.filters,
-            pushdownFilters);
+                pushdownFilters);
       } else {
         this.filters = pushdownFilters;
       }
@@ -167,39 +164,19 @@ public class MongoRecordReader extends AbstractRecordReader {
     watch.start();
 
     try {
-      String errMsg = "Document '%s' is too big to fit into allocated ValueVector.";
-      if (replay) {
-        Preconditions.checkNotNull(replayDoc, "Document is null");
-        writer.setPosition(docCount);
-        jsonReader.setSource(replayDoc.getBytes(Charsets.UTF_8));
-        if (jsonReader.write(writer) == JsonReader.ReadState.WRITE_SUCCEED) {
-          docCount++;
-          replay = false;
-        } else {
-          throw new DrillRuntimeException(String.format(errMsg, replayDoc));
-        }
-      }
-      for (; docCount < BaseValueVector.INITIAL_VALUE_ALLOCATION && cursor.hasNext(); docCount++) {
+      while (docCount < BaseValueVector.INITIAL_VALUE_ALLOCATION && cursor.hasNext()) {
         writer.setPosition(docCount);
         String doc = cursor.next().toString();
         jsonReader.setSource(doc.getBytes(Charsets.UTF_8));
-        if (jsonReader.write(writer) == JsonReader.ReadState.WRITE_SUCCEED) {
-          docCount++;
-        } else {
-          if (docCount == 0) {
-            throw new DrillRuntimeException(String.format(errMsg, doc));
-          }
-          replay = true;
-          replayDoc = doc;
-          break;
-        }
+        jsonReader.write(writer);
+        docCount++;
       }
 
       jsonReader.ensureAtLeastOneField(writer);
 
       writer.setValueCount(docCount);
       logger.debug("Took {} ms to get {} records",
-          watch.elapsed(TimeUnit.MILLISECONDS), docCount);
+              watch.elapsed(TimeUnit.MILLISECONDS), docCount);
       return docCount;
     } catch (IOException e) {
       String msg = "Failure while reading document. - Parser was at record: " + (docCount + 1);

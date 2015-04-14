@@ -294,6 +294,82 @@ public class TestFunctionsQuery extends BaseTestQuery {
         .go();
   }
 
+
+  // From DRILL-2668:  "CAST ( 1.1 AS FLOAT )" yielded TYPE DOUBLE:
+
+  /**
+   * Test for DRILL-2668, that "CAST ( 1.5 AS FLOAT )" really yields type FLOAT
+   * (rather than type DOUBLE).
+   */
+  @Test
+  public void testLiteralCastToFLOATYieldsFLOAT() throws Exception {
+    testBuilder()
+    .sqlQuery( "SELECT CAST( 1.5 AS FLOAT ) AS ShouldBeFLOAT "
+               + "FROM cp.`employee.json` LIMIT 1" )
+    .unOrdered()
+    .baselineColumns("ShouldBeFLOAT")
+    .baselineValues(new Float(1.5f))
+    .go();
+  }
+
+  @Test
+  public void testLiteralCastToDOUBLEYieldsDOUBLE() throws Exception {
+    testBuilder()
+    .sqlQuery( "SELECT CAST( 1.25 AS DOUBLE PRECISION ) AS ShouldBeDOUBLE "
+               + "FROM cp.`employee.json` LIMIT 1" )
+    .unOrdered()
+    .baselineColumns("ShouldBeDOUBLE")
+    .baselineValues(new Double(1.25))
+    .go();
+  }
+
+  @Test
+  public void testLiteralCastToBIGINTYieldsBIGINT() throws Exception {
+    testBuilder()
+    .sqlQuery( "SELECT CAST( 64 AS BIGINT ) AS ShouldBeBIGINT "
+               + "FROM cp.`employee.json` LIMIT 1" )
+    .unOrdered()
+    .baselineColumns("ShouldBeBIGINT")
+    .baselineValues(new Long(64))
+    .go();
+  }
+
+  @Test
+  public void testLiteralCastToINTEGERYieldsINTEGER() throws Exception {
+    testBuilder()
+    .sqlQuery( "SELECT CAST( 32 AS INTEGER ) AS ShouldBeINTEGER "
+               + "FROM cp.`employee.json` LIMIT 1" )
+    .unOrdered()
+    .baselineColumns("ShouldBeINTEGER")
+    .baselineValues(new Integer(32))
+    .go();
+  }
+
+  @Ignore( "until SMALLINT is supported (DRILL-2470)" )
+  @Test
+  public void testLiteralCastToSMALLINTYieldsSMALLINT() throws Exception {
+    testBuilder()
+    .sqlQuery( "SELECT CAST( 16 AS SMALLINT ) AS ShouldBeSMALLINT "
+               + "FROM cp.`employee.json` LIMIT 1" )
+    .unOrdered()
+    .baselineColumns("ShouldBeSMALLINT")
+    .baselineValues(new Short((short) 16))
+    .go();
+  }
+
+  @Ignore( "until TINYINT is supported (~DRILL-2470)" )
+  @Test
+  public void testLiteralCastToTINYINTYieldsTINYINT() throws Exception {
+    testBuilder()
+    .sqlQuery( "SELECT CAST( 8 AS TINYINT ) AS ShouldBeTINYINT "
+               + "FROM cp.`employee.json` LIMIT 1" )
+    .unOrdered()
+    .baselineColumns("ShouldBeTINYINT")
+    .baselineValues(new Byte((byte) 8))
+    .go();
+  }
+
+
   @Test
   public void testDecimalMultiplicationOverflowHandling() throws Exception {
     String query = "select cast('1' as decimal(9, 5)) * cast ('999999999999999999999999999.999999999' as decimal(38, 9)) as DEC38_1, " +
@@ -707,6 +783,31 @@ public class TestFunctionsQuery extends BaseTestQuery {
         .unOrdered()
         .baselineColumns("col1")
         .baselineValues(new BigDecimal("1.00000"))
+        .go();
+  }
+
+  /*
+   * We may apply implicit casts in Hash Join while dealing with different numeric data types
+   * For this to work we need to distribute the data based on a common key, below method
+   * makes sure the hash value for different numeric types is the same for the same key
+   */
+  @Test
+  public void testHash64() throws Exception {
+    String query = "select " +
+        "hash64AsDouble(cast(employee_id as int)) = hash64AsDouble(cast(employee_id as bigint)) col1, " +
+        "hash64AsDouble(cast(employee_id as bigint)) = hash64AsDouble(cast(employee_id as float)) col2, " +
+        "hash64AsDouble(cast(employee_id as float)) = hash64AsDouble(cast(employee_id as double)) col3, " +
+        "hash64AsDouble(cast(employee_id as double)) = hash64AsDouble(cast(employee_id as decimal(9, 0))) col4, " +
+        "hash64AsDouble(cast(employee_id as decimal(9, 0))) = hash64AsDouble(cast(employee_id as decimal(18, 0))) col5, " +
+        "hash64AsDouble(cast(employee_id as decimal(18, 0))) = hash64AsDouble(cast(employee_id as decimal(28, 0))) col6, " +
+        "hash64AsDouble(cast(employee_id as decimal(28, 0))) = hash64AsDouble(cast(employee_id as decimal(38, 0))) col7 " +
+        "from cp.`employee.json` where employee_id = 1";
+
+    testBuilder()
+        .sqlQuery(query)
+        .unOrdered()
+        .baselineColumns("col1", "col2", "col3", "col4", "col5", "col6", "col7")
+        .baselineValues(true, true, true, true, true, true, true)
         .go();
   }
 }

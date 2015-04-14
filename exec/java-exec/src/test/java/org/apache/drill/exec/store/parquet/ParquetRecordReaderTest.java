@@ -49,7 +49,7 @@ import org.apache.drill.exec.proto.UserBitShared.QueryType;
 import org.apache.drill.exec.record.MaterializedField;
 import org.apache.drill.exec.record.RecordBatchLoader;
 import org.apache.drill.exec.record.VectorWrapper;
-import org.apache.drill.exec.rpc.user.QueryResultBatch;
+import org.apache.drill.exec.rpc.user.QueryDataBatch;
 import org.apache.drill.exec.rpc.user.UserServer;
 import org.apache.drill.exec.server.DrillbitContext;
 import org.apache.drill.exec.store.CachedSingleFileSystem;
@@ -67,7 +67,7 @@ import org.junit.Ignore;
 import org.junit.Test;
 
 import parquet.bytes.BytesInput;
-import parquet.column.page.Page;
+import parquet.column.page.DataPageV1;
 import parquet.column.page.PageReadStore;
 import parquet.column.page.PageReader;
 import parquet.hadoop.CodecFactoryExposer;
@@ -145,11 +145,11 @@ public class ParquetRecordReaderTest extends BaseTestQuery{
   @Test
   public void testNullableAgg() throws Exception {
 
-    List<QueryResultBatch> result = testSqlWithResults("select sum(a) as total_sum from dfs.`/tmp/parquet_with_nulls_should_sum_100000_nulls_first.parquet`");
+    List<QueryDataBatch> result = testSqlWithResults("select sum(a) as total_sum from dfs.`/tmp/parquet_with_nulls_should_sum_100000_nulls_first.parquet`");
     assertEquals("Only expected one batch with data, and then the empty finishing batch.", 2, result.size());
     RecordBatchLoader loader = new RecordBatchLoader(getDrillbitContext().getAllocator());
 
-    QueryResultBatch b = result.get(0);
+    QueryDataBatch b = result.get(0);
     loader.load(b.getHeader().getDef(), b.getData());
 
     VectorWrapper vw = loader.getValueAccessorById(
@@ -163,11 +163,11 @@ public class ParquetRecordReaderTest extends BaseTestQuery{
 
   @Test
   public void testNullableFilter() throws Exception {
-    List<QueryResultBatch> result = testSqlWithResults("select count(wr_return_quantity) as row_count from dfs.`/tmp/web_returns` where wr_return_quantity = 1");
+    List<QueryDataBatch> result = testSqlWithResults("select count(wr_return_quantity) as row_count from dfs.`/tmp/web_returns` where wr_return_quantity = 1");
     assertEquals("Only expected one batch with data, and then the empty finishing batch.", 2, result.size());
     RecordBatchLoader loader = new RecordBatchLoader(getDrillbitContext().getAllocator());
 
-    QueryResultBatch b = result.get(0);
+    QueryDataBatch b = result.get(0);
     loader.load(b.getHeader().getDef(), b.getData());
 
     VectorWrapper vw = loader.getValueAccessorById(
@@ -370,7 +370,7 @@ public class ParquetRecordReaderTest extends BaseTestQuery{
   private void validateContains(MessageType schema, PageReadStore pages, String[] path, int values, BytesInput bytes)
       throws IOException {
     PageReader pageReader = pages.getPageReader(schema.getColumnDescription(path));
-    Page page = pageReader.readPage();
+    DataPageV1 page = (DataPageV1) pageReader.readPage();
     assertEquals(values, page.getValueCount());
     assertArrayEquals(bytes.toByteArray(), page.getBytes().toByteArray());
   }

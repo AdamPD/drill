@@ -546,30 +546,7 @@ public class TypeCastRules {
     /** BIT cast able from **/
     rule = new HashSet<MinorType>();
     rule.add(MinorType.TINYINT);
-    rule.add(MinorType.SMALLINT);
-    rule.add(MinorType.INT);
-    rule.add(MinorType.BIGINT);
-    rule.add(MinorType.UINT1);
-    rule.add(MinorType.UINT2);
-    rule.add(MinorType.UINT4);
-    rule.add(MinorType.UINT8);
-    rule.add(MinorType.DECIMAL9);
-    rule.add(MinorType.DECIMAL18);
-    rule.add(MinorType.DECIMAL28SPARSE);
-    rule.add(MinorType.DECIMAL28DENSE);
-    rule.add(MinorType.DECIMAL38SPARSE);
-    rule.add(MinorType.DECIMAL38DENSE);
-    rule.add(MinorType.MONEY);
-    rule.add(MinorType.TIMESTAMPTZ);
-    rule.add(MinorType.FLOAT4);
-    rule.add(MinorType.FLOAT8);
     rule.add(MinorType.BIT);
-    rule.add(MinorType.FIXEDCHAR);
-    rule.add(MinorType.FIXED16CHAR);
-    rule.add(MinorType.VARCHAR);
-    rule.add(MinorType.VAR16CHAR);
-    rule.add(MinorType.VARBINARY);
-    rule.add(MinorType.FIXEDBINARY);
     rules.put(MinorType.BIT, rule);
 
     /** FIXEDCHAR cast able from **/
@@ -959,6 +936,31 @@ public class TypeCastRules {
     }
 
     return cost;
+  }
+
+  /*
+   * Simple helper function to determine if input type is numeric
+   */
+  public static boolean isNumericType(MinorType inputType) {
+    switch (inputType) {
+      case TINYINT:
+      case SMALLINT:
+      case INT:
+      case BIGINT:
+      case UINT1:
+      case UINT2:
+      case UINT4:
+      case UINT8:
+      case DECIMAL9:
+      case DECIMAL18:
+      case DECIMAL28SPARSE:
+      case DECIMAL38SPARSE:
+      case FLOAT4:
+      case FLOAT8:
+        return true;
+      default:
+        return false;
+    }
   }
 
 }

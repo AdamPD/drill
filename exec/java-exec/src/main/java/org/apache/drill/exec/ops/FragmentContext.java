@@ -17,6 +17,8 @@
  */
 package org.apache.drill.exec.ops;
 
+import com.google.common.base.Preconditions;
+import io.netty.buffer.ByteBuf;
 import io.netty.buffer.DrillBuf;
 
 import java.io.IOException;
@@ -35,9 +37,16 @@ import org.apache.drill.exec.expr.CodeGenerator;
 import org.apache.drill.exec.expr.fn.FunctionImplementationRegistry;
 import org.apache.drill.exec.memory.BufferAllocator;
 import org.apache.drill.exec.memory.OutOfMemoryException;
+import org.apache.drill.exec.physical.impl.materialize.QueryWritableBatch;
+import org.apache.drill.exec.planner.physical.PlannerSettings;
 import org.apache.drill.exec.proto.BitControl.PlanFragment;
 import org.apache.drill.exec.proto.CoordinationProtos.DrillbitEndpoint;
 import org.apache.drill.exec.proto.ExecProtos.FragmentHandle;
+import org.apache.drill.exec.proto.GeneralRPCProtos.Ack;
+import org.apache.drill.exec.record.FragmentWritableBatch;
+import org.apache.drill.exec.rpc.DrillRpcFuture;
+import org.apache.drill.exec.rpc.RpcException;
+import org.apache.drill.exec.rpc.RpcOutcomeListener;
 import org.apache.drill.exec.rpc.control.ControlTunnel;
 import org.apache.drill.exec.rpc.data.DataTunnel;
 import org.apache.drill.exec.rpc.user.UserServer.UserClientConnection;
@@ -45,6 +54,7 @@ import org.apache.drill.exec.server.DrillbitContext;
 import org.apache.drill.exec.server.options.FragmentOptionManager;
 import org.apache.drill.exec.server.options.OptionList;
 import org.apache.drill.exec.server.options.OptionManager;
+import org.apache.drill.exec.store.PartitionExplorer;
 import org.apache.drill.exec.work.batch.IncomingBuffers;
 
 import com.google.common.collect.Maps;
@@ -55,7 +65,7 @@ import com.google.common.collect.Maps;
 public class FragmentContext implements AutoCloseable, UdfUtilities {
   private static final org.slf4j.Logger logger = org.slf4j.LoggerFactory.getLogger(FragmentContext.class);
 
-  private final Map<DrillbitEndpoint, DataTunnel> tunnels = Maps.newHashMap();
+  private final Map<DrillbitEndpoint, AccountingDataTunnel> tunnels = Maps.newHashMap();
   private final DrillbitContext context;
   private final UserClientConnection connection;
   private final FragmentStats stats;
@@ -69,6 +79,16 @@ public class FragmentContext implements AutoCloseable, UdfUtilities {
 
   private final DeferredException deferredException = new DeferredException();
   private volatile FragmentContextState state = FragmentContextState.OK;
+  private final SendingAccountor sendingAccountor = new SendingAccountor();
+  private final Consumer<RpcException> exceptionConsumer = new Consumer<RpcException>() {
+
+    @Override
+    public void accept(RpcException e) {
+      fail(e);
+    }
+  };
+  private final RpcOutcomeListener<Ack> statusHandler = new StatusHandler(exceptionConsumer, sendingAccountor);
+  private final AccountingUserConnection accountingUserConnection;
 
   /*
    * TODO we need a state that indicates that cancellation has been requested and
@@ -86,6 +106,7 @@ public class FragmentContext implements AutoCloseable, UdfUtilities {
     throws ExecutionSetupException {
     this.context = dbContext;
     this.connection = connection;
+    this.accountingUserConnection = new AccountingUserConnection(connection, sendingAccountor, statusHandler);
     this.fragment = fragment;
     this.funcRegistry = funcRegistry;
     queryDateTimeInfo = new QueryDateTimeInfo(fragment.getQueryStartTime(), fragment.getTimeZone());
@@ -128,7 +149,9 @@ public class FragmentContext implements AutoCloseable, UdfUtilities {
   }
 
   public void fail(Throwable cause) {
-    logger.error("Fragment Context received failure.", cause);
+    final FragmentHandle fragmentHandle = fragment.getHandle();
+    logger.error("Fragment Context received failure -- Fragment: {}:{}",
+      fragmentHandle.getMajorFragmentId(), fragmentHandle.getMinorFragmentId(), cause);
     setState(FragmentContextState.FAILED);
     deferredException.addThrowable(cause);
   }
@@ -236,22 +259,19 @@ public class FragmentContext implements AutoCloseable, UdfUtilities {
     return context.getCompiler().getImplementationClass(cg, instanceCount);
   }
 
-  /**
-   * Get the user connection associated with this fragment.  This return null unless this is a root fragment.
-   * @return The RPC connection to the query submitter.
-   */
-  public UserClientConnection getConnection() {
-    return connection;
+  public AccountingUserConnection getUserDataTunnel() {
+    Preconditions.checkState(connection != null, "Only Root fragment can get UserDataTunnel");
+    return accountingUserConnection;
   }
 
   public ControlTunnel getControlTunnel(final DrillbitEndpoint endpoint) {
     return context.getController().getTunnel(endpoint);
   }
 
-  public DataTunnel getDataTunnel(DrillbitEndpoint endpoint) {
-    DataTunnel tunnel = tunnels.get(endpoint);
+  public AccountingDataTunnel getDataTunnel(DrillbitEndpoint endpoint) {
+    AccountingDataTunnel tunnel = tunnels.get(endpoint);
     if (tunnel == null) {
-      tunnel = context.getDataConnectionsPool().getTunnel(endpoint);
+      tunnel = new AccountingDataTunnel(context.getDataConnectionsPool().getTunnel(endpoint), sendingAccountor, statusHandler);
       tunnels.put(endpoint, tunnel);
     }
     return tunnel;
@@ -314,4 +334,19 @@ public class FragmentContext implements AutoCloseable, UdfUtilities {
   public DrillBuf getManagedBuffer(int size) {
     return bufferManager.getManagedBuffer(size);
   }
+
+  @Override
+  public PartitionExplorer getPartitionExplorer() {
+    throw new UnsupportedOperationException(String.format("The partition explorer interface can only be used " +
+        "in functions that can be evaluated at planning time. Make sure that the %s configuration " +
+        "option is set to true.", PlannerSettings.CONSTANT_FOLDING.getOptionName()));
+  }
+
+  /**
+   * Wait for ack that all outgoing batches have been sent
+   */
+  public void waitForSendComplete() {
+    sendingAccountor.waitForSendComplete();
+  }
+
 }

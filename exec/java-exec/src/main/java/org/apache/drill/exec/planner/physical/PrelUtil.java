@@ -17,11 +17,13 @@
  */
 package org.apache.drill.exec.planner.physical;
 
+import java.util.ArrayList;
 import java.util.Arrays;
 import java.util.Iterator;
 import java.util.List;
 import java.util.Set;
 
+import org.apache.drill.common.expression.CastExpression;
 import org.apache.drill.common.expression.ExpressionPosition;
 import org.apache.drill.common.expression.FieldReference;
 import org.apache.drill.common.expression.FunctionCall;
@@ -31,6 +33,13 @@ import org.apache.drill.common.expression.PathSegment.ArraySegment;
 import org.apache.drill.common.expression.PathSegment.NameSegment;
 import org.apache.drill.common.expression.SchemaPath;
 import org.apache.drill.common.logical.data.Order.Ordering;
+import org.apache.drill.common.types.TypeProtos.MinorType;
+import org.apache.drill.common.types.Types;
+import org.apache.drill.exec.compile.sig.MappingSet;
+import org.apache.drill.exec.expr.ClassGenerator;
+import org.apache.drill.exec.expr.ClassGenerator.HoldingContainer;
+import org.apache.drill.exec.expr.fn.FunctionGenerationHelper;
+import org.apache.drill.exec.expr.fn.FunctionImplementationRegistry;
 import org.apache.drill.exec.planner.physical.DrillDistributionTrait.DistributionField;
 import org.apache.drill.exec.record.BatchSchema.SelectionVectorMode;
 import org.eigenbase.rel.RelCollation;
@@ -59,6 +68,8 @@ import com.google.common.collect.Sets;
 public class PrelUtil {
 
   public static final String HASH_EXPR_NAME = "E_X_P_R_H_A_S_H_F_I_E_L_D";
+  private static final String HASH64_FUNCTION_NAME = "hash64";
+  private static final String HASH64_DOUBLE_FUNCTION_NAME = "hash64AsDouble";
 
   public static List<Ordering> getOrdering(RelCollation collation, RelDataType rowType) {
     List<Ordering> orderExpr = Lists.newArrayList();
@@ -74,8 +85,21 @@ public class PrelUtil {
   }
 
   /*
-   * Return a hash expression :  hash(field1) ^ hash(field2) ^ hash(field3) ... ^ hash(field_n)
+   * Return a hash expression :  (int) hash(field1, hash(field2, hash(field3, 0)));
    */
+  public static LogicalExpression getHashExpression(List<LogicalExpression> fields, boolean hashAsDouble){
+    assert fields.size() > 0;
+
+    String functionName = hashAsDouble ? HASH64_DOUBLE_FUNCTION_NAME : HASH64_FUNCTION_NAME;
+    FunctionCall func = new FunctionCall(functionName,  ImmutableList.of(fields.get(0)), ExpressionPosition.UNKNOWN);
+    for (int i = 1; i<fields.size(); i++) {
+      func = new FunctionCall(functionName,  ImmutableList.of(fields.get(i), func), ExpressionPosition.UNKNOWN);
+    }
+
+    return new CastExpression(func, Types.required(MinorType.INT), ExpressionPosition.UNKNOWN);
+
+  }
+
   public static LogicalExpression getHashExpression(List<DistributionField> fields, RelDataType rowType) {
     assert fields.size() > 0;
 
@@ -86,17 +110,13 @@ public class PrelUtil {
       return new FieldReference(HASH_EXPR_NAME);
     }
 
-    FieldReference fr = new FieldReference(childFields.get(fields.get(0).getFieldId()), ExpressionPosition.UNKNOWN);
-    FunctionCall func = new FunctionCall("hash",  ImmutableList.of((LogicalExpression)fr), ExpressionPosition.UNKNOWN);
-
-    for (int i = 1; i<fields.size(); i++) {
-      fr = new FieldReference(childFields.get(fields.get(i).getFieldId()), ExpressionPosition.UNKNOWN);
-      FunctionCall func2 = new FunctionCall("hash",  ImmutableList.of((LogicalExpression)fr), ExpressionPosition.UNKNOWN);
-
-      func = new FunctionCall("xor", ImmutableList.of((LogicalExpression)func, (LogicalExpression)func2), ExpressionPosition.UNKNOWN);
+    final List<LogicalExpression> expressions = new ArrayList<LogicalExpression>(childFields.size());
+    for(int i =0; i < fields.size(); i++){
+      expressions.add(new FieldReference(childFields.get(fields.get(i).getFieldId()), ExpressionPosition.UNKNOWN));
     }
 
-    return func;
+    // for distribution always hash as double
+    return getHashExpression(expressions, true);
   }
 
   public static Iterator<Prel> iter(RelNode... nodes) {

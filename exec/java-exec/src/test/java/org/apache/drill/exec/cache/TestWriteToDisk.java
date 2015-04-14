@@ -17,13 +17,16 @@
  */
 package org.apache.drill.exec.cache;
 
+import java.io.File;
 import java.util.List;
 
+import com.google.common.io.Files;
 import org.apache.drill.common.config.DrillConfig;
 import org.apache.drill.common.expression.ExpressionPosition;
 import org.apache.drill.common.expression.SchemaPath;
 import org.apache.drill.common.types.TypeProtos;
 import org.apache.drill.common.types.Types;
+import org.apache.drill.common.util.TestTools;
 import org.apache.drill.exec.ExecTest;
 import org.apache.drill.exec.expr.TypeHelper;
 import org.apache.drill.exec.record.MaterializedField;
@@ -43,73 +46,93 @@ import org.apache.hadoop.fs.FSDataInputStream;
 import org.apache.hadoop.fs.FSDataOutputStream;
 import org.apache.hadoop.fs.FileSystem;
 import org.apache.hadoop.fs.Path;
+import org.junit.Rule;
 import org.junit.Test;
 
 import com.google.common.collect.Lists;
+import org.junit.rules.TestRule;
 
-public class TestWriteToDisk  extends ExecTest{
+public class TestWriteToDisk extends ExecTest {
+  @Rule public final TestRule TIMEOUT = TestTools.getTimeoutRule(90000); // 90secs
 
   @Test
+  @SuppressWarnings("static-method")
   public void test() throws Exception {
-    List<ValueVector> vectorList = Lists.newArrayList();
-    RemoteServiceSet serviceSet = RemoteServiceSet.getLocalServiceSet();
-    DrillConfig config = DrillConfig.create();
-    Drillbit bit = new Drillbit(config, serviceSet);
-    bit.run();
-    DrillbitContext context = bit.getContext();
+    final List<ValueVector> vectorList = Lists.newArrayList();
+    final DrillConfig config = DrillConfig.create();
+    try (final RemoteServiceSet serviceSet = RemoteServiceSet
+        .getLocalServiceSet();
+        final Drillbit bit = new Drillbit(config, serviceSet)) {
+      bit.run();
+      final DrillbitContext context = bit.getContext();
 
-    MaterializedField intField = MaterializedField.create(new SchemaPath("int", ExpressionPosition.UNKNOWN), Types.required(TypeProtos.MinorType.INT));
-    IntVector intVector = (IntVector)TypeHelper.getNewVector(intField, context.getAllocator());
-    MaterializedField binField = MaterializedField.create(new SchemaPath("binary", ExpressionPosition.UNKNOWN), Types.required(TypeProtos.MinorType.VARBINARY));
-    VarBinaryVector binVector = (VarBinaryVector)TypeHelper.getNewVector(binField, context.getAllocator());
-    AllocationHelper.allocate(intVector, 4, 4);
-    AllocationHelper.allocate(binVector, 4, 5);
-    vectorList.add(intVector);
-    vectorList.add(binVector);
+      final MaterializedField intField = MaterializedField.create(
+          new SchemaPath("int", ExpressionPosition.UNKNOWN),
+          Types.required(TypeProtos.MinorType.INT));
+      final MaterializedField binField = MaterializedField.create(
+          new SchemaPath("binary", ExpressionPosition.UNKNOWN),
+          Types.required(TypeProtos.MinorType.VARBINARY));
+      try (final IntVector intVector = (IntVector) TypeHelper.getNewVector(intField, context.getAllocator());
+          final VarBinaryVector binVector =
+              (VarBinaryVector) TypeHelper.getNewVector(binField, context.getAllocator())) {
+        AllocationHelper.allocate(intVector, 4, 4);
+        AllocationHelper.allocate(binVector, 4, 5);
+        vectorList.add(intVector);
+        vectorList.add(binVector);
 
-    intVector.getMutator().setSafe(0, 0); binVector.getMutator().setSafe(0, "ZERO".getBytes());
-    intVector.getMutator().setSafe(1, 1); binVector.getMutator().setSafe(1, "ONE".getBytes());
-    intVector.getMutator().setSafe(2, 2); binVector.getMutator().setSafe(2, "TWO".getBytes());
-    intVector.getMutator().setSafe(3, 3); binVector.getMutator().setSafe(3, "THREE".getBytes());
-    intVector.getMutator().setValueCount(4);
-    binVector.getMutator().setValueCount(4);
+        intVector.getMutator().setSafe(0, 0);
+        binVector.getMutator().setSafe(0, "ZERO".getBytes());
+        intVector.getMutator().setSafe(1, 1);
+        binVector.getMutator().setSafe(1, "ONE".getBytes());
+        intVector.getMutator().setSafe(2, 2);
+        binVector.getMutator().setSafe(2, "TWO".getBytes());
+        intVector.getMutator().setSafe(3, 3);
+        binVector.getMutator().setSafe(3, "THREE".getBytes());
+        intVector.getMutator().setValueCount(4);
+        binVector.getMutator().setValueCount(4);
 
-    VectorContainer container = new VectorContainer();
-    container.addCollection(vectorList);
-    container.setRecordCount(4);
-    WritableBatch batch = WritableBatch.getBatchNoHVWrap(container.getRecordCount(), container, false);
-    VectorAccessibleSerializable wrap = new VectorAccessibleSerializable(batch, context.getAllocator());
+        VectorContainer container = new VectorContainer();
+        container.addCollection(vectorList);
+        container.setRecordCount(4);
+        WritableBatch batch = WritableBatch.getBatchNoHVWrap(
+            container.getRecordCount(), container, false);
+        VectorAccessibleSerializable wrap = new VectorAccessibleSerializable(
+            batch, context.getAllocator());
 
-    Configuration conf = new Configuration();
-    conf.set(FileSystem.FS_DEFAULT_NAME_KEY, "file:///");
-    FileSystem fs = FileSystem.get(conf);
-    Path path = new Path("/tmp/drillSerializable");
-    if (fs.exists(path)) {
-      fs.delete(path, false);
-    }
-    FSDataOutputStream out = fs.create(path);
+        Configuration conf = new Configuration();
+        conf.set(FileSystem.FS_DEFAULT_NAME_KEY, "file:///");
 
-    wrap.writeToStream(out);
-    out.close();
+        final VectorAccessibleSerializable newWrap = new VectorAccessibleSerializable(
+            context.getAllocator());
+        try (final FileSystem fs = FileSystem.get(conf)) {
+          final File tempDir = Files.createTempDir();
+          tempDir.deleteOnExit();
+          final Path path = new Path(tempDir.getAbsolutePath(), "drillSerializable");
+          try (final FSDataOutputStream out = fs.create(path)) {
+            wrap.writeToStream(out);
+            out.close();
+          }
 
-    FSDataInputStream in = fs.open(path);
-    VectorAccessibleSerializable newWrap = new VectorAccessibleSerializable(context.getAllocator());
-    newWrap.readFromStream(in);
-    fs.close();
+          try (final FSDataInputStream in = fs.open(path)) {
+            newWrap.readFromStream(in);
+          }
+        }
 
-    VectorAccessible newContainer = newWrap.get();
-    for (VectorWrapper w : newContainer) {
-      ValueVector vv = w.getValueVector();
-      int values = vv.getAccessor().getValueCount();
-      for (int i = 0; i < values; i++) {
-        Object o = vv.getAccessor().getObject(i);
-        if (o instanceof byte[]) {
-          System.out.println(new String((byte[])o));
-        } else {
-          System.out.println(o);
+        final VectorAccessible newContainer = newWrap.get();
+        for (VectorWrapper<?> w : newContainer) {
+          try (ValueVector vv = w.getValueVector()) {
+            int values = vv.getAccessor().getValueCount();
+            for (int i = 0; i < values; i++) {
+              final Object o = vv.getAccessor().getObject(i);
+              if (o instanceof byte[]) {
+                System.out.println(new String((byte[]) o));
+              } else {
+                System.out.println(o);
+              }
+            }
+          }
         }
       }
     }
   }
-
 }

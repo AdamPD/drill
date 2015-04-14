@@ -23,7 +23,6 @@ import java.sql.ResultSet;
  * SQLException for invalid-cursor-state conditions, e.g., calling a column
  * accessor method before calling {@link ResultSet#next()} or after
  * {@link ResultSet#next()} returns false.
- *
  */
 class InvalidCursorStateSqlException extends JdbcApiSqlException {
 
@@ -55,7 +54,7 @@ class InvalidCursorStateSqlException extends JdbcApiSqlException {
 
   /**
    * See {@link JdbcApiSqlException#JdbcApiSqlException()}.
-   * */
+   */
   public InvalidCursorStateSqlException() {
     super();
   }

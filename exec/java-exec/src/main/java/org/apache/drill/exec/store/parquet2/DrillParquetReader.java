@@ -27,6 +27,7 @@ import java.util.HashMap;
 import java.util.Set;
 
 import com.google.common.collect.Sets;
+import org.apache.drill.common.exceptions.DrillRuntimeException;
 import org.apache.drill.common.exceptions.ExecutionSetupException;
 import org.apache.drill.common.expression.PathSegment;
 import org.apache.drill.common.expression.SchemaPath;
@@ -54,11 +55,11 @@ import org.apache.hadoop.fs.FileSystem;
 import org.apache.hadoop.fs.Path;
 
 import parquet.column.ColumnDescriptor;
+import parquet.common.schema.ColumnPath;
 import parquet.hadoop.CodecFactoryExposer;
 import parquet.hadoop.ColumnChunkIncReadStore;
 import parquet.hadoop.metadata.BlockMetaData;
 import parquet.hadoop.metadata.ColumnChunkMetaData;
-import parquet.hadoop.metadata.ColumnPath;
 import parquet.hadoop.metadata.ParquetMetadata;
 import parquet.io.ColumnIOFactory;
 import parquet.io.InvalidRecordException;
@@ -75,7 +76,7 @@ import parquet.schema.Types;
 
 public class DrillParquetReader extends AbstractRecordReader {
 
-  static final org.slf4j.Logger logger = org.slf4j.LoggerFactory.getLogger(DrillParquetReader.class);
+  private static final org.slf4j.Logger logger = org.slf4j.LoggerFactory.getLogger(DrillParquetReader.class);
 
   // same as the DEFAULT_RECORDS_TO_READ_IF_NOT_FIXED_WIDTH in ParquetRecordReader
 
@@ -270,8 +271,14 @@ public class DrillParquetReader extends AbstractRecordReader {
         recordReader = columnIO.getRecordReader(pageReadStore, recordMaterializer);
       }
     } catch (Exception e) {
-      throw new ExecutionSetupException(e);
+      handleAndRaise("Failure in setting up reader", e);
     }
+  }
+
+  protected void handleAndRaise(String s, Exception e) {
+    String message = "Error in drill parquet reader (complex).\nMessage: " + s +
+      "\nParquet Metadata: " + footer;
+    throw new DrillRuntimeException(message, e);
   }
 
   private static Type getType(String[] pathSegments, int depth, MessageType schema) {
@@ -312,7 +319,8 @@ public class DrillParquetReader extends AbstractRecordReader {
       if (count % fillLevelCheckFrequency == 0) {
         if (getPercentFilled() > fillLevelCheckThreshold) {
           if(!recordMaterializer.ok()){
-            throw new RuntimeException(String.format("The setting for `%s` is too high for your Parquet records. Please set a lower check threshold and retry your query. ", ExecConstants.PARQUET_VECTOR_FILL_CHECK_THRESHOLD));
+            String message = String.format("The setting for `%s` is too high for your Parquet records. Please set a lower check threshold and retry your query. ", ExecConstants.PARQUET_VECTOR_FILL_CHECK_THRESHOLD);
+            handleAndRaise(message, new RuntimeException(message));
           }
           break;
         }
@@ -332,7 +340,7 @@ public class DrillParquetReader extends AbstractRecordReader {
   private int getPercentFilled() {
     int filled = 0;
     for (ValueVector v : primitiveVectors) {
-      filled = Math.max(filled, ((BaseValueVector) v).getCurrentValueCount() * 100 / v.getValueCapacity());
+      filled = Math.max(filled, v.getAccessor().getValueCount() * 100 / v.getValueCapacity());
       if (v instanceof VariableWidthVector) {
         filled = Math.max(filled, ((VariableWidthVector) v).getCurrentSizeInBytes() * 100 / ((VariableWidthVector) v).getByteCapacity());
       }

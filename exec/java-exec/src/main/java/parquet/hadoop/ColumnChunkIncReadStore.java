@@ -26,6 +26,7 @@ import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
 
+import org.apache.drill.common.exceptions.DrillRuntimeException;
 import org.apache.drill.exec.memory.BufferAllocator;
 import org.apache.hadoop.conf.Configuration;
 import org.apache.hadoop.fs.FSDataInputStream;
@@ -34,8 +35,9 @@ import org.apache.hadoop.fs.Path;
 
 import parquet.bytes.BytesInput;
 import parquet.column.ColumnDescriptor;
+import parquet.column.page.DataPage;
+import parquet.column.page.DataPageV1;
 import parquet.column.page.DictionaryPage;
-import parquet.column.page.Page;
 import parquet.column.page.PageReadStore;
 import parquet.column.page.PageReader;
 import parquet.format.PageHeader;
@@ -92,9 +94,11 @@ public class ColumnChunkIncReadStore implements PageReadStore {
     @Override
     public DictionaryPage readDictionaryPage() {
       if (dictionaryPage == null) {
+        PageHeader pageHeader = new PageHeader();
+        long pos = 0;
         try {
-          long pos = in.getPos();
-          PageHeader pageHeader = Util.readPageHeader(in);
+          pos = in.getPos();
+          pageHeader = Util.readPageHeader(in);
           if (pageHeader.getDictionary_page_header() == null) {
             in.seek(pos);
             return null;
@@ -105,8 +109,16 @@ public class ColumnChunkIncReadStore implements PageReadStore {
                           pageHeader.getDictionary_page_header().getNum_values(),
                           parquetMetadataConverter.getEncoding(pageHeader.dictionary_page_header.encoding)
                   );
-        } catch (IOException e) {
-          throw new RuntimeException(e);
+        } catch (Exception e) {
+          throw new DrillRuntimeException("Error reading dictionary page." +
+            "\nFile path: " + path.toUri().getPath() +
+            "\nRow count: " + rowCount +
+            "\nColumn Chunk Metadata: " + metaData +
+            "\nPage Header: " + pageHeader +
+            "\nFile offset: " + fileOffset +
+            "\nSize: " + size +
+            "\nValue read so far: " + valueReadSoFar +
+            "\nPosition: " + pos, e);
         }
       }
       return dictionaryPage;
@@ -118,14 +130,15 @@ public class ColumnChunkIncReadStore implements PageReadStore {
     }
 
     @Override
-    public Page readPage() {
+    public DataPage readPage() {
+      PageHeader pageHeader = new PageHeader();
       try {
         if (lastPage != null) {
           lastPage.release();
           lastPage = null;
         }
         while(valueReadSoFar < metaData.getValueCount()) {
-          PageHeader pageHeader = Util.readPageHeader(in);
+          pageHeader = Util.readPageHeader(in);
           switch (pageHeader.type) {
             case DICTIONARY_PAGE:
               if (dictionaryPage == null) {
@@ -147,11 +160,11 @@ public class ColumnChunkIncReadStore implements PageReadStore {
               while (buffer.remaining() > 0) {
                 CompatibilityUtil.getBuf(in, buffer, pageHeader.compressed_page_size);
               }
-              return new Page(
+              return new DataPageV1(
                       decompressor.decompress(BytesInput.from(buffer, 0, pageHeader.compressed_page_size), pageHeader.getUncompressed_page_size()),
                       pageHeader.data_page_header.num_values,
                       pageHeader.uncompressed_page_size,
-                      parquetMetadataConverter.fromParquetStatistics(pageHeader.data_page_header.statistics, columnDescriptor.getType()),
+                      ParquetMetadataConverter.fromParquetStatistics(pageHeader.data_page_header.statistics, columnDescriptor.getType()),
                       parquetMetadataConverter.getEncoding(pageHeader.data_page_header.repetition_level_encoding),
                       parquetMetadataConverter.getEncoding(pageHeader.data_page_header.definition_level_encoding),
                       parquetMetadataConverter.getEncoding(pageHeader.data_page_header.encoding)
@@ -163,8 +176,15 @@ public class ColumnChunkIncReadStore implements PageReadStore {
         }
         in.close();
         return null;
-      } catch (IOException e) {
-        throw new RuntimeException(e);
+      } catch (Exception e) {
+        throw new DrillRuntimeException("Error reading page." +
+          "\nFile path: " + path.toUri().getPath() +
+          "\nRow count: " + rowCount +
+          "\nColumn Chunk Metadata: " + metaData +
+          "\nPage Header: " + pageHeader +
+          "\nFile offset: " + fileOffset +
+          "\nSize: " + size +
+          "\nValue read so far: " + valueReadSoFar, e);
       }
     }
 

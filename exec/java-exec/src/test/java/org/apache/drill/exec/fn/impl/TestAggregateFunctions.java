@@ -19,6 +19,7 @@ package org.apache.drill.exec.fn.impl;
 
 import org.apache.drill.BaseTestQuery;
 import org.apache.drill.common.types.TypeProtos;
+import org.junit.Ignore;
 import org.junit.Test;
 
 public class TestAggregateFunctions extends BaseTestQuery {
@@ -58,6 +59,7 @@ public class TestAggregateFunctions extends BaseTestQuery {
         .go();
   }
 
+  @Ignore
   @Test // DRILL-2092: count distinct, non distinct aggregate with group-by
   public void testDrill2092() throws Exception {
     String query = "select a1, b1, count(distinct c1) as dist1, \n"
@@ -185,4 +187,23 @@ public class TestAggregateFunctions extends BaseTestQuery {
         .go();
   }
 
+  @Test
+  public void testAvgOnKnownType() throws Exception {
+    testBuilder()
+        .sqlQuery("select avg(cast(employee_id as bigint)) as col from cp.`employee.json`")
+        .unOrdered()
+        .baselineColumns("col")
+        .baselineValues(578.9982683982684d)
+        .go();
+  }
+
+  @Test
+  public void testStddevOnKnownType() throws Exception {
+    testBuilder()
+        .sqlQuery("select stddev_samp(cast(employee_id as int)) as col from cp.`employee.json`")
+        .unOrdered()
+        .baselineColumns("col")
+        .baselineValues(333.56708470261117d)
+        .go();
+  }
 }

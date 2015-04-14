@@ -68,6 +68,17 @@ public class RepeatedListReaderImpl extends AbstractFieldReader{
   private int maxOffset;
 
   @Override
+  public void reset() {
+    super.reset();
+    currentOffset = 0;
+    maxOffset = 0;
+    if (reader != null) {
+      reader.reset();
+    }
+    reader = null;
+  }
+
+  @Override
   public int size() {
     return maxOffset - currentOffset;
   }
@@ -110,7 +121,7 @@ public class RepeatedListReaderImpl extends AbstractFieldReader{
   @Override
   public FieldReader reader() {
     if (reader == null) {
-      reader = container.getChild(name).getAccessor().getReader();
+      reader = container.getChild(name).getReader();
       if (currentOffset == NO_VALUES) {
         reader = NullReader.INSTANCE;
       } else {

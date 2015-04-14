@@ -54,7 +54,7 @@ public class RepeatedMapReaderImpl extends AbstractFieldReader{
       if (child == null) {
         reader = NullReader.INSTANCE;
       } else {
-        reader = child.getAccessor().getReader();
+        reader = child.getReader();
       }
       fields.put(name, reader);
       reader.setPosition(currentOffset);
@@ -74,6 +74,17 @@ public class RepeatedMapReaderImpl extends AbstractFieldReader{
 
   private int currentOffset;
   private int maxOffset;
+
+  @Override
+  public void reset() {
+    super.reset();
+    currentOffset = 0;
+    maxOffset = 0;
+    for (FieldReader reader:fields.values()) {
+      reader.reset();
+    }
+    fields.clear();
+  }
 
   @Override
   public int size() {

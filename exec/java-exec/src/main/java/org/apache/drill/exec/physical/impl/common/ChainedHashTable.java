@@ -18,18 +18,15 @@
 package org.apache.drill.exec.physical.impl.common;
 
 import java.io.IOException;
+import java.util.Arrays;
 import java.util.LinkedList;
 import java.util.List;
 
+import org.apache.drill.common.exceptions.DrillRuntimeException;
 import org.apache.drill.common.expression.ErrorCollector;
 import org.apache.drill.common.expression.ErrorCollectorImpl;
 import org.apache.drill.common.expression.LogicalExpression;
-import org.apache.drill.common.expression.FunctionCall;
-import org.apache.drill.common.expression.ExpressionPosition;
-import org.apache.drill.common.exceptions.DrillRuntimeException;
-import org.apache.drill.common.expression.ValueExpressions;
 import org.apache.drill.common.logical.data.NamedExpression;
-import org.apache.drill.common.types.TypeProtos;
 import org.apache.drill.common.types.TypeProtos.MinorType;
 import org.apache.drill.common.types.Types;
 import org.apache.drill.exec.compile.sig.GeneratorMapping;
@@ -46,12 +43,13 @@ import org.apache.drill.exec.expr.ValueVectorWriteExpression;
 import org.apache.drill.exec.expr.fn.FunctionGenerationHelper;
 import org.apache.drill.exec.memory.BufferAllocator;
 import org.apache.drill.exec.ops.FragmentContext;
+import org.apache.drill.exec.planner.physical.PrelUtil;
 import org.apache.drill.exec.record.MaterializedField;
 import org.apache.drill.exec.record.RecordBatch;
 import org.apache.drill.exec.record.TypedFieldId;
+import org.apache.drill.exec.record.VectorAccessible;
 import org.apache.drill.exec.record.VectorContainer;
 import org.apache.drill.exec.resolver.TypeCastRules;
-import org.apache.drill.exec.vector.AllocationHelper;
 import org.apache.drill.exec.vector.ValueVector;
 
 import com.sun.codemodel.JConditional;
@@ -212,8 +210,8 @@ public class ChainedHashTable {
      */
     addLeastRestrictiveCasts(keyExprsBuild, keyExprsProbe);
 
-    setupGetHash(cg /* use top level code generator for getHash */, GetHashIncomingBuildMapping, keyExprsBuild, false);
-    setupGetHash(cg /* use top level code generator for getHash */, GetHashIncomingProbeMapping, keyExprsProbe, true);
+    setupGetHash(cg /* use top level code generator for getHash */, GetHashIncomingBuildMapping, incomingBuild, keyExprsBuild, false);
+    setupGetHash(cg /* use top level code generator for getHash */, GetHashIncomingProbeMapping, incomingProbe, keyExprsProbe, true);
 
     HashTable ht = context.getImplementationClass(top);
     ht.setup(htConfig, context, allocator, incomingBuild, incomingProbe, outgoing, htContainerOrig);
@@ -311,6 +309,14 @@ public class ChainedHashTable {
       MinorType probeType = probeExpr.getMajorType().getMinorType();
 
       if (buildType != probeType) {
+
+        // currently we only support implicit casts if the input types are numeric or varchar/varbinary
+        if (!allowImplicitCast(buildType, probeType)) {
+          throw new DrillRuntimeException(String.format("Hash join only supports implicit casts between " +
+              "1. Numeric data\n 2. Varchar, Varbinary data " +
+              "Build type: %s, Probe type: %s. Add explicit casts to avoid this error", buildType, probeType));
+        }
+
         // We need to add a cast to one of the expressions
         List<MinorType> types = new LinkedList<>();
         types.add(buildType);
@@ -341,7 +347,7 @@ public class ChainedHashTable {
     }
   }
 
-  private void setupGetHash(ClassGenerator<HashTable> cg, MappingSet incomingMapping, LogicalExpression[] keyExprs,
+  private void setupGetHash(ClassGenerator<HashTable> cg, MappingSet incomingMapping, VectorAccessible batch, LogicalExpression[] keyExprs,
                             boolean isProbe) throws SchemaChangeException {
 
     cg.setMappingSet(incomingMapping);
@@ -351,36 +357,32 @@ public class ChainedHashTable {
       return;
     }
 
-    HoldingContainer combinedHashValue = null;
+    /*
+     * We use the same logic to generate run time code for the hash function both for hash join and hash
+     * aggregate. For join we need to hash everything as double (both for distribution and for comparison) but
+     * for aggregation we can avoid the penalty of casting to double
+     */
+    LogicalExpression hashExpression = PrelUtil.getHashExpression(Arrays.asList(keyExprs),
+        incomingProbe != null ? true : false);
+    final LogicalExpression materializedExpr = ExpressionTreeMaterializer.materializeAndCheckErrors(hashExpression, batch, context.getFunctionRegistry());
+    HoldingContainer hash = cg.addExpr(materializedExpr);
+    cg.getEvalBlock()._return(hash.getValue());
 
-    for (int i = 0; i < keyExprs.length; i++) {
-      LogicalExpression expr = keyExprs[i];
 
-      cg.setMappingSet(incomingMapping);
-      HoldingContainer input = cg.addExpr(expr, false);
+  }
 
-      // compute the hash(expr)
-      LogicalExpression hashfunc =
-          FunctionGenerationHelper.getFunctionExpression("hash", Types.required(MinorType.INT),
-              context.getFunctionRegistry(), input);
-      HoldingContainer hashValue = cg.addExpr(hashfunc, false);
-
-      if (i == 0) {
-        combinedHashValue = hashValue; // first expression..just use the hash value
-      } else {
-
-        // compute the combined hash value using XOR
-        LogicalExpression xorfunc =
-            FunctionGenerationHelper.getFunctionExpression("xor", Types.required(MinorType.INT),
-                context.getFunctionRegistry(), hashValue, combinedHashValue);
-        combinedHashValue = cg.addExpr(xorfunc, false);
-      }
+  private boolean allowImplicitCast(MinorType input1, MinorType input2) {
+    // allow implicit cast if both the input types are numeric
+    if (TypeCastRules.isNumericType(input1) && TypeCastRules.isNumericType(input2)) {
+      return true;
     }
 
-    if (combinedHashValue != null) {
-      cg.getEvalBlock()._return(combinedHashValue.getValue());
-    } else {
-      cg.getEvalBlock()._return(JExpr.lit(0));
+    // allow implicit cast if both the input types are varbinary/ varchar
+    if ((input1 == MinorType.VARCHAR || input1 == MinorType.VARBINARY) &&
+        (input2 == MinorType.VARCHAR || input2 == MinorType.VARBINARY)) {
+      return true;
     }
+
+    return false;
   }
 }

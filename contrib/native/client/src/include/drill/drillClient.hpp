@@ -135,6 +135,29 @@ class DECLSPEC_DRILL_CLIENT DrillClientConfig{
 };
 
 
+class DECLSPEC_DRILL_CLIENT DrillUserProperties{
+    public:
+        static const std::map<std::string, uint32_t> USER_PROPERTIES;
+
+        DrillUserProperties(){};
+
+        void setProperty( const std::string& propName, const std::string& propValue){
+            std::pair< std::string, std::string> in = make_pair(propName, propValue);
+            m_properties.push_back(in);
+        }
+
+        size_t size() const { return m_properties.size(); }
+
+        const std::string& keyAt(size_t i) const { return m_properties.at(i).first; }
+
+        const std::string& valueAt(size_t i) const { return m_properties.at(i).second; }
+
+        bool validate(std::string& err);
+
+    private:
+        std::vector< std::pair< std::string, std::string> > m_properties;
+};
+
 /*
  * Handle to the Query submitted for execution.
  * */
@@ -144,7 +167,9 @@ typedef void* QueryHandle_t;
  * Query Results listener callback. This function is called for every record batch after it has
  * been received and decoded. The listener function should return a status.
  * If the listener returns failure, the query will be canceled.
- *
+ * The listener is also called one last time when the query is completed or gets an error. In that
+ * case the RecordBatch Parameter is NULL. The DrillClientError parameter is NULL is there was no
+ * error oterwise it will have a valid DrillClientError object.
  * DrillClientQueryResult will hold a listener & listener contxt for the call back function
  */
 typedef status_t (*pfnQueryResultsListener)(QueryHandle_t ctx, RecordBatch* b, DrillClientError* err);
@@ -233,6 +258,15 @@ class DECLSPEC_DRILL_CLIENT DrillClient{
         /**
          * Connect the client to a Drillbit using connection string and default schema.
          *
+         * @param[in] connectStr: connection string
+         * @param[in] defaultSchema: default schema (set to NULL and ignore it
+         * if not specified)
+         * @return    connection status
+         */
+        DEPRECATED connectionStatus_t connect(const char* connectStr, const char* defaultSchema=NULL);
+
+        /*  
+         * Connect the client to a Drillbit using connection string and a set of user properties.
          * The connection string format can be found in comments of
          * [DRILL-780](https://issues.apache.org/jira/browse/DRILL-780)
          *
@@ -253,12 +287,21 @@ class DECLSPEC_DRILL_CLIENT DrillClient{
          * local=127.0.0.1:31010
          * ```
          *
+         * User properties is a set of name value pairs. The following properties are recognized:
+         *     schema
+         *     userName
+         *     password
+         *     useSSL [true|false]
+         *     pemLocation
+         *     pemFile
+         *     (see drill/common.hpp for friendly defines and the latest list of supported proeprties)
+         *
          * @param[in] connectStr: connection string
-         * @param[in] defaultSchema: default schema (set to NULL and ignore it
+         * @param[in] properties
          * if not specified)
          * @return    connection status
          */
-        connectionStatus_t connect(const char* connectStr, const char* defaultSchema=NULL);
+        connectionStatus_t connect(const char* connectStr, DrillUserProperties* properties);
 
         /* test whether the client is active */
         bool isActive();

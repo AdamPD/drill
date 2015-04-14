@@ -45,6 +45,7 @@ import org.apache.drill.exec.planner.logical.DrillRel;
 import org.apache.drill.exec.planner.logical.DrillScanRel;
 import org.apache.drill.exec.planner.logical.RelOptHelper;
 import org.apache.drill.exec.planner.physical.PlannerSettings;
+import org.apache.drill.exec.planner.physical.PrelUtil;
 import org.apache.drill.exec.record.MaterializedField;
 import org.apache.drill.exec.record.VectorContainer;
 import org.apache.drill.exec.store.dfs.FileSelection;
@@ -57,6 +58,7 @@ import org.eigenbase.relopt.RelOptRuleCall;
 import org.eigenbase.relopt.RelOptRuleOperand;
 import org.eigenbase.relopt.RelOptUtil;
 import org.eigenbase.rex.RexNode;
+import org.eigenbase.rex.RexUtil;
 
 import com.google.common.base.Charsets;
 import com.google.common.collect.Lists;
@@ -119,7 +121,7 @@ public abstract class PruneScanRule extends RelOptRule {
   }
 
   protected void doOnMatch(RelOptRuleCall call, DrillFilterRel filterRel, DrillProjectRel projectRel, DrillScanRel scanRel) {
-    PlannerSettings settings = context.getPlannerSettings();
+    final PlannerSettings settings = PrelUtil.getPlannerSettings(call.getPlanner());
     FileSystemPartitionDescriptor descriptor = new FileSystemPartitionDescriptor(settings.getFsPartitionColumnLabel());
     final BufferAllocator allocator = context.getAllocator();
 
@@ -231,8 +233,11 @@ public abstract class PruneScanRule extends RelOptRule {
         }
       }
 
+      boolean canDropFilter = true;
+
       if(newFiles.isEmpty()){
         newFiles.add(files.get(0));
+        canDropFilter = false;
       }
 
       if(newFiles.size() == files.size()){
@@ -241,6 +246,10 @@ public abstract class PruneScanRule extends RelOptRule {
 
       logger.debug("Pruned {} => {}", files, newFiles);
 
+      List<RexNode> conjuncts = RelOptUtil.conjunctions(condition);
+      List<RexNode> pruneConjuncts = RelOptUtil.conjunctions(pruneCondition);
+      conjuncts.removeAll(pruneConjuncts);
+      RexNode newCondition = RexUtil.composeConjunction(filterRel.getCluster().getRexBuilder(), conjuncts, false);
 
       final FileSelection newFileSelection = new FileSelection(newFiles, origSelection.getSelection().selectionRoot, true);
       final FileGroupScan newScan = ((FileGroupScan)scanRel.getGroupScan()).clone(newFileSelection);
@@ -258,8 +267,12 @@ public abstract class PruneScanRule extends RelOptRule {
         inputRel = projectRel.copy(projectRel.getTraitSet(), Collections.singletonList(inputRel));
       }
 
-      final RelNode newFilter = filterRel.copy(filterRel.getTraitSet(), Collections.singletonList(inputRel));
-      call.transformTo(newFilter);
+      if (newCondition.isAlwaysTrue() && canDropFilter) {
+        call.transformTo(inputRel);
+      } else {
+        final RelNode newFilter = filterRel.copy(filterRel.getTraitSet(), Collections.singletonList(inputRel));
+        call.transformTo(newFilter);
+      }
 
     }catch(Exception e){
       logger.warn("Exception while trying to prune partition.", e);

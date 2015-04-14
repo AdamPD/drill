@@ -16,6 +16,8 @@
  * limitations under the License.
  */
 
+import java.lang.Override;
+
 <@pp.dropOutputFile />
 <#list vv.types as type>
 <#list type.minor as minor>
@@ -40,7 +42,9 @@ package org.apache.drill.exec.vector;
  */
 @SuppressWarnings("unused")
 public final class ${minor.class}Vector extends BaseDataValueVector implements FixedWidthVector{
+  private static final org.slf4j.Logger logger = org.slf4j.LoggerFactory.getLogger(${minor.class}Vector.class);
 
+  private final FieldReader reader = new ${minor.class}ReaderImpl(${minor.class}Vector.this);
   private final Accessor accessor = new Accessor();
   private final Mutator mutator = new Mutator();
 
@@ -49,6 +53,11 @@ public final class ${minor.class}Vector extends BaseDataValueVector implements F
   
   public ${minor.class}Vector(MaterializedField field, BufferAllocator allocator) {
     super(field, allocator);
+  }
+
+  @Override
+  public FieldReader getReader(){
+    return reader;
   }
 
   public int getValueCapacity(){
@@ -221,7 +230,7 @@ public final class ${minor.class}Vector extends BaseDataValueVector implements F
   }
   
   public void copyFromSafe(int fromIndex, int thisIndex, ${minor.class}Vector from){
-    if(thisIndex >= getValueCapacity()) {
+    while(thisIndex >= getValueCapacity()) {
         reAlloc();
     }
     copyFrom(fromIndex, thisIndex, from);
@@ -238,14 +247,8 @@ public final class ${minor.class}Vector extends BaseDataValueVector implements F
     ++allocationMonitor;
   }
 
-  public final class Accessor extends BaseValueVector.BaseAccessor{
+  public final class Accessor extends BaseDataValueVector.BaseAccessor {
 
-    final FieldReader reader = new ${minor.class}ReaderImpl(${minor.class}Vector.this);
-    
-    public FieldReader getReader(){
-      return reader;
-    }
-    
     public int getValueCount() {
       return valueCount;
     }
@@ -525,7 +528,7 @@ public final class ${minor.class}Vector extends BaseDataValueVector implements F
   *
   * NB: this class is automatically generated from ValueVectorTypes.tdd using FreeMarker.
   */
-  public final class Mutator extends BaseValueVector.BaseMutator{
+  public final class Mutator extends BaseDataValueVector.BaseMutator {
 
     private Mutator(){};
    /**
@@ -541,7 +544,7 @@ public final class ${minor.class}Vector extends BaseDataValueVector implements F
    }
 
    public void setSafe(int index, <#if (type.width > 4)>${minor.javaType!type.javaType}<#else>int</#if> value) {
-     if(index >= getValueCapacity()) {
+     while(index >= getValueCapacity()) {
        reAlloc();
      }
      data.setBytes(index * ${type.width}, value, 0, ${type.width});
@@ -564,7 +567,7 @@ public final class ${minor.class}Vector extends BaseDataValueVector implements F
    }
 
    public void setSafe(int index, int months, int days, int milliseconds){
-     if(index >= getValueCapacity()) {
+     while(index >= getValueCapacity()) {
        reAlloc();
      }
      set(index, months, days, milliseconds);
@@ -593,7 +596,7 @@ public final class ${minor.class}Vector extends BaseDataValueVector implements F
    }
 
    public void setSafe(int index, int days, int milliseconds){
-     if(index >= getValueCapacity()) {
+     while(index >= getValueCapacity()) {
        reAlloc();
      }
      set(index, days, milliseconds);
@@ -625,7 +628,7 @@ public final class ${minor.class}Vector extends BaseDataValueVector implements F
    }
    
    public void setSafe(int index, int start, DrillBuf buffer){
-     if(index >= getValueCapacity()) {
+     while(index >= getValueCapacity()) {
        reAlloc();
      }
      set(index, start, buffer);
@@ -657,7 +660,7 @@ public final class ${minor.class}Vector extends BaseDataValueVector implements F
    }
    
    public void setSafe(int index, int start, DrillBuf buffer){
-     if(index >= getValueCapacity()) {
+     while(index >= getValueCapacity()) {
        reAlloc();
      }
      set(index, holder);
@@ -679,8 +682,8 @@ public final class ${minor.class}Vector extends BaseDataValueVector implements F
        }
      }
    }
-   
-   
+
+
 
 
    <#else> <#-- type.width <= 8 -->
@@ -689,7 +692,7 @@ public final class ${minor.class}Vector extends BaseDataValueVector implements F
    }
 
    public void setSafe(int index, <#if (type.width >= 4)>${minor.javaType!type.javaType}<#else>int</#if> value) {
-     if(index >= getValueCapacity()) {
+     while(index >= getValueCapacity()) {
        reAlloc();
      }
      set(index, value);
@@ -700,7 +703,7 @@ public final class ${minor.class}Vector extends BaseDataValueVector implements F
    }
 
    public void setSafe(int index, ${minor.class}Holder holder){
-     if(index >= getValueCapacity()) {
+     while(index >= getValueCapacity()) {
        reAlloc();
      }
      set(index, holder);
@@ -711,7 +714,7 @@ public final class ${minor.class}Vector extends BaseDataValueVector implements F
    }
 
    public void setSafe(int index, Nullable${minor.class}Holder holder){
-     if(index >= getValueCapacity()) {
+     while(index >= getValueCapacity()) {
        reAlloc();
      }
      set(index, holder);
@@ -729,8 +732,8 @@ public final class ${minor.class}Vector extends BaseDataValueVector implements F
        }
      }
    }
-   
-   
+
+
    public void generateTestDataAlt(int size) {
      setValueCount(size);
      boolean even = true;

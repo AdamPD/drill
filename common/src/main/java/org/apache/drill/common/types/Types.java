@@ -82,12 +82,15 @@ public class Types {
     }
   }
 
-  public static int getSqlType(MajorType type) {
+  /***
+   * Gets JDBC type code for given Drill RPC-/protobuf-level type.
+   */
+  public static int getJdbcType(MajorType type) {
     if (type.getMode() == DataMode.REPEATED) {
       return java.sql.Types.ARRAY;
     }
 
-    switch(type.getMinorType()) {
+    switch (type.getMinorType()) {
     case BIGINT:
       return java.sql.Types.BIGINT;
     case BIT:
@@ -146,9 +149,13 @@ public class Types {
     case VARBINARY:
       return java.sql.Types.VARBINARY;
     case VARCHAR:
-      return java.sql.Types.NVARCHAR;
+      return java.sql.Types.VARCHAR;
     default:
-      throw new UnsupportedOperationException();
+      // TODO:  This isn't really an unsupported-operation/-type case; this
+      //   is an unexpected, code-out-of-sync-with-itself case, so use an
+      //   exception intended for that.
+      throw new UnsupportedOperationException(
+          "Unexpected/unhandled " + type.getMinorType() + " value " + type.getMinorType() );
     }
   }
 
@@ -256,15 +263,7 @@ public class Types {
 
   public static boolean softEquals(MajorType a, MajorType b, boolean allowNullSwap) {
     if (a.getMinorType() != b.getMinorType()) {
-      if (
-          (a.getMinorType() == MinorType.VARBINARY && b.getMinorType() == MinorType.VARCHAR) ||
-          (b.getMinorType() == MinorType.VARBINARY && a.getMinorType() == MinorType.VARCHAR)
-          ) {
-        // fall through;
-      } else {
         return false;
-      }
-
     }
     if(allowNullSwap) {
       switch (a.getMode()) {
@@ -325,51 +324,69 @@ public class Types {
     return getMajorTypeFromName(typeName, DataMode.REQUIRED);
   }
 
-  public static MajorType getMajorTypeFromName(String typeName, DataMode mode) {
+  public static MinorType getMinorTypeFromName(String typeName) {
+    typeName = typeName.toLowerCase();
+
     switch (typeName) {
     case "bool":
     case "boolean":
-      return withMode(MinorType.BIT, mode);
+      return MinorType.BIT;
     case "tinyint":
-      return withMode(MinorType.TINYINT, mode);
+      return MinorType.TINYINT;
     case "uint1":
-      return withMode(MinorType.UINT1, mode);
+      return MinorType.UINT1;
     case "smallint":
-      return withMode(MinorType.SMALLINT, mode);
+      return MinorType.SMALLINT;
     case "uint2":
-      return withMode(MinorType.UINT2, mode);
+      return MinorType.UINT2;
+    case "integer":
     case "int":
-      return withMode(MinorType.INT, mode);
+      return MinorType.INT;
     case "uint4":
-      return withMode(MinorType.UINT4, mode);
+      return MinorType.UINT4;
     case "bigint":
-      return withMode(MinorType.BIGINT, mode);
+      return MinorType.BIGINT;
     case "uint8":
-      return withMode(MinorType.UINT8, mode);
+      return MinorType.UINT8;
     case "float":
-      return withMode(MinorType.FLOAT4, mode);
+      return MinorType.FLOAT4;
     case "double":
-      return withMode(MinorType.FLOAT8, mode);
+      return MinorType.FLOAT8;
     case "decimal":
-      return withMode(MinorType.DECIMAL38SPARSE, mode);
+      return MinorType.DECIMAL38SPARSE;
+    case "symbol":
+    case "char":
     case "utf8":
     case "varchar":
-      return withMode(MinorType.VARCHAR, mode);
+      return MinorType.VARCHAR;
     case "utf16":
     case "string":
     case "var16char":
-      return withMode(MinorType.VAR16CHAR, mode);
+      return MinorType.VAR16CHAR;
+    case "timestamp":
+      return MinorType.TIMESTAMP;
+    case "interval_year_month":
+      return MinorType.INTERVALYEAR;
+    case "interval_day_time":
+      return MinorType.INTERVALDAY;
     case "date":
-      return withMode(MinorType.DATE, mode);
+      return MinorType.DATE;
     case "time":
-      return withMode(MinorType.TIME, mode);
+      return MinorType.TIME;
     case "binary":
-      return withMode(MinorType.VARBINARY, mode);
+      return MinorType.VARBINARY;
     case "json":
-      return withMode(MinorType.LATE, mode);
+      return MinorType.LATE;
+    case "null":
+    case "any":
+      return MinorType.NULL;
     default:
       throw new UnsupportedOperationException("Could not determine type: " + typeName);
     }
+  }
+
+  public static MajorType getMajorTypeFromName(String typeName, DataMode mode) {
+    return withMode(getMinorTypeFromName(typeName), mode);
   }
 
   public static String getNameOfMinorType(MinorType type) {

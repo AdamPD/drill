@@ -233,7 +233,7 @@ public class TestStarQueries extends BaseTestQuery{
 
   @Test // DRILL-1293
   public void testStarView1() throws Exception {
-    test("use dfs.tmp");
+    test("use dfs_test.tmp");
     test("create view vt1 as select * from cp.`tpch/region.parquet` r, cp.`tpch/nation.parquet` n where r.r_regionkey = n.n_regionkey");
     test("select * from vt1");
     test("drop view vt1");
@@ -246,7 +246,15 @@ public class TestStarQueries extends BaseTestQuery{
 
   @Test  // Join a select star of SchemaTable, with a select star of Schema-less table.
   public void testSelStarJoinSchemaWithSchemaLess() throws Exception {
-    test("select t1.name, t1.kind, t2.n_nationkey from (select * from sys.options) t1 join (select * from cp.`tpch/nation.parquet`) t2 on t1.name = t2.n_name;");
+    String query = "select t1.name, t1.kind, t2.n_nationkey from " +
+        "(select * from sys.options) t1 " +
+        "join (select * from cp.`tpch/nation.parquet`) t2 " +
+        "on t1.name = t2.n_name";
+
+    test("alter session set `planner.enable_broadcast_join` = false");
+    test(query);
+    test("alter session set `planner.enable_broadcast_join` = true");
+    test(query);
   }
 
   @Test // see DRILL-1811

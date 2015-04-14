@@ -25,6 +25,7 @@ import org.apache.drill.common.expression.BooleanOperator;
 import org.apache.drill.common.expression.CastExpression;
 import org.apache.drill.common.expression.ConvertExpression;
 import org.apache.drill.common.expression.ErrorCollector;
+import org.apache.drill.common.expression.ErrorCollectorImpl;
 import org.apache.drill.common.expression.ExpressionPosition;
 import org.apache.drill.common.expression.FunctionCall;
 import org.apache.drill.common.expression.FunctionHolderExpression;
@@ -59,6 +60,7 @@ import org.apache.drill.common.types.TypeProtos.MajorType;
 import org.apache.drill.common.types.TypeProtos.MinorType;
 import org.apache.drill.common.types.Types;
 import org.apache.drill.common.util.CoreDecimalUtility;
+import org.apache.drill.exec.exception.SchemaChangeException;
 import org.apache.drill.exec.expr.annotations.FunctionTemplate;
 import org.apache.drill.exec.expr.fn.AbstractFuncHolder;
 import org.apache.drill.exec.expr.fn.DrillComplexWriterFuncHolder;
@@ -75,6 +77,7 @@ import com.google.common.base.Predicate;
 import com.google.common.collect.ImmutableList;
 import com.google.common.collect.Iterables;
 import com.google.common.collect.Lists;
+import org.apache.drill.exec.vector.VarCharVector;
 
 public class ExpressionTreeMaterializer {
 
@@ -85,6 +88,15 @@ public class ExpressionTreeMaterializer {
 
   public static LogicalExpression materialize(LogicalExpression expr, VectorAccessible batch, ErrorCollector errorCollector, FunctionImplementationRegistry registry) {
     return ExpressionTreeMaterializer.materialize(expr, batch, errorCollector, registry, false);
+  }
+
+  public static LogicalExpression materializeAndCheckErrors(LogicalExpression expr, VectorAccessible batch, FunctionImplementationRegistry registry) throws SchemaChangeException {
+    ErrorCollector collector = new ErrorCollectorImpl();
+    LogicalExpression e = ExpressionTreeMaterializer.materialize(expr, batch, collector, registry, false);
+    if (collector.hasErrors()) {
+      throw new SchemaChangeException(String.format("Failure while trying to materialize incoming schema.  Errors:\n %s.", collector.toErrorString()));
+    }
+    return e;
   }
 
   public static LogicalExpression materialize(LogicalExpression expr, VectorAccessible batch, ErrorCollector errorCollector, FunctionImplementationRegistry registry,
@@ -130,7 +142,7 @@ public class ExpressionTreeMaterializer {
        * using an arbitrary value. We trim down the size of the stored bytes
        * to the actual size so this size doesn't really matter.
        */
-      castArgs.add(new ValueExpressions.LongExpression(65536, null));
+      castArgs.add(new ValueExpressions.LongExpression(TypeHelper.VARCHAR_DEFAULT_CAST_LEN, null));
     }
     else if (CoreDecimalUtility.isDecimalType(toType)) {
       // Add the scale and precision to the arguments of the implicit cast

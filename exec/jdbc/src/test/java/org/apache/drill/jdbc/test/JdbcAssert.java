@@ -60,10 +60,13 @@ public class JdbcAssert {
 
   /**
    * Returns default bag of properties that is passed to JDBC connection.
-   * By default, includes an option to turn off the web server.
+   * By default, includes options to:
+   *   - turn off the web server
+   *   - indicate DrillConnectionImpl to set up dfs_test.tmp schema location to an exclusive dir just for this test jvm
    */
   public static Properties getDefaultProperties() {
     final Properties properties = new Properties();
+    properties.setProperty("drillJDBCUnitTests", "true");
     properties.setProperty(ExecConstants.HTTP_ENABLE, "false");
     return properties;
   }
@@ -160,7 +163,7 @@ public class JdbcAssert {
       this.info = info;
       this.adapter = new ConnectionFactoryAdapter() {
         public Connection createConnection() throws Exception {
-          return factory.createConnection(new ConnectionInfo("jdbc:drill:zk=local", ModelAndSchema.this.info));
+          return factory.getConnection(new ConnectionInfo("jdbc:drill:zk=local", ModelAndSchema.this.info));
         }
       };
     }

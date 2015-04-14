@@ -20,11 +20,10 @@ package org.apache.drill.exec.store.easy.json;
 import java.io.IOException;
 import java.io.InputStream;
 import java.util.List;
-import java.util.concurrent.TimeUnit;
 
+import com.google.common.collect.ImmutableList;
 import org.apache.drill.common.exceptions.DrillRuntimeException;
 import org.apache.drill.common.exceptions.ExecutionSetupException;
-import org.apache.drill.common.expression.PathSegment;
 import org.apache.drill.common.expression.SchemaPath;
 import org.apache.drill.exec.ExecConstants;
 import org.apache.drill.exec.memory.OutOfMemoryException;
@@ -33,35 +32,30 @@ import org.apache.drill.exec.ops.OperatorContext;
 import org.apache.drill.exec.physical.impl.OutputMutator;
 import org.apache.drill.exec.store.AbstractRecordReader;
 import org.apache.drill.exec.store.dfs.DrillFileSystem;
+import org.apache.drill.exec.store.easy.json.reader.CountingJsonReader;
 import org.apache.drill.exec.vector.BaseValueVector;
 import org.apache.drill.exec.vector.complex.fn.JsonReader;
-import org.apache.drill.exec.vector.complex.fn.JsonReader.ReadState;
+import org.apache.drill.exec.store.easy.json.JsonProcessor.ReadState;
 import org.apache.drill.exec.vector.complex.impl.VectorContainerWriter;
-import org.apache.drill.exec.vector.complex.writer.BaseWriter;
 import org.apache.hadoop.conf.Configuration;
-import org.apache.hadoop.fs.FSDataInputStream;
-import org.apache.hadoop.fs.FileSystem;
 import org.apache.hadoop.fs.Path;
 
 import com.fasterxml.jackson.core.JsonParseException;
-import com.google.common.base.Stopwatch;
 import org.apache.hadoop.io.compress.CompressionCodec;
 import org.apache.hadoop.io.compress.CompressionCodecFactory;
-import org.apache.hadoop.io.compress.CompressionInputStream;
 
 public class JSONRecordReader extends AbstractRecordReader {
-  static final org.slf4j.Logger logger = org.slf4j.LoggerFactory.getLogger(JSONRecordReader.class);
+  private static final org.slf4j.Logger logger = org.slf4j.LoggerFactory.getLogger(JSONRecordReader.class);
 
   private OutputMutator mutator;
   private VectorContainerWriter writer;
   private Path hadoopPath;
   private InputStream stream;
   private DrillFileSystem fileSystem;
-  private JsonReader jsonReader;
+  private JsonProcessor jsonReader;
   private int recordCount;
   private FragmentContext fragmentContext;
   private OperatorContext operatorContext;
-  private List<SchemaPath> columns;
   private boolean enableAllTextMode;
   private boolean readNumbersAsDouble;
 
@@ -70,9 +64,9 @@ public class JSONRecordReader extends AbstractRecordReader {
     this.hadoopPath = new Path(inputPath);
     this.fileSystem = fileSystem;
     this.fragmentContext = fragmentContext;
-    this.columns = columns;
     this.enableAllTextMode = fragmentContext.getOptions().getOption(ExecConstants.JSON_ALL_TEXT_MODE).bool_val;
     this.readNumbersAsDouble = fragmentContext.getOptions().getOption(ExecConstants.JSON_READ_NUMBERS_AS_DOUBLE).bool_val;
+    setColumns(columns);
   }
 
   @Override
@@ -87,7 +81,11 @@ public class JSONRecordReader extends AbstractRecordReader {
       }
       this.writer = new VectorContainerWriter(output);
       this.mutator = output;
-      this.jsonReader = new JsonReader(fragmentContext.getManagedBuffer(), columns, enableAllTextMode, readNumbersAsDouble);
+      if (isSkipQuery()) {
+        this.jsonReader = new CountingJsonReader(fragmentContext.getManagedBuffer());
+      } else {
+        this.jsonReader = new JsonReader(fragmentContext.getManagedBuffer(), ImmutableList.copyOf(getColumns()), enableAllTextMode, readNumbersAsDouble);
+      }
       this.jsonReader.setSource(stream);
     }catch(Exception e){
       handleAndRaise("Failure reading JSON file.", e);
@@ -96,7 +94,7 @@ public class JSONRecordReader extends AbstractRecordReader {
 
   protected void handleAndRaise(String msg, Exception e) {
     StringBuilder sb = new StringBuilder();
-    sb.append(msg).append(" - Parser was at record: ").append(recordCount+1);
+    sb.append(msg).append(" - In ").append(hadoopPath.toUri().getPath()).append(" parser was at record: ").append(recordCount+1);
     if (e instanceof JsonParseException) {
       JsonParseException ex = JsonParseException.class.cast(e);
       sb.append(" column: ").append(ex.getLocation().getColumnNr());

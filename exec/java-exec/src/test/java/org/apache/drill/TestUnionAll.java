@@ -19,12 +19,13 @@ package org.apache.drill;
 
 import org.apache.drill.common.types.TypeProtos;
 import org.apache.drill.common.util.FileUtils;
+import org.apache.drill.exec.rpc.RpcException;
 import org.apache.drill.exec.work.foreman.SqlUnsupportedException;
 import org.apache.drill.exec.work.foreman.UnsupportedRelOperatorException;
 import org.junit.Test;
 
 public class TestUnionAll extends BaseTestQuery{
-  static final org.slf4j.Logger logger = org.slf4j.LoggerFactory.getLogger(TestUnionAll.class);
+  private static final org.slf4j.Logger logger = org.slf4j.LoggerFactory.getLogger(TestUnionAll.class);
 
   @Test  // Simple Union-All over two scans
   public void testUnionAll1() throws Exception {
@@ -183,17 +184,17 @@ public class TestUnionAll extends BaseTestQuery{
 
   @Test
   public void testUnionAllViewExpandableStar() throws Exception {
-    test("use dfs.tmp");
-    test("create view nation_view as select n_name, n_nationkey from cp.`tpch/nation.parquet`;");
-    test("create view region_view as select r_name, r_regionkey from cp.`tpch/region.parquet`;");
+    test("use dfs_test.tmp");
+    test("create view nation_view_testunionall as select n_name, n_nationkey from cp.`tpch/nation.parquet`;");
+    test("create view region_view_testunionall as select r_name, r_regionkey from cp.`tpch/region.parquet`;");
 
-    String query1 = "(select * from dfs.tmp.`nation_view`) " +
+    String query1 = "(select * from dfs_test.tmp.`nation_view_testunionall`) " +
                     "union all " +
-                    "(select * from dfs.tmp.`region_view`) ";
+                    "(select * from dfs_test.tmp.`region_view_testunionall`) ";
 
     String query2 =  "(select r_name, r_regionkey from cp.`tpch/region.parquet`) " +
                      "union all " +
-                     "(select * from dfs.tmp.`nation_view`)";
+                     "(select * from dfs_test.tmp.`nation_view_testunionall`)";
 
     try {
       testBuilder()
@@ -212,38 +213,38 @@ public class TestUnionAll extends BaseTestQuery{
           .baselineColumns("r_name", "r_regionkey")
           .build().run();
     } finally {
-      test("drop view nation_view");
-      test("drop view region_view");
+      test("drop view nation_view_testunionall");
+      test("drop view region_view_testunionall");
     }
   }
 
   @Test(expected = UnsupportedRelOperatorException.class) // see DRILL-2002
   public void testUnionAllViewUnExpandableStar() throws Exception {
-    test("use dfs.tmp");
-    test("create view nation_view as select * from cp.`tpch/nation.parquet`;");
+    test("use dfs_test.tmp");
+    test("create view nation_view_testunionall as select * from cp.`tpch/nation.parquet`;");
 
     try {
-      String query = "(select * from dfs.tmp.`nation_view`) " +
+      String query = "(select * from dfs_test.tmp.`nation_view_testunionall`) " +
                      "union all (select * from cp.`tpch/region.parquet`)";
       test(query);
     } catch(Exception ex) {
       SqlUnsupportedException.errorMessageToException(ex.getMessage());
       throw ex;
     } finally {
-      test("drop view nation_view");
+      test("drop view nation_view_testunionall");
     }
   }
 
   @Test
   public void testDiffDataTypesAndModes() throws Exception {
-    test("use dfs.tmp");
-    test("create view nation_view as select n_name, n_nationkey from cp.`tpch/nation.parquet`;");
-    test("create view region_view as select r_name, r_regionkey from cp.`tpch/region.parquet`;");
+    test("use dfs_test.tmp");
+    test("create view nation_view_testunionall as select n_name, n_nationkey from cp.`tpch/nation.parquet`;");
+    test("create view region_view_testunionall as select r_name, r_regionkey from cp.`tpch/region.parquet`;");
 
     String t1 = "(select n_comment, n_regionkey from cp.`tpch/nation.parquet` limit 5)";
-    String t2 = "(select * from nation_view  limit 5)";
+    String t2 = "(select * from nation_view_testunionall  limit 5)";
     String t3 = "(select full_name, store_id from cp.`employee.json` limit 5)";
-    String t4 = "(select * from region_view  limit 5)";
+    String t4 = "(select * from region_view_testunionall  limit 5)";
 
     String query1 = t1 + " union all " + t2 + " union all " + t3 + " union all " + t4;
 
@@ -256,8 +257,8 @@ public class TestUnionAll extends BaseTestQuery{
           .baselineColumns("n_comment", "n_regionkey")
           .build().run();
     } finally {
-      test("drop view nation_view");
-      test("drop view region_view");
+      test("drop view nation_view_testunionall");
+      test("drop view region_view_testunionall");
     }
   }
 
@@ -353,5 +354,149 @@ public class TestUnionAll extends BaseTestQuery{
         .baselineTypes(TypeProtos.MinorType.BIGINT, TypeProtos.MinorType.BIGINT, TypeProtos.MinorType.BIGINT, TypeProtos.MinorType.BIGINT)
         .baselineColumns("calc1", "min", "max", "count")
         .build().run();
+  }
+
+  @Test(expected = RpcException.class) // see DRILL-2590
+  public void testUnionAllImplicitCastingFailure() throws Exception {
+    String rootInt = FileUtils.getResourceAsFile("/store/json/intData.json").toURI().toString();
+    String rootBoolean = FileUtils.getResourceAsFile("/store/json/booleanData.json").toURI().toString();
+
+    String query = String.format(
+        "(select key from dfs_test.`%s` " +
+        "union all " +
+        "select key from dfs_test.`%s` )", rootInt, rootBoolean);
+
+    test(query);
+  }
+
+  @Test // see DRILL-2591
+  public void testDateAndTimestampJson() throws Exception {
+    String rootDate = FileUtils.getResourceAsFile("/store/json/dateData.json").toURI().toString();
+    String rootTimpStmp = FileUtils.getResourceAsFile("/store/json/timeStmpData.json").toURI().toString();
+
+    String query = String.format(
+        "(select max(key) as key from dfs_test.`%s` " +
+        "union all " +
+        "select key from dfs_test.`%s`)", rootDate, rootTimpStmp);
+
+    testBuilder()
+        .sqlQuery(query)
+        .unOrdered()
+        .csvBaselineFile("testframework/testUnionAllQueries/q18.tsv")
+        .baselineTypes(TypeProtos.MinorType.VARCHAR)
+        .baselineColumns("key")
+        .build().run();
+  }
+
+  @Test // see DRILL-2637
+  public void testUnionAllOneInputContainsAggFunction() throws Exception {
+    String root = FileUtils.getResourceAsFile("/multilevel/csv/1994/Q1/orders_94_q1.csv").toURI().toString();
+    String query1 = String.format("select * from ((select count(c1) as ct from (select columns[0] c1 from dfs.`%s`)) \n" +
+        "union all \n" +
+        "(select columns[0] c2 from dfs.`%s`)) order by ct limit 3", root, root);
+
+    String query2 = String.format("select * from ((select columns[0] ct from dfs.`%s`)\n" +
+        "union all \n" +
+        "(select count(c1) as c2 from (select columns[0] c1 from dfs.`%s`))) order by ct limit 3", root, root);
+
+    String query3 = String.format("select * from ((select count(c1) as ct from (select columns[0] c1 from dfs.`%s`))\n" +
+        "union all \n" +
+        "(select count(c1) as c2 from (select columns[0] c1 from dfs.`%s`))) order by ct", root, root);
+
+    testBuilder()
+        .sqlQuery(query1)
+        .ordered()
+        .baselineColumns("ct")
+        .baselineValues((long) 10)
+        .baselineValues((long) 66)
+        .baselineValues((long) 99)
+        .build().run();
+
+    testBuilder()
+        .sqlQuery(query2)
+        .ordered()
+        .baselineColumns("ct")
+        .baselineValues((long) 10)
+        .baselineValues((long) 66)
+        .baselineValues((long) 99)
+        .build().run();
+
+    testBuilder()
+        .sqlQuery(query3)
+         .ordered()
+         .baselineColumns("ct")
+         .baselineValues((long) 10)
+         .baselineValues((long) 10)
+         .build().run();
+  }
+
+  @Test // see DRILL-2717
+  public void testUnionInputsGroupByOnCSV() throws Exception {
+    String root = FileUtils.getResourceAsFile("/multilevel/csv/1994/Q1/orders_94_q1.csv").toURI().toString();
+    String query = String.format("select * from \n" +
+            "((select columns[0] as col0 from dfs.`%s` t1 \n" +
+            "where t1.columns[0] = 66) \n" +
+            "union all \n" +
+            "(select columns[0] c2 from dfs.`%s` t2 \n" +
+            "where t2.columns[0] is not null \n" +
+            "group by columns[0])) \n" +
+        "group by col0"
+        , root, root);
+
+    testBuilder()
+        .sqlQuery(query)
+        .unOrdered()
+        .baselineColumns("col0")
+        .baselineValues("290")
+        .baselineValues("291")
+        .baselineValues("323")
+        .baselineValues("352")
+        .baselineValues("389")
+        .baselineValues("417")
+        .baselineValues("66")
+        .baselineValues("673")
+        .baselineValues("833")
+        .baselineValues("99")
+        .build().run();
+  }
+
+  @Test // see DRILL-2639
+  public void testUnionAllDiffTypesAtPlanning() throws Exception {
+    String query = "select count(c1) as ct from (select cast(r_regionkey as int) c1 from cp.`tpch/region.parquet`) " +
+        "union all " +
+        "(select cast(r_regionkey as int) c2 from cp.`tpch/region.parquet`)";
+
+    testBuilder()
+        .sqlQuery(query)
+        .ordered()
+        .baselineColumns("ct")
+        .baselineValues((long) 5)
+        .baselineValues((long) 0)
+        .baselineValues((long) 1)
+        .baselineValues((long) 2)
+        .baselineValues((long) 3)
+        .baselineValues((long) 4)
+        .build().run();
+  }
+
+  @Test // see DRILL-2612
+  public void testUnionAllRightEmptyJson() throws Exception {
+    String rootEmpty = FileUtils.getResourceAsFile("/project/pushdown/empty.json").toURI().toString();
+    String rootSimple = FileUtils.getResourceAsFile("/store/json/booleanData.json").toURI().toString();
+
+    String queryRightEmpty = String.format(
+        "select key from dfs_test.`%s` " +
+        "union all " +
+        "select key from dfs_test.`%s`",
+        rootSimple,
+        rootEmpty);
+
+    testBuilder()
+      .sqlQuery(queryRightEmpty)
+      .unOrdered()
+      .baselineColumns("key")
+      .baselineValues(true)
+      .baselineValues(false)
+      .build().run();
   }
 }

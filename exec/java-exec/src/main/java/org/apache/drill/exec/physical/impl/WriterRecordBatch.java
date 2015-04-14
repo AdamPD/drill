@@ -47,7 +47,7 @@ public class WriterRecordBatch extends AbstractRecordBatch<Writer> {
 
   private EventBasedRecordWriter eventBasedRecordWriter;
   private RecordWriter recordWriter;
-  private int counter = 0;
+  private long counter = 0;
   private final RecordBatch incoming;
   private boolean processed = false;
   private String fragmentUniqueId;
@@ -126,8 +126,8 @@ public class WriterRecordBatch extends AbstractRecordBatch<Writer> {
         }
       } while(upstream != IterOutcome.NONE);
     }catch(Exception ex){
-      kill(false);
       logger.error("Failure during query", ex);
+      kill(false);
       context.fail(ex);
       return IterOutcome.STOP;
     }
@@ -180,8 +180,6 @@ public class WriterRecordBatch extends AbstractRecordBatch<Writer> {
 
   @Override
   public void cleanup() {
-    super.cleanup();
-    incoming.cleanup();
     try {
       if (recordWriter != null) {
         recordWriter.cleanup();
@@ -190,6 +188,8 @@ public class WriterRecordBatch extends AbstractRecordBatch<Writer> {
       logger.error("Failure while closing record writer", ex);
       throw new RuntimeException("Failed to close RecordWriter", ex);
     }
+    super.cleanup();
+    incoming.cleanup();
   }
 
 }

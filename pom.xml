@@ -21,7 +21,7 @@
 
   <groupId>org.apache.drill</groupId>
   <artifactId>drill-root</artifactId>
-  <version>0.8.0-SNAPSHOT</version>
+  <version>0.9.0-SNAPSHOT</version>
   <packaging>pom</packaging>
 
   <name>Apache Drill Root POM</name>
@@ -33,7 +33,7 @@
     <proto.cas.path>${project.basedir}/src/main/protobuf/</proto.cas.path>
     <dep.junit.version>4.11</dep.junit.version>
     <dep.slf4j.version>1.7.5</dep.slf4j.version>
-    <parquet.version>1.5.1-drill-r7</parquet.version>
+    <parquet.version>1.6.0rc3-drill-r0.1</parquet.version>
   </properties>
 
   <scm>
@@ -108,21 +108,6 @@
       <url>http://repository.mapr.com/nexus/content/repositories/drill/</url>
       <releases>
         <enabled>true</enabled>
-      </releases>
-      <snapshots>
-        <enabled>false</enabled>
-      </snapshots>
-    </repository>
-
-    <repository>
-      <id>pentaho</id>
-      <name>Pentaho</name>
-      <url>http://repo.pentaho.org/artifactory/repo</url>
-      <layout>default</layout>
-      <releases>
-        <enabled>true</enabled>
-        <updatePolicy>never</updatePolicy>
-        <checksumPolicy>warn</checksumPolicy>
       </releases>
       <snapshots>
         <enabled>false</enabled>
@@ -385,7 +370,7 @@
               -Dorg.apache.drill.exec.server.Drillbit.system_options="org.apache.drill.exec.compile.ClassTransformer.scalar_replacement=on"
               -XX:MaxPermSize=256M -XX:MaxDirectMemorySize=3072M
               -XX:+CMSClassUnloadingEnabled -ea</argLine>
-            <forkCount>4</forkCount>
+            <forkCount>1C</forkCount>
             <reuseForks>true</reuseForks>
             <additionalClasspathElements>
               <additionalClasspathElement>./exec/jdbc/src/test/resources/storage-plugins.json</additionalClasspathElement>
@@ -960,11 +945,35 @@
           <dependency>
             <groupId>net.hydromatic</groupId>
             <artifactId>optiq-core</artifactId>
-            <version>0.9-drill-r20</version>
+            <version>0.9-drill-r21</version>
             <exclusions>
               <exclusion>
                 <groupId>org.jgrapht</groupId>
                 <artifactId>jgrapht-jdk1.5</artifactId>
+              </exclusion>
+            </exclusions>
+          </dependency>
+
+          <dependency>
+            <groupId>net.sf.jpam</groupId>
+            <artifactId>jpam</artifactId>
+            <version>1.1</version>
+            <exclusions>
+              <exclusion>
+                <groupId>commons-logging</groupId>
+                <artifactId>commons-logging</artifactId>
+              </exclusion>
+              <exclusion>
+                <groupId>junit</groupId>
+                <artifactId>junit</artifactId>
+              </exclusion>
+              <exclusion>
+                <groupId>checkstyle</groupId>
+                <artifactId>checkstyle</artifactId>
+              </exclusion>
+              <exclusion>
+                <groupId>checkstyle</groupId>
+                <artifactId>checkstyle-optional</artifactId>
               </exclusion>
             </exclusions>
           </dependency>

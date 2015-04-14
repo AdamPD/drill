@@ -33,6 +33,7 @@ import net.hydromatic.optiq.tools.ValidationException;
 import org.apache.drill.exec.ops.QueryContext;
 import org.apache.drill.exec.physical.PhysicalPlan;
 import org.apache.drill.exec.planner.cost.DrillCostBase;
+import org.apache.drill.exec.planner.logical.DrillConstExecutor;
 import org.apache.drill.exec.planner.logical.DrillRuleSets;
 import org.apache.drill.exec.planner.physical.DrillDistributionTraitDef;
 import org.apache.drill.exec.planner.sql.handlers.AbstractSqlHandler;
@@ -41,6 +42,7 @@ import org.apache.drill.exec.planner.sql.handlers.ExplainHandler;
 import org.apache.drill.exec.planner.sql.handlers.SetOptionHandler;
 import org.apache.drill.exec.planner.sql.handlers.SqlHandlerConfig;
 import org.apache.drill.exec.planner.sql.parser.DrillSqlCall;
+import org.apache.drill.exec.planner.sql.parser.SqlCreateTable;
 import org.apache.drill.exec.planner.sql.parser.impl.DrillParserWithCompoundIdConverter;
 import org.apache.drill.exec.store.StoragePluginRegistry;
 import org.apache.drill.exec.util.Pointer;
@@ -89,6 +91,7 @@ public class DrillSqlWorker {
         .context(context.getPlannerSettings()) //
         .ruleSets(getRules(context)) //
         .costFactory(costFactory) //
+        .executor(new DrillConstExecutor(context.getFunctionRegistry(), context))
         .build();
     this.planner = Frameworks.getPlanner(config);
     HepProgramBuilder builder = new HepProgramBuilder();
@@ -101,10 +104,13 @@ public class DrillSqlWorker {
 
   private RuleSet[] getRules(QueryContext context) {
     StoragePluginRegistry storagePluginRegistry = context.getStorage();
+    RuleSet drillLogicalRules = DrillRuleSets.mergedRuleSets(
+        DrillRuleSets.getDrillBasicRules(context),
+        DrillRuleSets.getDrillUserConfigurableLogicalRules(context));
     RuleSet drillPhysicalMem = DrillRuleSets.mergedRuleSets(
         DrillRuleSets.getPhysicalRules(context),
         storagePluginRegistry.getStoragePluginRuleSet());
-    RuleSet[] allRules = new RuleSet[] {DrillRuleSets.getDrillBasicRules(context), drillPhysicalMem};
+    RuleSet[] allRules = new RuleSet[] {drillLogicalRules, drillPhysicalMem};
     return allRules;
   }
 
@@ -132,6 +138,11 @@ public class DrillSqlWorker {
       handler = new SetOptionHandler(context);
       break;
     case OTHER:
+      if(sqlNode instanceof SqlCreateTable) {
+        handler = ((DrillSqlCall)sqlNode).getSqlHandler(config, textPlan);
+        break;
+      }
+
       if (sqlNode instanceof DrillSqlCall) {
         handler = ((DrillSqlCall)sqlNode).getSqlHandler(config);
         break;
