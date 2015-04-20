@@ -157,7 +157,7 @@ public class QueryWrapper {
               final String field = vw.getValueVector().getMetadata().getNamePart().getName();
               final ValueVector.Accessor accessor = vw.getValueVector().getAccessor();
               final Object value = i < accessor.getValueCount() ? accessor.getObject(i) : null;
-              final Object display = Primitives.isWrapperType(value.getClass()) ? value : value.toString();
+              final Object display = value == null || Primitives.isWrapperType(value.getClass()) ? value : value.toString();
               record.put(field, display);
             }
             results.add(record);
