@@ -47,6 +47,7 @@ import org.apache.drill.exec.store.dfs.FormatSelection;
 import org.apache.drill.exec.store.dfs.MagicString;
 import org.apache.drill.exec.store.dfs.DrillFileSystem;
 import org.apache.drill.exec.store.mock.MockStorageEngine;
+import org.apache.drill.exec.store.parquet2.DrillParquetPushDownFilter;
 import org.apache.hadoop.conf.Configuration;
 import org.apache.hadoop.fs.FileStatus;
 import org.apache.hadoop.fs.FileSystem;
@@ -111,7 +112,7 @@ public class ParquetFormatPlugin implements FormatPlugin{
 
   @Override
   public Set<StoragePluginOptimizerRule> getOptimizerRules() {
-    return ImmutableSet.of();
+    return ImmutableSet.of(DrillParquetPushDownFilter.INSTANCE);
   }
 
   @Override
@@ -155,12 +156,12 @@ public class ParquetFormatPlugin implements FormatPlugin{
 
   @Override
   public ParquetGroupScan getGroupScan(FileSelection selection) throws IOException {
-    return new ParquetGroupScan(selection.getFileStatusList(fs), this, selection.selectionRoot, null);
+    return new ParquetGroupScan(selection.getFileStatusList(fs), this, selection.selectionRoot, null, null);
   }
 
   @Override
   public ParquetGroupScan getGroupScan(FileSelection selection, List<SchemaPath> columns) throws IOException {
-    return new ParquetGroupScan(selection.getFileStatusList(fs), this, selection.selectionRoot, columns);
+    return new ParquetGroupScan(selection.getFileStatusList(fs), this, selection.selectionRoot, columns, null);
   }
 
   @Override

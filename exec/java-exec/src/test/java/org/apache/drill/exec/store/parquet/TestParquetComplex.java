@@ -36,6 +36,18 @@ public class TestParquetComplex extends BaseTestQuery {
             .run();
   }
 
+    @Test
+    public void filter() throws Exception {
+        String query = String.format("select * from %s where amount > 40", DATAFILE);
+        /*testBuilder()
+                .sqlQuery(query)
+                .ordered()
+                .jsonBaselineFile("store/parquet/complex/baseline_filtered.json")
+                .build()
+                .run();*/
+        test(query);
+    }
+
   @Test
   public void topN() throws Exception {
     String query = String.format("select * from %s order by amount limit 5", DATAFILE);
