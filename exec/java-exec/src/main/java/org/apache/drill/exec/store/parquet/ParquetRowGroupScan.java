@@ -30,6 +30,7 @@ import org.apache.drill.exec.physical.base.GroupScan;
 import org.apache.drill.exec.physical.base.PhysicalOperator;
 import org.apache.drill.exec.physical.base.PhysicalVisitor;
 import org.apache.drill.exec.physical.base.SubScan;
+import org.apache.drill.exec.physical.config.Filter;
 import org.apache.drill.exec.proto.UserBitShared.CoreOperatorType;
 import org.apache.drill.exec.store.StoragePluginRegistry;
 
@@ -40,6 +41,7 @@ import com.fasterxml.jackson.annotation.JsonProperty;
 import com.fasterxml.jackson.annotation.JsonTypeName;
 import com.google.common.base.Preconditions;
 import com.google.common.collect.Iterators;
+import parquet.filter2.predicate.FilterPredicate;
 
 // Class containing information for reading a single parquet row group form HDFS
 @JsonTypeName("parquet-row-group-scan")
@@ -51,6 +53,7 @@ public class ParquetRowGroupScan extends AbstractBase implements SubScan {
   private final List<RowGroupReadEntry> rowGroupReadEntries;
   private final List<SchemaPath> columns;
   private String selectionRoot;
+  private final FilterPredicate filter;
 
   @JsonCreator
   public ParquetRowGroupScan( //
@@ -59,23 +62,26 @@ public class ParquetRowGroupScan extends AbstractBase implements SubScan {
       @JsonProperty("format") FormatPluginConfig formatConfig, //
       @JsonProperty("entries") LinkedList<RowGroupReadEntry> rowGroupReadEntries, //
       @JsonProperty("columns") List<SchemaPath> columns, //
-      @JsonProperty("selectionRoot") String selectionRoot //
+      @JsonProperty("selectionRoot") String selectionRoot, //
+      @JsonProperty("filter")FilterPredicate filter
   ) throws ExecutionSetupException {
     this((ParquetFormatPlugin) registry.getFormatPlugin(Preconditions.checkNotNull(storageConfig),
             formatConfig == null ? new ParquetFormatConfig() : formatConfig),
-        rowGroupReadEntries, columns, selectionRoot);
+        rowGroupReadEntries, columns, selectionRoot, filter);
   }
 
   public ParquetRowGroupScan( //
       ParquetFormatPlugin formatPlugin, //
       List<RowGroupReadEntry> rowGroupReadEntries, //
       List<SchemaPath> columns,
-      String selectionRoot) {
+      String selectionRoot,
+      FilterPredicate filter) {
     this.formatPlugin = Preconditions.checkNotNull(formatPlugin);
     this.formatConfig = formatPlugin.getConfig();
     this.rowGroupReadEntries = rowGroupReadEntries;
     this.columns = columns == null || columns.size() == 0 ? GroupScan.ALL_COLUMNS : columns;
     this.selectionRoot = selectionRoot;
+    this.filter = filter;
   }
 
   @JsonProperty("entries")
@@ -110,7 +116,7 @@ public class ParquetRowGroupScan extends AbstractBase implements SubScan {
   @Override
   public PhysicalOperator getNewWithChildren(List<PhysicalOperator> children) throws ExecutionSetupException {
     Preconditions.checkArgument(children.isEmpty());
-    return new ParquetRowGroupScan(formatPlugin, rowGroupReadEntries, columns, selectionRoot);
+    return new ParquetRowGroupScan(formatPlugin, rowGroupReadEntries, columns, selectionRoot, filter);
   }
 
   @Override
@@ -127,4 +133,5 @@ public class ParquetRowGroupScan extends AbstractBase implements SubScan {
     return CoreOperatorType.PARQUET_ROW_GROUP_SCAN_VALUE;
   }
 
+  public FilterPredicate getFilter() { return filter; }
 }

@@ -53,6 +53,7 @@ import org.apache.hadoop.fs.FileStatus;
 import org.apache.hadoop.fs.FileSystem;
 import org.apache.hadoop.fs.Path;
 
+import parquet.filter2.predicate.FilterPredicate;
 import parquet.hadoop.Footer;
 import parquet.hadoop.metadata.BlockMetaData;
 import parquet.hadoop.metadata.ColumnChunkMetaData;
@@ -93,6 +94,7 @@ public class ParquetGroupScan extends AbstractFileGroupScan {
   private String selectionRoot;
 
   private List<SchemaPath> columns;
+  private FilterPredicate filter;
 
   /*
    * total number of rows (obtained from parquet footer)
@@ -118,6 +120,9 @@ public class ParquetGroupScan extends AbstractFileGroupScan {
     return this.formatPlugin.getStorageConfig();
   }
 
+  @JsonProperty("filter")
+  public FilterPredicate getFilter() { return this.filter; }
+
   @JsonCreator
   public ParquetGroupScan( //
       @JsonProperty("entries") List<ReadEntryWithPath> entries, //
@@ -125,7 +130,8 @@ public class ParquetGroupScan extends AbstractFileGroupScan {
       @JsonProperty("format") FormatPluginConfig formatConfig, //
       @JacksonInject StoragePluginRegistry engineRegistry, //
       @JsonProperty("columns") List<SchemaPath> columns, //
-      @JsonProperty("selectionRoot") String selectionRoot //
+      @JsonProperty("selectionRoot") String selectionRoot, //
+      @JsonProperty("filter") FilterPredicate filter
       ) throws IOException, ExecutionSetupException {
     this.columns = columns;
     if (formatConfig == null) {
@@ -139,6 +145,7 @@ public class ParquetGroupScan extends AbstractFileGroupScan {
     this.formatConfig = formatPlugin.getConfig();
     this.entries = entries;
     this.selectionRoot = selectionRoot;
+    this.filter = filter;
     this.readFooterFromEntries();
 
   }
@@ -150,7 +157,8 @@ public class ParquetGroupScan extends AbstractFileGroupScan {
   public ParquetGroupScan(List<FileStatus> files, //
       ParquetFormatPlugin formatPlugin, //
       String selectionRoot,
-      List<SchemaPath> columns) //
+      List<SchemaPath> columns,
+      FilterPredicate filter) //
           throws IOException {
     this.formatPlugin = formatPlugin;
     this.columns = columns;
@@ -163,6 +171,7 @@ public class ParquetGroupScan extends AbstractFileGroupScan {
     }
 
     this.selectionRoot = selectionRoot;
+    this.filter = filter;
 
     readFooter(files);
   }
@@ -182,6 +191,7 @@ public class ParquetGroupScan extends AbstractFileGroupScan {
     this.rowGroupInfos = that.rowGroupInfos;
     this.selectionRoot = that.selectionRoot;
     this.columnValueCounts = that.columnValueCounts;
+    this.filter = that.filter;
   }
 
   private void readFooterFromEntries()  throws IOException {
@@ -382,7 +392,7 @@ public class ParquetGroupScan extends AbstractFileGroupScan {
     Preconditions.checkArgument(!rowGroupsForMinor.isEmpty(),
         String.format("MinorFragmentId %d has no read entries assigned", minorFragmentId));
 
-    return new ParquetRowGroupScan(formatPlugin, convertToReadEntries(rowGroupsForMinor), columns, selectionRoot);
+    return new ParquetRowGroupScan(formatPlugin, convertToReadEntries(rowGroupsForMinor), columns, selectionRoot, filter);
   }
 
   private List<RowGroupReadEntry> convertToReadEntries(List<RowGroupInfo> rowGroups) {
@@ -427,7 +437,8 @@ public class ParquetGroupScan extends AbstractFileGroupScan {
     return "ParquetGroupScan [entries=" + entries
         + ", selectionRoot=" + selectionRoot
         + ", numFiles=" + getEntries().size()
-        + ", columns=" + columns + "]";
+        + ", columns=" + columns
+        + ", filter=" + filter + "]";
   }
 
   @Override
@@ -442,6 +453,12 @@ public class ParquetGroupScan extends AbstractFileGroupScan {
     ParquetGroupScan newScan = new ParquetGroupScan(this);
     newScan.modifyFileSelection(selection);
     newScan.readFooterFromEntries();
+    return newScan;
+  }
+
+  public ParquetGroupScan clone(FilterPredicate filter) {
+    ParquetGroupScan newScan = new ParquetGroupScan(this);
+    newScan.filter = filter;
     return newScan;
   }
 

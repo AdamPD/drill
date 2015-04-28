@@ -91,7 +91,7 @@ public class ParquetScanBatchCreator implements BatchCreator<ParquetRowGroupScan
       }
       final int id = rowGroupScan.getOperatorId();
       // Create the new row group scan with the new columns
-      rowGroupScan = new ParquetRowGroupScan(rowGroupScan.getStorageEngine(), rowGroupScan.getRowGroupReadEntries(), newColumns, rowGroupScan.getSelectionRoot());
+      rowGroupScan = new ParquetRowGroupScan(rowGroupScan.getStorageEngine(), rowGroupScan.getRowGroupReadEntries(), newColumns, rowGroupScan.getSelectionRoot(), rowGroupScan.getFilter());
       rowGroupScan.setOperatorId(id);
     }
 
@@ -128,7 +128,7 @@ public class ParquetScanBatchCreator implements BatchCreator<ParquetRowGroupScan
           );
         } else {
           ParquetMetadata footer = footers.get(e.getPath());
-          readers.add(new DrillParquetReader(context, footer, e, newColumns, fs));
+          readers.add(new DrillParquetReader(context, footer, e, newColumns, fs, rowGroupScan.getFilter()));
         }
         if (rowGroupScan.getSelectionRoot() != null) {
           String[] r = rowGroupScan.getSelectionRoot().split("/");
