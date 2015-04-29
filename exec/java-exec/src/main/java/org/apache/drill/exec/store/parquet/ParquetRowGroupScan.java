@@ -53,7 +53,6 @@ public class ParquetRowGroupScan extends AbstractBase implements SubScan {
   private final List<RowGroupReadEntry> rowGroupReadEntries;
   private final List<SchemaPath> columns;
   private String selectionRoot;
-  private final FilterPredicate filter;
 
   @JsonCreator
   public ParquetRowGroupScan( //
@@ -62,26 +61,23 @@ public class ParquetRowGroupScan extends AbstractBase implements SubScan {
       @JsonProperty("format") FormatPluginConfig formatConfig, //
       @JsonProperty("entries") LinkedList<RowGroupReadEntry> rowGroupReadEntries, //
       @JsonProperty("columns") List<SchemaPath> columns, //
-      @JsonProperty("selectionRoot") String selectionRoot, //
-      @JsonProperty("filter")FilterPredicate filter
+      @JsonProperty("selectionRoot") String selectionRoot //
   ) throws ExecutionSetupException {
     this((ParquetFormatPlugin) registry.getFormatPlugin(Preconditions.checkNotNull(storageConfig),
             formatConfig == null ? new ParquetFormatConfig() : formatConfig),
-        rowGroupReadEntries, columns, selectionRoot, filter);
+        rowGroupReadEntries, columns, selectionRoot);
   }
 
   public ParquetRowGroupScan( //
       ParquetFormatPlugin formatPlugin, //
       List<RowGroupReadEntry> rowGroupReadEntries, //
       List<SchemaPath> columns,
-      String selectionRoot,
-      FilterPredicate filter) {
+      String selectionRoot) {
     this.formatPlugin = Preconditions.checkNotNull(formatPlugin);
     this.formatConfig = formatPlugin.getConfig();
     this.rowGroupReadEntries = rowGroupReadEntries;
     this.columns = columns == null || columns.size() == 0 ? GroupScan.ALL_COLUMNS : columns;
     this.selectionRoot = selectionRoot;
-    this.filter = filter;
   }
 
   @JsonProperty("entries")
@@ -116,7 +112,7 @@ public class ParquetRowGroupScan extends AbstractBase implements SubScan {
   @Override
   public PhysicalOperator getNewWithChildren(List<PhysicalOperator> children) throws ExecutionSetupException {
     Preconditions.checkArgument(children.isEmpty());
-    return new ParquetRowGroupScan(formatPlugin, rowGroupReadEntries, columns, selectionRoot, filter);
+    return new ParquetRowGroupScan(formatPlugin, rowGroupReadEntries, columns, selectionRoot);
   }
 
   @Override
@@ -132,6 +128,4 @@ public class ParquetRowGroupScan extends AbstractBase implements SubScan {
   public int getOperatorType() {
     return CoreOperatorType.PARQUET_ROW_GROUP_SCAN_VALUE;
   }
-
-  public FilterPredicate getFilter() { return filter; }
 }

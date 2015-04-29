@@ -56,9 +56,6 @@ import org.apache.hadoop.fs.Path;
 
 import parquet.column.ColumnDescriptor;
 import parquet.common.schema.ColumnPath;
-import parquet.filter2.compat.FilterCompat;
-import parquet.filter2.predicate.FilterPredicate;
-import parquet.filter2.statisticslevel.StatisticsFilter;
 import parquet.hadoop.CodecFactoryExposer;
 import parquet.hadoop.ColumnChunkIncReadStore;
 import parquet.hadoop.metadata.BlockMetaData;
@@ -115,17 +112,14 @@ public class DrillParquetReader extends AbstractRecordReader {
   private List<SchemaPath> columnsNotFound=null;
   boolean noColumnsFound = false; // true if none of the columns in the projection list is found in the schema
 
-  private final FilterPredicate filter;
-
 
   public DrillParquetReader(FragmentContext fragmentContext, ParquetMetadata footer, RowGroupReadEntry entry,
-      List<SchemaPath> columns, DrillFileSystem fileSystem, FilterPredicate filter) {
+      List<SchemaPath> columns, DrillFileSystem fileSystem) {
     this.footer = footer;
     this.fileSystem = fileSystem;
     this.entry = entry;
     setColumns(columns);
     this.fragmentContext = fragmentContext;
-    this.filter = filter;
     fillLevelCheckFrequency = this.fragmentContext.getOptions().getOption(ExecConstants.PARQUET_VECTOR_FILL_CHECK_THRESHOLD).num_val.intValue();
     fillLevelCheckThreshold = this.fragmentContext.getOptions().getOption(ExecConstants.PARQUET_VECTOR_FILL_THRESHOLD).num_val.intValue();
   }
@@ -257,9 +251,6 @@ public class DrillParquetReader extends AbstractRecordReader {
 
       BlockMetaData blockMetaData = footer.getBlocks().get(entry.getRowGroupIndex());
 
-      if (filter != null && StatisticsFilter.canDrop(this.filter, blockMetaData.getColumns()))
-        return;
-
       recordCount = (int) blockMetaData.getRowCount();
 
       pageReadStore = new ColumnChunkIncReadStore(recordCount,
@@ -277,7 +268,7 @@ public class DrillParquetReader extends AbstractRecordReader {
         writer = new VectorContainerWriter(output);
         recordMaterializer = new DrillParquetRecordMaterializer(output, writer, projection, getColumns());
         primitiveVectors = writer.getMapVector().getPrimitiveVectors();
-        recordReader = columnIO.getRecordReader(pageReadStore, recordMaterializer, filter == null ? FilterCompat.NOOP : FilterCompat.get(filter));
+        recordReader = columnIO.getRecordReader(pageReadStore, recordMaterializer);
       }
     } catch (Exception e) {
       handleAndRaise("Failure in setting up reader", e);

@@ -15,35 +15,43 @@
  * See the License for the specific language governing permissions and
  * limitations under the License.
  */
-package org.apache.drill.exec.store.parquet2;
+package org.apache.drill.exec.store.parquet;
 
 import com.google.common.collect.ImmutableList;
+import org.apache.drill.common.expression.BooleanOperator;
 import org.apache.drill.common.expression.FunctionCall;
 import org.apache.drill.common.expression.LogicalExpression;
 import org.apache.drill.common.expression.SchemaPath;
 import org.apache.drill.common.expression.visitors.AbstractExprVisitor;
-import org.apache.drill.exec.store.parquet.ParquetGroupScan;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import parquet.filter2.predicate.FilterApi;
 import parquet.filter2.predicate.FilterPredicate;
 
-public class DrillParquetFilterBuilder extends
+import java.io.IOException;
+import java.util.List;
+
+public class ParquetFilterBuilder extends
         AbstractExprVisitor<FilterPredicate, Void, RuntimeException> {
     static final Logger logger = LoggerFactory
-            .getLogger(DrillParquetFilterBuilder.class);
+            .getLogger(ParquetFilterBuilder.class);
     private LogicalExpression le;
     private boolean allExpressionsConverted = true;
     private ParquetGroupScan groupScan;
 
-    public DrillParquetFilterBuilder(ParquetGroupScan groupScan, LogicalExpression conditionExp) {
+    public ParquetFilterBuilder(ParquetGroupScan groupScan, LogicalExpression conditionExp) {
         this.le = conditionExp;
         this.groupScan = groupScan;
     }
 
     public ParquetGroupScan parseTree() {
         FilterPredicate predicate = le.accept(this, null);
-        return this.groupScan.clone(predicate);
+        try {
+            return this.groupScan.clone(predicate);
+        } catch (IOException e) {
+            logger.error("Failed to set Parquet filter", e);
+            return null;
+        }
     }
 
     public boolean areAllExpressionsConverted() {
@@ -57,13 +65,55 @@ public class DrillParquetFilterBuilder extends
     }
 
     @Override
+    public FilterPredicate visitBooleanOperator(BooleanOperator op, Void value) {
+        List<LogicalExpression> args = op.args;
+        FilterPredicate nodePredicate = null;
+        String functionName = op.getName();
+        for (LogicalExpression arg : args) {
+            switch (functionName) {
+                case "booleanAnd":
+                case "booleanOr":
+                    if (nodePredicate == null) {
+                        nodePredicate = arg.accept(this, null);
+                    } else {
+                        FilterPredicate predicate = arg.accept(this, null);
+                        if (predicate != null) {
+                            nodePredicate = mergePredicates(functionName, nodePredicate, predicate);
+                        } else {
+                            allExpressionsConverted = false;
+                        }
+                    }
+                    break;
+            }
+        }
+        return nodePredicate;
+    }
+
+    private FilterPredicate mergePredicates(String functionName,
+                                            FilterPredicate leftPredicate, FilterPredicate rightPredicate) {
+        if (leftPredicate != null && rightPredicate != null) {
+            if (functionName == "booleanAnd")
+                return FilterApi.and(leftPredicate, rightPredicate);
+            else
+                return FilterApi.or(leftPredicate, rightPredicate);
+        } else {
+            allExpressionsConverted = false;
+            if ("booleanAnd".equals(functionName)) {
+                return leftPredicate == null ? rightPredicate : leftPredicate;
+            }
+        }
+
+        return null;
+    }
+
+    @Override
     public FilterPredicate visitFunctionCall(FunctionCall call, Void value) throws RuntimeException {
         FilterPredicate predicate = null;
         String functionName = call.getName();
         ImmutableList<LogicalExpression> args = call.args;
 
-        if (DrillParquetCompareFunctionProcessor.isCompareFunction(functionName)) {
-            DrillParquetCompareFunctionProcessor processor = DrillParquetCompareFunctionProcessor
+        if (ParquetCompareFunctionProcessor.isCompareFunction(functionName)) {
+            ParquetCompareFunctionProcessor processor = ParquetCompareFunctionProcessor
                     .process(call);
             if (processor.isSuccess()) {
                 try {
@@ -72,6 +122,15 @@ public class DrillParquetFilterBuilder extends
                 } catch (Exception e) {
                     logger.error("Failed to create Parquet filter", e);
                 }
+            }
+        } else {
+            switch (functionName) {
+                case "booleanAnd":
+                case "booleanOr":
+                    FilterPredicate leftPredicate = args.get(0).accept(this, null);
+                    FilterPredicate rightPredicate = args.get(1).accept(this, null);
+                    predicate = mergePredicates(functionName, leftPredicate, rightPredicate);
+                    break;
             }
         }
 
