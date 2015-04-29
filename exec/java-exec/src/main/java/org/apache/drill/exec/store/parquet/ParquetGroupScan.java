@@ -18,6 +18,7 @@
 package org.apache.drill.exec.store.parquet;
 
 import java.io.IOException;
+import java.util.ArrayList;
 import java.util.Collections;
 import java.util.HashMap;
 import java.util.List;
@@ -37,6 +38,7 @@ import org.apache.drill.exec.physical.base.GroupScan;
 import org.apache.drill.exec.physical.base.PhysicalOperator;
 import org.apache.drill.exec.physical.base.ScanStats;
 import org.apache.drill.exec.physical.base.ScanStats.GroupScanProperty;
+import org.apache.drill.exec.physical.base.SubScan;
 import org.apache.drill.exec.proto.CoordinationProtos.DrillbitEndpoint;
 import org.apache.drill.exec.store.StoragePluginRegistry;
 import org.apache.drill.exec.store.TimedRunnable;
@@ -53,7 +55,11 @@ import org.apache.hadoop.fs.FileStatus;
 import org.apache.hadoop.fs.FileSystem;
 import org.apache.hadoop.fs.Path;
 
+import parquet.filter2.compat.FilterCompat;
+import parquet.filter2.compat.RowGroupFilter;
 import parquet.filter2.predicate.FilterPredicate;
+import parquet.filter2.predicate.SchemaCompatibilityValidator;
+import parquet.filter2.statisticslevel.StatisticsFilter;
 import parquet.hadoop.Footer;
 import parquet.hadoop.metadata.BlockMetaData;
 import parquet.hadoop.metadata.ColumnChunkMetaData;
@@ -219,7 +225,29 @@ public class ParquetGroupScan extends AbstractFileGroupScan {
     for (Footer footer : footers) {
       int index = 0;
       ParquetMetadata metadata = footer.getParquetMetadata();
-      for (BlockMetaData rowGroup : metadata.getBlocks()) {
+      List<BlockMetaData> blocks = metadata.getBlocks();
+      if (filter != null) {
+        try {
+          List<BlockMetaData> filteredBlocks = new ArrayList<BlockMetaData>();
+
+          for (BlockMetaData block : blocks) {
+            if (!StatisticsFilter.canDrop(filter, block.getColumns())) {
+              filteredBlocks.add(block);
+            }
+          }
+
+          blocks = filteredBlocks;
+        } catch (Exception e) {
+          // canDrop will throw an exception if the schema is incompatible
+          // In this case, we simply ignore the filter predicate and continue with all row groups
+          //
+          // NB: RowGroupFilter uses SchemaCompatibilityValidator which will not (currently) allow filtering
+          // timestamp/time/date columns using in64/32 values, hence it is not being used.
+          // https://issues.apache.org/jira/browse/PARQUET-247 is related to this, although not exactly the same
+          logger.warn("Filter is not compatible with Parquet schema", e);
+        }
+      }
+      for (BlockMetaData rowGroup : blocks) {
         long valueCountInGrp = 0;
         // need to grab block information from HDFS
         columnChunkMetaData = rowGroup.getColumns().iterator().next();
@@ -264,7 +292,6 @@ public class ParquetGroupScan extends AbstractFileGroupScan {
       }
 
     }
-    Preconditions.checkState(!rowGroupInfos.isEmpty(), "No row groups found");
     tContext.stop();
     watch.stop();
     logger.debug("Took {} ms to get row group infos", watch.elapsed(TimeUnit.MILLISECONDS));
@@ -332,7 +359,8 @@ public class ParquetGroupScan extends AbstractFileGroupScan {
    */
   @Override
   public List<EndpointAffinity> getOperatorAffinity() {
-
+    if (rowGroupInfos.isEmpty())
+      return Collections.emptyList();
     if (this.endpointAffinities == null) {
       BlockMapBuilder bmb = new BlockMapBuilder(fs, formatPlugin.getContext().getBits());
       try {
@@ -377,12 +405,15 @@ public class ParquetGroupScan extends AbstractFileGroupScan {
 
   @Override
   public void applyAssignments(List<DrillbitEndpoint> incomingEndpoints) throws PhysicalOperatorSetupException {
-
-    this.mappings = AssignmentCreator.getMappings(incomingEndpoints, rowGroupInfos);
+    if (!rowGroupInfos.isEmpty())
+      this.mappings = AssignmentCreator.getMappings(incomingEndpoints, rowGroupInfos);
   }
 
   @Override
-  public ParquetRowGroupScan getSpecificScan(int minorFragmentId) {
+  public SubScan getSpecificScan(int minorFragmentId) {
+    if (mappings == null)
+      return new EmptyRowGroupScan();
+
     assert minorFragmentId < mappings.size() : String.format(
         "Mappings length [%d] should be longer than minor fragment id [%d] but it isn't.", mappings.size(),
         minorFragmentId);
@@ -392,7 +423,7 @@ public class ParquetGroupScan extends AbstractFileGroupScan {
     Preconditions.checkArgument(!rowGroupsForMinor.isEmpty(),
         String.format("MinorFragmentId %d has no read entries assigned", minorFragmentId));
 
-    return new ParquetRowGroupScan(formatPlugin, convertToReadEntries(rowGroupsForMinor), columns, selectionRoot, filter);
+    return new ParquetRowGroupScan(formatPlugin, convertToReadEntries(rowGroupsForMinor), columns, selectionRoot);
   }
 
   private List<RowGroupReadEntry> convertToReadEntries(List<RowGroupInfo> rowGroups) {
@@ -456,9 +487,10 @@ public class ParquetGroupScan extends AbstractFileGroupScan {
     return newScan;
   }
 
-  public ParquetGroupScan clone(FilterPredicate filter) {
+  public ParquetGroupScan clone(FilterPredicate filter) throws IOException {
     ParquetGroupScan newScan = new ParquetGroupScan(this);
     newScan.filter = filter;
+    newScan.readFooterFromEntries();
     return newScan;
   }
 

@@ -47,7 +47,6 @@ import org.apache.drill.exec.store.dfs.FormatSelection;
 import org.apache.drill.exec.store.dfs.MagicString;
 import org.apache.drill.exec.store.dfs.DrillFileSystem;
 import org.apache.drill.exec.store.mock.MockStorageEngine;
-import org.apache.drill.exec.store.parquet2.DrillParquetPushDownFilter;
 import org.apache.hadoop.conf.Configuration;
 import org.apache.hadoop.fs.FileStatus;
 import org.apache.hadoop.fs.FileSystem;
@@ -112,7 +111,7 @@ public class ParquetFormatPlugin implements FormatPlugin{
 
   @Override
   public Set<StoragePluginOptimizerRule> getOptimizerRules() {
-    return ImmutableSet.of(DrillParquetPushDownFilter.INSTANCE);
+    return ImmutableSet.of(ParquetPushDownFilter.INSTANCE);
   }
 
   @Override
