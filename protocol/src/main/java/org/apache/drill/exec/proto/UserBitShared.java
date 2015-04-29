@@ -621,9 +621,9 @@ public final class UserBitShared {
      */
     public static final int NESTED_LOOP_JOIN_VALUE = 35;
     /**
-     * <code>EMPTY_ROW_GROUP_SCAN = 35;</code>
+     * <code>EMPTY_ROW_GROUP_SCAN = 36;</code>
      */
-    public static final int EMPTY_ROW_GROUP_SCAN_VALUE = 35;
+    public static final int EMPTY_ROW_GROUP_SCAN_VALUE = 36;
 
 
     public final int getNumber() { return value; }
