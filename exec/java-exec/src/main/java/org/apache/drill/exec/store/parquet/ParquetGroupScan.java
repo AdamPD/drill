@@ -25,6 +25,8 @@ import java.util.List;
 import java.util.Map;
 import java.util.concurrent.TimeUnit;
 
+import com.fasterxml.jackson.databind.annotation.JsonDeserialize;
+import com.fasterxml.jackson.databind.annotation.JsonSerialize;
 import org.apache.drill.common.exceptions.ExecutionSetupException;
 import org.apache.drill.common.expression.SchemaPath;
 import org.apache.drill.common.logical.FormatPluginConfig;
@@ -60,6 +62,7 @@ import parquet.filter2.compat.RowGroupFilter;
 import parquet.filter2.predicate.FilterPredicate;
 import parquet.filter2.predicate.SchemaCompatibilityValidator;
 import parquet.filter2.statisticslevel.StatisticsFilter;
+import parquet.hadoop.FilterPredicateSerializer;
 import parquet.hadoop.Footer;
 import parquet.hadoop.metadata.BlockMetaData;
 import parquet.hadoop.metadata.ColumnChunkMetaData;
@@ -127,6 +130,7 @@ public class ParquetGroupScan extends AbstractFileGroupScan {
   }
 
   @JsonProperty("filter")
+  @JsonSerialize(using = FilterPredicateSerializer.Se.class)
   public FilterPredicate getFilter() { return this.filter; }
 
   @JsonCreator
@@ -137,7 +141,7 @@ public class ParquetGroupScan extends AbstractFileGroupScan {
       @JacksonInject StoragePluginRegistry engineRegistry, //
       @JsonProperty("columns") List<SchemaPath> columns, //
       @JsonProperty("selectionRoot") String selectionRoot, //
-      @JsonProperty("filter") FilterPredicate filter
+      @JsonProperty("filter") @JsonDeserialize(using = FilterPredicateSerializer.De.class) FilterPredicate filter
       ) throws IOException, ExecutionSetupException {
     this.columns = columns;
     if (formatConfig == null) {
@@ -426,7 +430,7 @@ public class ParquetGroupScan extends AbstractFileGroupScan {
     Preconditions.checkArgument(!rowGroupsForMinor.isEmpty(),
         String.format("MinorFragmentId %d has no read entries assigned", minorFragmentId));
 
-    return new ParquetRowGroupScan(formatPlugin, convertToReadEntries(rowGroupsForMinor), columns, selectionRoot);
+    return new ParquetRowGroupScan(formatPlugin, convertToReadEntries(rowGroupsForMinor), columns, selectionRoot, filter);
   }
 
   private List<RowGroupReadEntry> convertToReadEntries(List<RowGroupInfo> rowGroups) {

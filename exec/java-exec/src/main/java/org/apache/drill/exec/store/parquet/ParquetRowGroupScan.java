@@ -21,6 +21,8 @@ import java.util.Iterator;
 import java.util.LinkedList;
 import java.util.List;
 
+import com.fasterxml.jackson.databind.annotation.JsonDeserialize;
+import com.fasterxml.jackson.databind.annotation.JsonSerialize;
 import org.apache.drill.common.exceptions.ExecutionSetupException;
 import org.apache.drill.common.expression.SchemaPath;
 import org.apache.drill.common.logical.FormatPluginConfig;
@@ -42,6 +44,7 @@ import com.fasterxml.jackson.annotation.JsonTypeName;
 import com.google.common.base.Preconditions;
 import com.google.common.collect.Iterators;
 import parquet.filter2.predicate.FilterPredicate;
+import parquet.hadoop.FilterPredicateSerializer;
 
 // Class containing information for reading a single parquet row group form HDFS
 @JsonTypeName("parquet-row-group-scan")
@@ -52,6 +55,7 @@ public class ParquetRowGroupScan extends AbstractBase implements SubScan {
   private final ParquetFormatPlugin formatPlugin;
   private final List<RowGroupReadEntry> rowGroupReadEntries;
   private final List<SchemaPath> columns;
+  private final FilterPredicate filter;
   private String selectionRoot;
 
   @JsonCreator
@@ -61,23 +65,26 @@ public class ParquetRowGroupScan extends AbstractBase implements SubScan {
       @JsonProperty("format") FormatPluginConfig formatConfig, //
       @JsonProperty("entries") LinkedList<RowGroupReadEntry> rowGroupReadEntries, //
       @JsonProperty("columns") List<SchemaPath> columns, //
-      @JsonProperty("selectionRoot") String selectionRoot //
+      @JsonProperty("selectionRoot") String selectionRoot, //
+      @JsonProperty("filter") @JsonDeserialize(using = FilterPredicateSerializer.De.class) FilterPredicate filter
   ) throws ExecutionSetupException {
     this((ParquetFormatPlugin) registry.getFormatPlugin(Preconditions.checkNotNull(storageConfig),
             formatConfig == null ? new ParquetFormatConfig() : formatConfig),
-        rowGroupReadEntries, columns, selectionRoot);
+        rowGroupReadEntries, columns, selectionRoot, filter);
   }
 
   public ParquetRowGroupScan( //
       ParquetFormatPlugin formatPlugin, //
       List<RowGroupReadEntry> rowGroupReadEntries, //
       List<SchemaPath> columns,
-      String selectionRoot) {
+      String selectionRoot,
+      FilterPredicate filter) {
     this.formatPlugin = Preconditions.checkNotNull(formatPlugin);
     this.formatConfig = formatPlugin.getConfig();
     this.rowGroupReadEntries = rowGroupReadEntries;
     this.columns = columns == null || columns.size() == 0 ? GroupScan.ALL_COLUMNS : columns;
     this.selectionRoot = selectionRoot;
+    this.filter = filter;
   }
 
   @JsonProperty("entries")
@@ -89,6 +96,10 @@ public class ParquetRowGroupScan extends AbstractBase implements SubScan {
   public StoragePluginConfig getEngineConfig() {
     return formatPlugin.getStorageConfig();
   }
+
+  @JsonProperty("filter")
+  @JsonSerialize(using = FilterPredicateSerializer.Se.class)
+  public FilterPredicate getFilter() { return filter; }
 
   public String getSelectionRoot() {
     return selectionRoot;
@@ -112,7 +123,7 @@ public class ParquetRowGroupScan extends AbstractBase implements SubScan {
   @Override
   public PhysicalOperator getNewWithChildren(List<PhysicalOperator> children) throws ExecutionSetupException {
     Preconditions.checkArgument(children.isEmpty());
-    return new ParquetRowGroupScan(formatPlugin, rowGroupReadEntries, columns, selectionRoot);
+    return new ParquetRowGroupScan(formatPlugin, rowGroupReadEntries, columns, selectionRoot, filter);
   }
 
   @Override
