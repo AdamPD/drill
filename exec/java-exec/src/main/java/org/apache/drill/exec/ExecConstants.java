@@ -101,8 +101,10 @@ public interface ExecConstants {
   public static final OptionValidator PARQUET_VECTOR_FILL_THRESHOLD_VALIDATOR = new PositiveLongValidator(PARQUET_VECTOR_FILL_THRESHOLD, 99l, 85l);
   public static final String PARQUET_VECTOR_FILL_CHECK_THRESHOLD = "store.parquet.vector_fill_check_threshold";
   public static final OptionValidator PARQUET_VECTOR_FILL_CHECK_THRESHOLD_VALIDATOR = new PositiveLongValidator(PARQUET_VECTOR_FILL_CHECK_THRESHOLD, 100l, 10l);
-  public static String PARQUET_NEW_RECORD_READER = "store.parquet.use_new_reader";
-  public static OptionValidator PARQUET_RECORD_READER_IMPLEMENTATION_VALIDATOR = new BooleanValidator(PARQUET_NEW_RECORD_READER, false);
+  public static final String PARQUET_NEW_RECORD_READER = "store.parquet.use_new_reader";
+  public static final OptionValidator PARQUET_RECORD_READER_IMPLEMENTATION_VALIDATOR = new BooleanValidator(PARQUET_NEW_RECORD_READER, false);
+  public static final String PARQUET_ENABLE_PUSHDOWN_FILTER = "store.parquet.enable_pushdown_filter";
+  public static final OptionValidator PARQUET_ENABLE_PUSHDOWN_FILTER_IMPLEMENTATION_VALIDATOR = new BooleanValidator(PARQUET_ENABLE_PUSHDOWN_FILTER, false);
 
   public static OptionValidator COMPILE_SCALAR_REPLACEMENT = new BooleanValidator("exec.compile.scalar_replacement", false);
 

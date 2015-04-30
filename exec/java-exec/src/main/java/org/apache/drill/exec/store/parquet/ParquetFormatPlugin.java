@@ -111,7 +111,7 @@ public class ParquetFormatPlugin implements FormatPlugin{
 
   @Override
   public Set<StoragePluginOptimizerRule> getOptimizerRules() {
-    return ImmutableSet.of(ParquetPushDownFilter.INSTANCE);
+    return ImmutableSet.of(ParquetPushDownFilter.getFilterOnProject(context), ParquetPushDownFilter.getFilterOnScan(context));
   }
 
   @Override

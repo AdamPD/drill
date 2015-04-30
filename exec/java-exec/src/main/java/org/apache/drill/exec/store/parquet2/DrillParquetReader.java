@@ -295,8 +295,9 @@ public class DrillParquetReader extends AbstractRecordReader {
 
   @Override
   public int next() {
-    if (pageReadStore == null)
+    if (pageReadStore == null) {
       return 0;
+    }
 
     int count = 0;
 
@@ -317,8 +318,9 @@ public class DrillParquetReader extends AbstractRecordReader {
     while (count < 4000 && totalRead < recordCount) {
       recordMaterializer.setPosition(count);
       totalRead++;
-      if (recordReader.read() == null)
+      if (recordReader.read() == null) {
         continue;
+      }
       count++;
       if (count % fillLevelCheckFrequency == 0) {
         if (getPercentFilled() > fillLevelCheckThreshold) {
@@ -360,8 +362,9 @@ public class DrillParquetReader extends AbstractRecordReader {
   @Override
   public void cleanup() {
     try {
-      if (pageReadStore != null)
+      if (pageReadStore != null) {
         pageReadStore.close();
+      }
     } catch (IOException e) {
       logger.warn("Failure while closing PageReadStore", e);
     }

@@ -18,40 +18,95 @@
 package org.apache.drill.exec.store.parquet;
 
 import org.apache.drill.common.expression.LogicalExpression;
+import org.apache.drill.exec.ExecConstants;
 import org.apache.drill.exec.planner.logical.DrillOptiq;
 import org.apache.drill.exec.planner.logical.DrillParseContext;
 import org.apache.drill.exec.planner.logical.RelOptHelper;
 import org.apache.drill.exec.planner.physical.FilterPrel;
+import org.apache.drill.exec.planner.physical.ProjectPrel;
 import org.apache.drill.exec.planner.physical.ScanPrel;
+import org.apache.drill.exec.server.DrillbitContext;
 import org.apache.drill.exec.store.StoragePluginOptimizerRule;
 import org.eigenbase.rel.RelNode;
 import org.eigenbase.relopt.RelOptRuleCall;
+import org.eigenbase.relopt.RelOptRuleOperand;
+import org.eigenbase.relopt.RelOptUtil;
 import org.eigenbase.rex.RexNode;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
 import com.google.common.collect.ImmutableList;
 
-public class ParquetPushDownFilter extends StoragePluginOptimizerRule {
-    private static final Logger logger = LoggerFactory
-            .getLogger(ParquetPushDownFilter.class);
-    public static final StoragePluginOptimizerRule INSTANCE = new ParquetPushDownFilter();
+public abstract class ParquetPushDownFilter extends StoragePluginOptimizerRule {
+    public static final StoragePluginOptimizerRule getFilterOnProject(final DrillbitContext context){
+        return new ParquetPushDownFilter(
+                RelOptHelper.some(FilterPrel.class, RelOptHelper.some(ProjectPrel.class, RelOptHelper.any(ScanPrel.class))),
+                "ParquetPushDownFilter:Filter_On_Project") {
 
-    private ParquetPushDownFilter() {
-        super(
-                RelOptHelper.some(FilterPrel.class, RelOptHelper.any(ScanPrel.class)),
-                "DrillParquetPushDownFilter");
+            @Override
+            public boolean matches(RelOptRuleCall call) {
+                if (!context.getOptionManager().getOption(ExecConstants.PARQUET_ENABLE_PUSHDOWN_FILTER).bool_val) {
+                    return false;
+                }
+                final ScanPrel scan = call.rel(2);
+                if (scan.getGroupScan() instanceof ParquetGroupScan) {
+                    return super.matches(call);
+                }
+                return false;
+            }
+
+            @Override
+            public void onMatch(RelOptRuleCall call) {
+                final FilterPrel filterRel = call.rel(0);
+                final ProjectPrel projectRel = call.rel(1);
+                final ScanPrel scanRel = call.rel(2);
+                doOnMatch(call, filterRel, projectRel, scanRel);
+            };
+        };
     }
 
-    @Override
-    public void onMatch(RelOptRuleCall call) {
-        final ScanPrel scan = (ScanPrel) call.rel(1);
-        final FilterPrel filter = (FilterPrel) call.rel(0);
-        final RexNode condition = filter.getCondition();
+    public static final StoragePluginOptimizerRule getFilterOnScan(final DrillbitContext context){
+        return new ParquetPushDownFilter(
+                RelOptHelper.some(FilterPrel.class, RelOptHelper.any(ScanPrel.class)),
+                "ParquetPushDownFilter:Filter_On_Scan") {
 
+            @Override
+            public boolean matches(RelOptRuleCall call) {
+                if (!context.getOptionManager().getOption(ExecConstants.PARQUET_ENABLE_PUSHDOWN_FILTER).bool_val) {
+                    return false;
+                }
+                final ScanPrel scan = call.rel(1);
+                if (scan.getGroupScan() instanceof ParquetGroupScan) {
+                    return super.matches(call);
+                }
+                return false;
+            }
+
+            @Override
+            public void onMatch(RelOptRuleCall call) {
+                final FilterPrel filterRel = call.rel(0);
+                final ScanPrel scanRel = call.rel(1);
+                doOnMatch(call, filterRel, null, scanRel);
+            }
+        };
+    }
+
+    private ParquetPushDownFilter(RelOptRuleOperand operand, String id) {
+        super(operand, id);
+    }
+
+    protected void doOnMatch(RelOptRuleCall call, FilterPrel filter, ProjectPrel project, ScanPrel scan) {
         ParquetGroupScan groupScan = (ParquetGroupScan) scan.getGroupScan();
         if (groupScan.getFilter() != null) {
             return;
+        }
+
+        RexNode condition = null;
+        if(project == null){
+            condition = filter.getCondition();
+        }else{
+            // get the filter as if it were below the projection.
+            condition = RelOptUtil.pushFilterPastProject(filter.getCondition(), project);
         }
 
         LogicalExpression conditionExp = DrillOptiq.toDrill(
@@ -66,17 +121,13 @@ public class ParquetPushDownFilter extends StoragePluginOptimizerRule {
         final ScanPrel newScanPrel = ScanPrel.create(scan, filter.getTraitSet(),
                 newGroupScan, scan.getRowType());
 
-        call.transformTo(filter.copy(filter.getTraitSet(),
-                ImmutableList.of((RelNode) newScanPrel)));
-    }
+        RelNode inputPrel = newScanPrel;
 
-    @Override
-    public boolean matches(RelOptRuleCall call) {
-        final ScanPrel scan = (ScanPrel) call.rel(1);
-        if (scan.getGroupScan() instanceof ParquetGroupScan) {
-            return super.matches(call);
+        if(project != null){
+            inputPrel = project.copy(project.getTraitSet(), ImmutableList.of(inputPrel));
         }
-        return false;
-    }
 
+        final RelNode newFilter = filter.copy(filter.getTraitSet(), ImmutableList.of(inputPrel));
+        call.transformTo(newFilter);
+    }
 }
