@@ -24,6 +24,7 @@ import net.hydromatic.optiq.SchemaPlus;
 
 import org.apache.drill.common.JSONOptions;
 import org.apache.drill.common.exceptions.ExecutionSetupException;
+import org.apache.drill.exec.ops.QueryContext;
 import org.apache.drill.exec.physical.base.AbstractGroupScan;
 import org.apache.drill.exec.rpc.user.UserSession;
 import org.apache.drill.exec.server.DrillbitContext;
@@ -81,7 +82,7 @@ public class MongoStoragePlugin extends AbstractStoragePlugin {
     return new MongoGroupScan(this, mongoScanSpec, null);
   }
 
-  public Set<StoragePluginOptimizerRule> getOptimizerRules() {
+  public Set<StoragePluginOptimizerRule> getOptimizerRules(QueryContext context) {
     return ImmutableSet.of(MongoPushDownFilterForScan.INSTANCE);
   }
 
