@@ -56,6 +56,8 @@ import org.apache.hadoop.fs.Path;
 
 import parquet.column.ColumnDescriptor;
 import parquet.common.schema.ColumnPath;
+import parquet.filter2.compat.FilterCompat;
+import parquet.filter2.predicate.FilterPredicate;
 import parquet.hadoop.CodecFactoryExposer;
 import parquet.hadoop.ColumnChunkIncReadStore;
 import parquet.hadoop.metadata.BlockMetaData;
@@ -100,6 +102,7 @@ public class DrillParquetReader extends AbstractRecordReader {
   private final int fillLevelCheckFrequency;
   private final int fillLevelCheckThreshold;
   private FragmentContext fragmentContext;
+  private FilterPredicate filter;
 
   // For columns not found in the file, we need to return a schema element with the correct number of values
   // at that position in the schema. Currently this requires a vector be present. Here is a list of all of these vectors
@@ -114,10 +117,11 @@ public class DrillParquetReader extends AbstractRecordReader {
 
 
   public DrillParquetReader(FragmentContext fragmentContext, ParquetMetadata footer, RowGroupReadEntry entry,
-      List<SchemaPath> columns, DrillFileSystem fileSystem) {
+      List<SchemaPath> columns, DrillFileSystem fileSystem, FilterPredicate filter) {
     this.footer = footer;
     this.fileSystem = fileSystem;
     this.entry = entry;
+    this.filter = filter;
     setColumns(columns);
     this.fragmentContext = fragmentContext;
     fillLevelCheckFrequency = this.fragmentContext.getOptions().getOption(ExecConstants.PARQUET_VECTOR_FILL_CHECK_THRESHOLD).num_val.intValue();
@@ -268,7 +272,12 @@ public class DrillParquetReader extends AbstractRecordReader {
         writer = new VectorContainerWriter(output);
         recordMaterializer = new DrillParquetRecordMaterializer(output, writer, projection, getColumns());
         primitiveVectors = writer.getMapVector().getPrimitiveVectors();
-        recordReader = columnIO.getRecordReader(pageReadStore, recordMaterializer);
+        if (filter != null) {
+          recordReader = columnIO.getRecordReader(pageReadStore, recordMaterializer, FilterCompat.get(filter));
+        }
+        else {
+          recordReader = columnIO.getRecordReader(pageReadStore, recordMaterializer);
+        }
       }
     } catch (Exception e) {
       handleAndRaise("Failure in setting up reader", e);

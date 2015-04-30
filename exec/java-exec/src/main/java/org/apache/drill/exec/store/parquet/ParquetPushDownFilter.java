@@ -41,13 +41,13 @@ public abstract class ParquetPushDownFilter extends StoragePluginOptimizerRule {
     public static final StoragePluginOptimizerRule getFilterOnProject(final DrillbitContext context){
         return new ParquetPushDownFilter(
                 RelOptHelper.some(FilterPrel.class, RelOptHelper.some(ProjectPrel.class, RelOptHelper.any(ScanPrel.class))),
-                "ParquetPushDownFilter:Filter_On_Project") {
+                "ParquetPushDownFilter:Filter_On_Project", context) {
 
             @Override
             public boolean matches(RelOptRuleCall call) {
-                if (!context.getOptionManager().getOption(ExecConstants.PARQUET_ENABLE_PUSHDOWN_FILTER).bool_val) {
+                /*if (!context.getOptionManager().getOption(ExecConstants.PARQUET_ENABLE_PUSHDOWN_FILTER).bool_val) {
                     return false;
-                }
+                }*/
                 final ScanPrel scan = call.rel(2);
                 if (scan.getGroupScan() instanceof ParquetGroupScan) {
                     return super.matches(call);
@@ -68,13 +68,13 @@ public abstract class ParquetPushDownFilter extends StoragePluginOptimizerRule {
     public static final StoragePluginOptimizerRule getFilterOnScan(final DrillbitContext context){
         return new ParquetPushDownFilter(
                 RelOptHelper.some(FilterPrel.class, RelOptHelper.any(ScanPrel.class)),
-                "ParquetPushDownFilter:Filter_On_Scan") {
+                "ParquetPushDownFilter:Filter_On_Scan", context) {
 
             @Override
             public boolean matches(RelOptRuleCall call) {
-                if (!context.getOptionManager().getOption(ExecConstants.PARQUET_ENABLE_PUSHDOWN_FILTER).bool_val) {
+                /*if (!context.getOptionManager().getOption(ExecConstants.PARQUET_ENABLE_PUSHDOWN_FILTER).bool_val) {
                     return false;
-                }
+                }*/
                 final ScanPrel scan = call.rel(1);
                 if (scan.getGroupScan() instanceof ParquetGroupScan) {
                     return super.matches(call);
@@ -91,8 +91,11 @@ public abstract class ParquetPushDownFilter extends StoragePluginOptimizerRule {
         };
     }
 
-    private ParquetPushDownFilter(RelOptRuleOperand operand, String id) {
+    private final DrillbitContext context;
+
+    private ParquetPushDownFilter(RelOptRuleOperand operand, String id, DrillbitContext context) {
         super(operand, id);
+        this.context = context;
     }
 
     protected void doOnMatch(RelOptRuleCall call, FilterPrel filter, ProjectPrel project, ScanPrel scan) {
@@ -127,7 +130,11 @@ public abstract class ParquetPushDownFilter extends StoragePluginOptimizerRule {
             inputPrel = project.copy(project.getTraitSet(), ImmutableList.of(inputPrel));
         }
 
-        final RelNode newFilter = filter.copy(filter.getTraitSet(), ImmutableList.of(inputPrel));
-        call.transformTo(newFilter);
+        if (context.getOptionManager().getOption(ExecConstants.PARQUET_NEW_RECORD_READER).bool_val && parquetFilterBuilder.areAllExpressionsConverted()) {
+            call.transformTo(inputPrel);
+        } else {
+            final RelNode newFilter = filter.copy(filter.getTraitSet(), ImmutableList.of(inputPrel));
+            call.transformTo(newFilter);
+        }
     }
 }
