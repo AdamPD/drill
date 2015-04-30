@@ -29,6 +29,7 @@ import org.apache.drill.common.logical.StoragePluginConfig;
 import org.apache.drill.exec.ExecConstants;
 import org.apache.drill.exec.memory.OutOfMemoryException;
 import org.apache.drill.exec.ops.FragmentContext;
+import org.apache.drill.exec.ops.QueryContext;
 import org.apache.drill.exec.physical.base.AbstractWriter;
 import org.apache.drill.exec.physical.base.PhysicalOperator;
 import org.apache.drill.exec.physical.impl.WriterRecordBatch;
@@ -110,7 +111,7 @@ public class ParquetFormatPlugin implements FormatPlugin{
   }
 
   @Override
-  public Set<StoragePluginOptimizerRule> getOptimizerRules() {
+  public Set<StoragePluginOptimizerRule> getOptimizerRules(QueryContext context) {
     return ImmutableSet.of(ParquetPushDownFilter.getFilterOnProject(context), ParquetPushDownFilter.getFilterOnScan(context));
   }
 

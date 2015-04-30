@@ -29,6 +29,7 @@ import org.apache.drill.common.exceptions.ExecutionSetupException;
 import org.apache.drill.common.expression.SchemaPath;
 import org.apache.drill.common.logical.FormatPluginConfig;
 import org.apache.drill.common.logical.StoragePluginConfig;
+import org.apache.drill.exec.ops.QueryContext;
 import org.apache.drill.exec.physical.base.AbstractGroupScan;
 import org.apache.drill.exec.rpc.user.UserSession;
 import org.apache.drill.exec.server.DrillbitContext;
@@ -140,10 +141,10 @@ public class FileSystemPlugin extends AbstractStoragePlugin{
   }
 
   @Override
-  public Set<StoragePluginOptimizerRule> getOptimizerRules() {
+  public Set<StoragePluginOptimizerRule> getOptimizerRules(QueryContext context) {
     Builder<StoragePluginOptimizerRule> setBuilder = ImmutableSet.builder();
     for(FormatPlugin plugin : this.formatPluginsByName.values()){
-      Set<StoragePluginOptimizerRule> rules = plugin.getOptimizerRules();
+      Set<StoragePluginOptimizerRule> rules = plugin.getOptimizerRules(context);
       if(rules != null && rules.size() > 0){
         setBuilder.addAll(rules);
       }
