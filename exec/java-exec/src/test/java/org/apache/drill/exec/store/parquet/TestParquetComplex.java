@@ -36,6 +36,18 @@ public class TestParquetComplex extends BaseTestQuery {
             .run();
   }
 
+    @Test
+    public void filter() throws Exception {
+        String query = String.format("select `events`.`drug`.`isGeneric`, count(*) from dfs.tmp.`5523c9291f2ddd1878bf3cf3` events where `tp_timestamp` > timestamp '2015-04-29 00:00:00' group by `events`.`drug`.`isGeneric`", DATAFILE);
+        /*testBuilder()
+                .sqlQuery(query)
+                .ordered()
+                .jsonBaselineFile("store/parquet/complex/baseline_filtered.json")
+                .build()
+                .run();*/
+        test(query);
+    }
+
   @Test
   public void topN() throws Exception {
     String query = String.format("select * from %s order by amount limit 5", DATAFILE);

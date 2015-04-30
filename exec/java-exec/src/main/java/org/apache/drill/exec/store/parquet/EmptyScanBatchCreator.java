@@ -18,7 +18,7 @@
 package org.apache.drill.exec.store.parquet;
 
 import com.google.common.collect.Iterators;
-import jersey.repackaged.com.google.common.collect.Lists;
+import com.google.common.collect.Lists;
 import org.apache.drill.common.exceptions.ExecutionSetupException;
 import org.apache.drill.exec.ops.FragmentContext;
 import org.apache.drill.exec.ops.OperatorContext;

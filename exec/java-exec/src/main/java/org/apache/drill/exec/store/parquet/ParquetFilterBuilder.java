@@ -92,10 +92,12 @@ public class ParquetFilterBuilder extends
     private FilterPredicate mergePredicates(String functionName,
                                             FilterPredicate leftPredicate, FilterPredicate rightPredicate) {
         if (leftPredicate != null && rightPredicate != null) {
-            if (functionName == "booleanAnd")
+            if (functionName == "booleanAnd") {
                 return FilterApi.and(leftPredicate, rightPredicate);
-            else
+            }
+            else {
                 return FilterApi.or(leftPredicate, rightPredicate);
+            }
         } else {
             allExpressionsConverted = false;
             if ("booleanAnd".equals(functionName)) {
@@ -149,92 +151,126 @@ public class ParquetFilterBuilder extends
         String fieldName = field.getAsUnescapedPath();
         switch (functionName) {
             case "equal":
-                if (fieldValue instanceof Long)
-                    filter = FilterApi.eq(FilterApi.longColumn(fieldName), (Long)fieldValue);
-                else if (fieldValue instanceof Integer)
-                    filter = FilterApi.eq(FilterApi.intColumn(fieldName), (Integer)fieldValue);
-                else if (fieldValue instanceof Float)
-                    filter = FilterApi.eq(FilterApi.floatColumn(fieldName), (Float)fieldValue);
-                else if (fieldValue instanceof Double)
-                    filter = FilterApi.eq(FilterApi.doubleColumn(fieldName), (Double)fieldValue);
-                else if (fieldValue instanceof Boolean)
-                    filter = FilterApi.eq(FilterApi.booleanColumn(fieldName), (Boolean)fieldValue);
+                if (fieldValue instanceof Long) {
+                    filter = FilterApi.eq(FilterApi.longColumn(fieldName), (Long) fieldValue);
+                }
+                else if (fieldValue instanceof Integer) {
+                    filter = FilterApi.eq(FilterApi.intColumn(fieldName), (Integer) fieldValue);
+                }
+                else if (fieldValue instanceof Float) {
+                    filter = FilterApi.eq(FilterApi.floatColumn(fieldName), (Float) fieldValue);
+                }
+                else if (fieldValue instanceof Double) {
+                    filter = FilterApi.eq(FilterApi.doubleColumn(fieldName), (Double) fieldValue);
+                }
+                else if (fieldValue instanceof Boolean) {
+                    filter = FilterApi.eq(FilterApi.booleanColumn(fieldName), (Boolean) fieldValue);
+                }
                 break;
             case "not_equal":
-                if (fieldValue instanceof Long)
+                if (fieldValue instanceof Long) {
                     filter = FilterApi.notEq(FilterApi.longColumn(fieldName), (Long) fieldValue);
-                else if (fieldValue instanceof Integer)
+                }
+                else if (fieldValue instanceof Integer) {
                     filter = FilterApi.notEq(FilterApi.intColumn(fieldName), (Integer) fieldValue);
-                else if (fieldValue instanceof Float)
+                }
+                else if (fieldValue instanceof Float) {
                     filter = FilterApi.notEq(FilterApi.floatColumn(fieldName), (Float) fieldValue);
-                else if (fieldValue instanceof Double)
+                }
+                else if (fieldValue instanceof Double) {
                     filter = FilterApi.notEq(FilterApi.doubleColumn(fieldName), (Double) fieldValue);
-                else if (fieldValue instanceof Boolean)
+                }
+                else if (fieldValue instanceof Boolean) {
                     filter = FilterApi.notEq(FilterApi.booleanColumn(fieldName), (Boolean) fieldValue);
+                }
                 break;
             case "greater_than_or_equal_to":
-                if (fieldValue instanceof Long)
+                if (fieldValue instanceof Long) {
                     filter = FilterApi.gtEq(FilterApi.longColumn(fieldName), (Long) fieldValue);
-                else if (fieldValue instanceof Integer)
+                }
+                else if (fieldValue instanceof Integer) {
                     filter = FilterApi.gtEq(FilterApi.intColumn(fieldName), (Integer) fieldValue);
-                else if (fieldValue instanceof Float)
+                }
+                else if (fieldValue instanceof Float) {
                     filter = FilterApi.gtEq(FilterApi.floatColumn(fieldName), (Float) fieldValue);
-                else if (fieldValue instanceof Double)
+                }
+                else if (fieldValue instanceof Double) {
                     filter = FilterApi.gtEq(FilterApi.doubleColumn(fieldName), (Double) fieldValue);
+                }
                 break;
             case "greater_than":
-                if (fieldValue instanceof Long)
+                if (fieldValue instanceof Long) {
                     filter = FilterApi.gt(FilterApi.longColumn(fieldName), (Long) fieldValue);
-                else if (fieldValue instanceof Integer)
+                }
+                else if (fieldValue instanceof Integer) {
                     filter = FilterApi.gt(FilterApi.intColumn(fieldName), (Integer) fieldValue);
-                else if (fieldValue instanceof Float)
+                }
+                else if (fieldValue instanceof Float) {
                     filter = FilterApi.gt(FilterApi.floatColumn(fieldName), (Float) fieldValue);
-                else if (fieldValue instanceof Double)
+                }
+                else if (fieldValue instanceof Double) {
                     filter = FilterApi.gt(FilterApi.doubleColumn(fieldName), (Double) fieldValue);
+                }
                 break;
             case "less_than_or_equal_to":
-                if (fieldValue instanceof Long)
+                if (fieldValue instanceof Long) {
                     filter = FilterApi.ltEq(FilterApi.longColumn(fieldName), (Long) fieldValue);
-                else if (fieldValue instanceof Integer)
+                }
+                else if (fieldValue instanceof Integer) {
                     filter = FilterApi.ltEq(FilterApi.intColumn(fieldName), (Integer) fieldValue);
-                else if (fieldValue instanceof Float)
+                }
+                else if (fieldValue instanceof Float) {
                     filter = FilterApi.ltEq(FilterApi.floatColumn(fieldName), (Float) fieldValue);
-                else if (fieldValue instanceof Double)
+                }
+                else if (fieldValue instanceof Double) {
                     filter = FilterApi.ltEq(FilterApi.doubleColumn(fieldName), (Double) fieldValue);
+                }
                 break;
             case "less_than":
-                if (fieldValue instanceof Long)
+                if (fieldValue instanceof Long) {
                     filter = FilterApi.lt(FilterApi.longColumn(fieldName), (Long) fieldValue);
-                else if (fieldValue instanceof Integer)
+                }
+                else if (fieldValue instanceof Integer) {
                     filter = FilterApi.lt(FilterApi.intColumn(fieldName), (Integer) fieldValue);
-                else if (fieldValue instanceof Float)
+                }
+                else if (fieldValue instanceof Float) {
                     filter = FilterApi.lt(FilterApi.floatColumn(fieldName), (Float) fieldValue);
-                else if (fieldValue instanceof Double)
+                }
+                else if (fieldValue instanceof Double) {
                     filter = FilterApi.lt(FilterApi.doubleColumn(fieldName), (Double) fieldValue);
+                }
                 break;
             case "isnull":
             case "isNull":
             case "is null":
-                if (fieldValue instanceof Long)
+                if (fieldValue instanceof Long) {
                     filter = FilterApi.eq(FilterApi.longColumn(fieldName), null);
-                else if (fieldValue instanceof Integer)
+                }
+                else if (fieldValue instanceof Integer) {
                     filter = FilterApi.eq(FilterApi.intColumn(fieldName), null);
-                else if (fieldValue instanceof Float)
+                }
+                else if (fieldValue instanceof Float) {
                     filter = FilterApi.eq(FilterApi.floatColumn(fieldName), null);
-                else if (fieldValue instanceof Double)
+                }
+                else if (fieldValue instanceof Double) {
                     filter = FilterApi.eq(FilterApi.doubleColumn(fieldName), null);
+                }
                 break;
             case "isnotnull":
             case "isNotNull":
             case "is not null":
-                if (fieldValue instanceof Long)
+                if (fieldValue instanceof Long) {
                     filter = FilterApi.notEq(FilterApi.longColumn(fieldName), null);
-                else if (fieldValue instanceof Integer)
+                }
+                else if (fieldValue instanceof Integer) {
                     filter = FilterApi.notEq(FilterApi.intColumn(fieldName), null);
-                else if (fieldValue instanceof Float)
+                }
+                else if (fieldValue instanceof Float) {
                     filter = FilterApi.notEq(FilterApi.floatColumn(fieldName), null);
-                else if (fieldValue instanceof Double)
+                }
+                else if (fieldValue instanceof Double) {
                     filter = FilterApi.notEq(FilterApi.doubleColumn(fieldName), null);
+                }
                 break;
         }
 

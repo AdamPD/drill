@@ -359,8 +359,9 @@ public class ParquetGroupScan extends AbstractFileGroupScan {
    */
   @Override
   public List<EndpointAffinity> getOperatorAffinity() {
-    if (rowGroupInfos.isEmpty())
+    if (rowGroupInfos.isEmpty()) {
       return Collections.emptyList();
+    }
     if (this.endpointAffinities == null) {
       BlockMapBuilder bmb = new BlockMapBuilder(fs, formatPlugin.getContext().getBits());
       try {
@@ -405,14 +406,16 @@ public class ParquetGroupScan extends AbstractFileGroupScan {
 
   @Override
   public void applyAssignments(List<DrillbitEndpoint> incomingEndpoints) throws PhysicalOperatorSetupException {
-    if (!rowGroupInfos.isEmpty())
+    if (!rowGroupInfos.isEmpty()) {
       this.mappings = AssignmentCreator.getMappings(incomingEndpoints, rowGroupInfos);
+    }
   }
 
   @Override
   public SubScan getSpecificScan(int minorFragmentId) {
-    if (mappings == null)
+    if (mappings == null) {
       return new EmptyRowGroupScan();
+    }
 
     assert minorFragmentId < mappings.size() : String.format(
         "Mappings length [%d] should be longer than minor fragment id [%d] but it isn't.", mappings.size(),
