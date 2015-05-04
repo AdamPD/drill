@@ -80,6 +80,10 @@ public class ParquetFilterBuilder extends
                         if (predicate != null) {
                             nodePredicate = mergePredicates(functionName, nodePredicate, predicate);
                         } else {
+                            // we can't include any part of the OR if any of the predicates cannot be converted
+                            if (functionName == "booleanOr") {
+                                nodePredicate = null;
+                            }
                             allExpressionsConverted = false;
                         }
                     }
@@ -144,7 +148,7 @@ public class ParquetFilterBuilder extends
     }
 
     private FilterPredicate createFilterPredicate(String functionName,
-                                              SchemaPath field, Object fieldValue) {
+                                                  SchemaPath field, Object fieldValue) {
         FilterPredicate filter = null;
 
         // extract the field name

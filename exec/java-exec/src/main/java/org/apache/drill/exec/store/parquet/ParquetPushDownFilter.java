@@ -46,7 +46,7 @@ public abstract class ParquetPushDownFilter extends StoragePluginOptimizerRule {
 
             @Override
             public boolean matches(RelOptRuleCall call) {
-                if (!context.getOptions().getOption(ExecConstants.PARQUET_ENABLE_PUSHDOWN_FILTER).bool_val) {
+                if (!enabled) {
                     return false;
                 }
                 final ScanPrel scan = call.rel(2);
@@ -73,7 +73,7 @@ public abstract class ParquetPushDownFilter extends StoragePluginOptimizerRule {
 
             @Override
             public boolean matches(RelOptRuleCall call) {
-                if (!context.getOptions().getOption(ExecConstants.PARQUET_ENABLE_PUSHDOWN_FILTER).bool_val) {
+                if (!enabled) {
                     return false;
                 }
                 final ScanPrel scan = call.rel(1);
@@ -93,10 +93,14 @@ public abstract class ParquetPushDownFilter extends StoragePluginOptimizerRule {
     }
 
     private final QueryContext context;
+    private final boolean useNewReader;
+    protected final boolean enabled;
 
     private ParquetPushDownFilter(RelOptRuleOperand operand, String id, QueryContext context) {
         super(operand, id);
         this.context = context;
+        this.enabled = context.getOptions().getOption(ExecConstants.PARQUET_ENABLE_PUSHDOWN_FILTER).bool_val;
+        this.useNewReader = context.getOptions().getOption(ExecConstants.PARQUET_NEW_RECORD_READER).bool_val;
     }
 
     protected void doOnMatch(RelOptRuleCall call, FilterPrel filter, ProjectPrel project, ScanPrel scan) {
@@ -131,7 +135,7 @@ public abstract class ParquetPushDownFilter extends StoragePluginOptimizerRule {
             inputPrel = project.copy(project.getTraitSet(), ImmutableList.of(inputPrel));
         }
 
-        if (context.getOptions().getOption(ExecConstants.PARQUET_NEW_RECORD_READER).bool_val && parquetFilterBuilder.areAllExpressionsConverted()) {
+        if (useNewReader && parquetFilterBuilder.areAllExpressionsConverted()) {
             call.transformTo(inputPrel);
         } else {
             final RelNode newFilter = filter.copy(filter.getTraitSet(), ImmutableList.of(inputPrel));
