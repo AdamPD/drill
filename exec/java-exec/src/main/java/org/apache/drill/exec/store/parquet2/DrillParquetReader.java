@@ -27,6 +27,7 @@ import java.util.HashMap;
 import java.util.Set;
 
 import com.google.common.collect.Sets;
+
 import org.apache.drill.common.exceptions.DrillRuntimeException;
 import org.apache.drill.common.exceptions.ExecutionSetupException;
 import org.apache.drill.common.expression.PathSegment;
@@ -69,9 +70,9 @@ import parquet.schema.MessageType;
 import parquet.schema.Type;
 import parquet.schema.PrimitiveType;
 
-
 import com.google.common.base.Preconditions;
 import com.google.common.collect.Lists;
+
 import parquet.schema.Types;
 
 public class DrillParquetReader extends AbstractRecordReader {
@@ -316,15 +317,6 @@ public class DrillParquetReader extends AbstractRecordReader {
       recordReader.read();
       count++;
       totalRead++;
-      if (count % fillLevelCheckFrequency == 0) {
-        if (getPercentFilled() > fillLevelCheckThreshold) {
-          if(!recordMaterializer.ok()){
-            String message = String.format("The setting for `%s` is too high for your Parquet records. Please set a lower check threshold and retry your query. ", ExecConstants.PARQUET_VECTOR_FILL_CHECK_THRESHOLD);
-            handleAndRaise(message, new RuntimeException(message));
-          }
-          break;
-        }
-      }
     }
     writer.setValueCount(count);
     // if we have requested columns that were not found in the file fill their vectors with null

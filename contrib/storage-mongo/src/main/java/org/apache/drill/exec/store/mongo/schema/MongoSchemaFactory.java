@@ -17,6 +17,7 @@
  */
 package org.apache.drill.exec.store.mongo.schema;
 
+import java.io.IOException;
 import java.net.UnknownHostException;
 import java.util.ArrayList;
 import java.util.Collections;
@@ -27,16 +28,16 @@ import java.util.concurrent.ExecutionException;
 import java.util.concurrent.TimeUnit;
 
 import com.google.common.collect.Maps;
-import net.hydromatic.optiq.Schema;
-import net.hydromatic.optiq.SchemaPlus;
+import org.apache.calcite.schema.Schema;
+import org.apache.calcite.schema.SchemaPlus;
 
+import org.apache.drill.common.exceptions.DrillRuntimeException;
 import org.apache.drill.common.exceptions.ExecutionSetupException;
 import org.apache.drill.exec.planner.logical.DrillTable;
 import org.apache.drill.exec.planner.logical.DynamicDrillTable;
-import org.apache.drill.exec.rpc.user.UserSession;
 import org.apache.drill.exec.store.AbstractSchema;
+import org.apache.drill.exec.store.SchemaConfig;
 import org.apache.drill.exec.store.SchemaFactory;
-import org.apache.drill.exec.store.dfs.WorkspaceSchemaFactory;
 import org.apache.drill.exec.store.mongo.MongoCnxnManager;
 import org.apache.drill.exec.store.mongo.MongoScanSpec;
 import org.apache.drill.exec.store.mongo.MongoStoragePlugin;
@@ -52,7 +53,8 @@ import com.google.common.collect.Lists;
 import com.google.common.collect.Sets;
 import com.mongodb.DB;
 import com.mongodb.MongoClientOptions;
-import com.mongodb.MongoClientURI;
+import com.mongodb.MongoCredential;
+import com.mongodb.MongoException;
 import com.mongodb.ReadPreference;
 import com.mongodb.ServerAddress;
 
@@ -70,21 +72,20 @@ public class MongoSchemaFactory implements SchemaFactory {
 
   private final List<ServerAddress> addresses;
   private final MongoClientOptions options;
+  private final MongoCredential credential;
 
   public MongoSchemaFactory(MongoStoragePlugin schema, String schemaName)
       throws ExecutionSetupException, UnknownHostException {
-    String connection = schema.getConfig().getConnection();
-
     this.plugin = schema;
     this.schemaName = schemaName;
 
-    MongoClientURI clientURI = new MongoClientURI(connection);
-    List<String> hosts = clientURI.getHosts();
+    List<String> hosts = plugin.getConfig().getHosts();
     addresses = Lists.newArrayList();
     for (String host : hosts) {
       addresses.add(new ServerAddress(host));
     }
-    options = clientURI.getOptions();
+    options = plugin.getConfig().getMongoOptions();
+    credential = plugin.getConfig().getMongoCrendials();
 
     databases = CacheBuilder //
         .newBuilder() //
@@ -104,7 +105,16 @@ public class MongoSchemaFactory implements SchemaFactory {
       if (!DATABASES.equals(key)) {
         throw new UnsupportedOperationException();
       }
-      return MongoCnxnManager.getClient(addresses, options).getDatabaseNames();
+      try {
+        return MongoCnxnManager.getClient(addresses, options, credential)
+            .getDatabaseNames();
+      } catch (MongoException me) {
+        logger.warn("Failure while loading databases in Mongo. {}",
+            me.getMessage());
+        return Collections.emptyList();
+      } catch (Exception e) {
+        throw new DrillRuntimeException(e.getMessage(), e);
+      }
     }
 
   }
@@ -113,15 +123,22 @@ public class MongoSchemaFactory implements SchemaFactory {
 
     @Override
     public List<String> load(String dbName) throws Exception {
-      DB db = MongoCnxnManager.getClient(addresses, options).getDB(dbName);
-      db.setReadPreference(ReadPreference.nearest());
-      Set<String> collectionNames = db.getCollectionNames();
-      return new ArrayList<>(collectionNames);
+      try {
+        DB db = MongoCnxnManager.getClient(addresses, options, credential)
+            .getDB(dbName);
+        return new ArrayList<>(db.getCollectionNames());
+      } catch (MongoException me) {
+        logger.warn("Failure while getting collection names from '{}'. {}",
+            dbName, me.getMessage());
+        return Collections.emptyList();
+      } catch (Exception e) {
+        throw new DrillRuntimeException(e.getMessage(), e);
+      }
     }
   }
 
   @Override
-  public void registerSchemas(UserSession session, SchemaPlus parent) {
+  public void registerSchemas(SchemaConfig schemaConfig, SchemaPlus parent) throws IOException {
     MongoSchema schema = new MongoSchema(schemaName);
     SchemaPlus hPlus = parent.add(schemaName, schema);
     schema.setHolder(hPlus);
@@ -189,7 +206,7 @@ public class MongoSchemaFactory implements SchemaFactory {
 
     DrillTable getDrillTable(String dbName, String collectionName) {
       MongoScanSpec mongoScanSpec = new MongoScanSpec(dbName, collectionName);
-      return new DynamicDrillTable(plugin, schemaName, mongoScanSpec);
+      return new DynamicDrillTable(plugin, schemaName, null, mongoScanSpec);
     }
 
     @Override

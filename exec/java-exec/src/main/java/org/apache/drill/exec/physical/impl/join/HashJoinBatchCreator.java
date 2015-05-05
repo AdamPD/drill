@@ -30,7 +30,8 @@ import com.google.common.base.Preconditions;
 public class HashJoinBatchCreator implements BatchCreator<HashJoinPOP> {
 
   @Override
-  public RecordBatch getBatch(FragmentContext context, HashJoinPOP config, List<RecordBatch> children) throws ExecutionSetupException {
+  public HashJoinBatch getBatch(FragmentContext context, HashJoinPOP config, List<RecordBatch> children)
+      throws ExecutionSetupException {
     Preconditions.checkArgument(children.size() == 2);
     return new HashJoinBatch(config, context, children.get(0), children.get(1));
   }

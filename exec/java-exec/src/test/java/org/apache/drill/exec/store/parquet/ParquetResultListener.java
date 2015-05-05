@@ -23,10 +23,12 @@ import java.io.UnsupportedEncodingException;
 import java.util.Arrays;
 import java.util.HashMap;
 
+import org.apache.drill.common.exceptions.UserException;
 import org.apache.drill.common.types.TypeProtos;
 import org.apache.drill.exec.exception.SchemaChangeException;
 import org.apache.drill.exec.memory.BufferAllocator;
 import org.apache.drill.exec.proto.UserBitShared;
+import org.apache.drill.exec.proto.UserBitShared.QueryResult.QueryState;
 import org.apache.drill.exec.record.RecordBatchLoader;
 import org.apache.drill.exec.record.VectorWrapper;
 import org.apache.drill.exec.rpc.RpcException;
@@ -60,13 +62,13 @@ public class ParquetResultListener implements UserResultsListener {
   }
 
   @Override
-  public void submissionFailed(RpcException ex) {
+  public void submissionFailed(UserException ex) {
     logger.error("Submission failed.", ex);
     future.setException(ex);
   }
 
   @Override
-  public void queryCompleted() {
+  public void queryCompleted(QueryState state) {
     checkLastChunk();
   }
 
@@ -167,7 +169,9 @@ public class ParquetResultListener implements UserResultsListener {
           assertEquals("Mismatched record counts in vectors.", recordsInBatch, valuesChecked.get(s).intValue());
         }
         assertEquals("Record count incorrect for column: " + s, totalRecords, (long) valuesChecked.get(s));
-      } catch (AssertionError e) { submissionFailed(new RpcException(e)); }
+      } catch (AssertionError e) {
+        submissionFailed(UserException.systemError(e).build());
+      }
     }
 
     assert valuesChecked.keySet().size() > 0;

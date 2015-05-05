@@ -36,6 +36,7 @@ import org.apache.drill.exec.physical.base.AbstractWriter;
 import org.apache.drill.exec.physical.base.PhysicalOperator;
 import org.apache.drill.exec.physical.impl.ScanBatch;
 import org.apache.drill.exec.physical.impl.WriterRecordBatch;
+import org.apache.drill.exec.record.CloseableRecordBatch;
 import org.apache.drill.exec.record.RecordBatch;
 import org.apache.drill.exec.server.DrillbitContext;
 import org.apache.drill.exec.store.AbstractRecordReader;
@@ -43,10 +44,10 @@ import org.apache.drill.exec.store.RecordReader;
 import org.apache.drill.exec.store.RecordWriter;
 import org.apache.drill.exec.store.StoragePluginOptimizerRule;
 import org.apache.drill.exec.store.dfs.BasicFormatMatcher;
+import org.apache.drill.exec.store.dfs.DrillFileSystem;
 import org.apache.drill.exec.store.dfs.FileSelection;
 import org.apache.drill.exec.store.dfs.FormatMatcher;
 import org.apache.drill.exec.store.dfs.FormatPlugin;
-import org.apache.drill.exec.store.dfs.DrillFileSystem;
 import org.apache.hadoop.conf.Configuration;
 import org.apache.hadoop.io.compress.CompressionCodecFactory;
 
@@ -54,38 +55,39 @@ import com.google.common.collect.ImmutableSet;
 import com.google.common.collect.Lists;
 
 public abstract class EasyFormatPlugin<T extends FormatPluginConfig> implements FormatPlugin {
-  static final org.slf4j.Logger logger = org.slf4j.LoggerFactory.getLogger(EasyFormatPlugin.class);
+  private static final org.slf4j.Logger logger = org.slf4j.LoggerFactory.getLogger(EasyFormatPlugin.class);
 
   private final BasicFormatMatcher matcher;
   private final DrillbitContext context;
   private final boolean readable;
   private final boolean writable;
   private final boolean blockSplittable;
-  private final DrillFileSystem fs;
+  private final Configuration fsConf;
   private final StoragePluginConfig storageConfig;
   protected final FormatPluginConfig formatConfig;
   private final String name;
   protected final CompressionCodecFactory codecFactory;
   private final boolean compressible;
 
-  protected EasyFormatPlugin(String name, DrillbitContext context, DrillFileSystem fs, StoragePluginConfig storageConfig,
-                             T formatConfig, boolean readable, boolean writable, boolean blockSplittable, boolean compressible, List<String> extensions, String defaultName){
-    this.matcher = new BasicFormatMatcher(this, fs, extensions, compressible);
+  protected EasyFormatPlugin(String name, DrillbitContext context, Configuration fsConf,
+      StoragePluginConfig storageConfig, T formatConfig, boolean readable, boolean writable, boolean blockSplittable,
+      boolean compressible, List<String> extensions, String defaultName){
+    this.matcher = new BasicFormatMatcher(this, fsConf, extensions, compressible);
     this.readable = readable;
     this.writable = writable;
     this.context = context;
     this.blockSplittable = blockSplittable;
     this.compressible = compressible;
-    this.fs = fs;
+    this.fsConf = fsConf;
     this.storageConfig = storageConfig;
     this.formatConfig = formatConfig;
     this.name = name == null ? defaultName : name;
-    this.codecFactory = new CompressionCodecFactory(new Configuration(fs.getConf()));
+    this.codecFactory = new CompressionCodecFactory(new Configuration(fsConf));
   }
 
   @Override
-  public DrillFileSystem getFileSystem() {
-    return fs;
+  public Configuration getFsConf() {
+    return fsConf;
   }
 
   @Override
@@ -117,7 +119,7 @@ public abstract class EasyFormatPlugin<T extends FormatPluginConfig> implements 
   public abstract RecordReader getRecordReader(FragmentContext context, DrillFileSystem dfs, FileWork fileWork,
       List<SchemaPath> columns) throws ExecutionSetupException;
 
-  RecordBatch getReaderBatch(FragmentContext context, EasySubScan scan) throws ExecutionSetupException {
+  CloseableRecordBatch getReaderBatch(FragmentContext context, EasySubScan scan) throws ExecutionSetupException {
     String partitionDesignator = context.getOptions()
       .getOption(ExecConstants.FILESYSTEM_PARTITION_COLUMN_LABEL).string_val;
     List<SchemaPath> columns = scan.getColumns();
@@ -146,13 +148,22 @@ public abstract class EasyFormatPlugin<T extends FormatPluginConfig> implements 
         newColumns.add(AbstractRecordReader.STAR_COLUMN);
       }
       // Create a new sub scan object with the new set of columns;
-      scan = new EasySubScan(scan.getWorkUnits(), scan.getFormatPlugin(), newColumns, scan.getSelectionRoot());
+      scan = new EasySubScan(scan.getUserName(), scan.getWorkUnits(), scan.getFormatPlugin(), newColumns,
+          scan.getSelectionRoot());
     }
 
     int numParts = 0;
-    OperatorContext oContext = new OperatorContext(scan, context,
-        false /* ScanBatch is not subject to fragment memory limit */);
-    DrillFileSystem dfs = new DrillFileSystem(fs, oContext.getStats());
+    OperatorContext oContext = context.newOperatorContext(scan, false /*
+                                                                       * ScanBatch is not subject to fragment memory
+                                                                       * limit
+                                                                       */);
+    final DrillFileSystem dfs;
+    try {
+      dfs = new DrillFileSystem(fsConf, oContext.getStats());
+    } catch (IOException e) {
+      throw new ExecutionSetupException(String.format("Failed to create FileSystem: %s", e.getMessage()), e);
+    }
+
     for(FileWork work : scan.getWorkUnits()){
       readers.add(getRecordReader(context, dfs, work, scan.getColumns()));
       if (scan.getSelectionRoot() != null) {
@@ -181,7 +192,7 @@ public abstract class EasyFormatPlugin<T extends FormatPluginConfig> implements 
 
   public abstract RecordWriter getRecordWriter(FragmentContext context, EasyWriter writer) throws IOException;
 
-  public RecordBatch getWriterBatch(FragmentContext context, RecordBatch incoming, EasyWriter writer)
+  public CloseableRecordBatch getWriterBatch(FragmentContext context, RecordBatch incoming, EasyWriter writer)
       throws ExecutionSetupException {
     try {
       return new WriterRecordBatch(writer, incoming, context, getRecordWriter(context, writer));
@@ -196,13 +207,9 @@ public abstract class EasyFormatPlugin<T extends FormatPluginConfig> implements 
   }
 
   @Override
-  public AbstractGroupScan getGroupScan(FileSelection selection) throws IOException {
-    return new EasyGroupScan(selection, this, selection.selectionRoot);
-  }
-
-  @Override
-  public AbstractGroupScan getGroupScan(FileSelection selection, List<SchemaPath> columns) throws IOException {
-    return new EasyGroupScan(selection, this, columns, selection.selectionRoot);
+  public AbstractGroupScan getGroupScan(String userName, FileSelection selection, List<SchemaPath> columns)
+      throws IOException {
+    return new EasyGroupScan(userName, selection, this, columns, selection.selectionRoot);
   }
 
   @Override

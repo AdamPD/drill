@@ -23,12 +23,13 @@ import java.util.concurrent.TimeUnit;
 import java.util.concurrent.atomic.AtomicInteger;
 
 import org.apache.drill.common.config.DrillConfig;
+import org.apache.drill.common.exceptions.UserException;
 import org.apache.drill.exec.ExecTest;
 import org.apache.drill.exec.client.DrillClient;
 import org.apache.drill.exec.proto.UserBitShared.QueryId;
+import org.apache.drill.exec.proto.UserBitShared.QueryResult.QueryState;
 import org.apache.drill.exec.record.RecordBatchLoader;
 import org.apache.drill.exec.record.VectorWrapper;
-import org.apache.drill.exec.rpc.RpcException;
 import org.apache.drill.exec.rpc.user.ConnectionThrottle;
 import org.apache.drill.exec.rpc.user.QueryDataBatch;
 import org.apache.drill.exec.rpc.user.UserResultsListener;
@@ -90,13 +91,13 @@ public class TestParquetPhysicalPlan extends ExecTest {
     private CountDownLatch latch = new CountDownLatch(1);
 
     @Override
-    public void submissionFailed(RpcException ex) {
+    public void submissionFailed(UserException ex) {
       logger.error("submission failed", ex);
       latch.countDown();
     }
 
     @Override
-    public void queryCompleted() {
+    public void queryCompleted(QueryState state) {
       latch.countDown();
     }
 

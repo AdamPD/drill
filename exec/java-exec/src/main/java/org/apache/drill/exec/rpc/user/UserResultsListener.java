@@ -17,8 +17,9 @@
  */
 package org.apache.drill.exec.rpc.user;
 
+import org.apache.drill.common.exceptions.UserException;
 import org.apache.drill.exec.proto.UserBitShared.QueryId;
-import org.apache.drill.exec.rpc.RpcException;
+import org.apache.drill.exec.proto.UserBitShared.QueryResult.QueryState;
 
 public interface UserResultsListener {
 
@@ -33,13 +34,14 @@ public interface UserResultsListener {
    * {@link #dataArrived(QueryDataBatch, ConnectionThrottle) dataArrived()} throws an exception
    * @param ex exception describing the cause of the failure
    */
-  void submissionFailed(RpcException ex);
+  void submissionFailed(UserException ex);
 
   /**
    * The query has completed (successsful completion or cancellation). The listener will not receive any other
    * data or result message. Called when the server returns a terminal-non failing- state (COMPLETED or CANCELLED)
+   * @param state
    */
-  void queryCompleted();
+  void queryCompleted(QueryState state);
 
   /**
    * A {@link org.apache.drill.exec.proto.beans.QueryData QueryData} message was received

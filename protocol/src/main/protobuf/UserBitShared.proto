@@ -30,9 +30,57 @@ message QueryId {
 }
 
 message DrillPBError{
+  enum ErrorType {
+    /* equivalent to SQLClientInfoException
+     * - handshake version error
+     * - invalid schema
+     */
+    CONNECTION = 0;
+    /* equivalent to SQLRecoverableException
+     * - corrupt files: can't be read. FS read error
+     * - parsing error due to incomplete or incorrectly written records
+     */
+    DATA_READ = 1;
+    /* equivalent to SQLDataException
+     * - data type unsupported by format
+     */
+    DATA_WRITE = 2;
+    /* equivalent to SQLDataException
+     * - Casting errors
+     * - function not found for incoming types after implicit casting
+     * - Flatten misuse
+     */
+    FUNCTION = 3;
+    /* equivalent to SQLSyntaxErrorException
+     * - typos
+     * - missing table
+     * - SQL keyword misuse
+     * - function names/resolution
+     */
+    PARSE = 4;
+    /* equivalent to SQLInvalidAuthorizationSpecException
+     */
+    PERMISSION = 5;
+    /* equivalent to SQLNonTransientException
+     */
+    PLAN = 6;
+    /* equivalent to SQLRecoverableException or SQLTransientException
+     * - Recoverable: memory, disk
+     * - Transient: network
+     */
+    RESOURCE = 7;
+    /* equivalent to SQLNonTransientException.
+     */
+    SYSTEM = 8;
+    /* equivalent to SQLFeatureNotSupportedException
+     * - type change
+     * - schema change
+     */
+    UNSUPPORTED_OPERATION = 9;
+  }
   optional string error_id = 1; // for debug tracing purposes
   optional DrillbitEndpoint endpoint = 2;
-  optional int32 error_type = 3;
+  optional ErrorType error_type = 3;
   optional string message = 4;
   optional ExceptionWrapper exception = 5;
   repeated ParsingError parsing_error = 6; //optional, used when providing location of error within a piece of text.
@@ -160,6 +208,8 @@ message MinorFragmentProfile {
   optional int64 memory_used = 7;
   optional int64 max_memory_used = 8;
   optional DrillbitEndpoint endpoint = 9;
+  optional int64 last_update = 10;
+  optional int64 last_progress = 11;
 }
 
 message OperatorProfile {
@@ -192,6 +242,7 @@ enum FragmentState {
   FINISHED = 3;
   CANCELLED = 4;
   FAILED = 5;
+  CANCELLATION_REQUESTED = 6;
 }
 
 enum CoreOperatorType {
@@ -231,4 +282,5 @@ enum CoreOperatorType {
   HBASE_SUB_SCAN = 33;
   WINDOW = 34;
   NESTED_LOOP_JOIN = 35;
+  AVRO_SUB_SCAN = 36;
 }

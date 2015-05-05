@@ -18,8 +18,9 @@
 package org.apache.drill.exec.rpc.user;
 
 import java.util.Map;
+import java.util.concurrent.atomic.AtomicInteger;
 
-import net.hydromatic.optiq.SchemaPlus;
+import org.apache.calcite.schema.SchemaPlus;
 
 import org.apache.drill.exec.proto.UserBitShared.UserCredentials;
 import org.apache.drill.exec.proto.UserProtos.Property;
@@ -42,6 +43,16 @@ public class UserSession {
   private UserCredentials credentials;
   private Map<String, String> properties;
   private OptionManager sessionOptions;
+  private final AtomicInteger queryCount;
+
+  /**
+   * Implementations of this interface are allowed to increment queryCount.
+   * {@link org.apache.drill.exec.work.user.UserWorker} should have a member that implements the interface.
+   * No other core class should implement this interface. Test classes may implement (see ControlsInjectionUtil).
+   */
+  public static interface QueryCountIncrementer {
+    public void increment(final UserSession session);
+  }
 
   public static class Builder {
     UserSession userSession;
@@ -56,7 +67,7 @@ public class UserSession {
     }
 
     public Builder withOptionManager(OptionManager systemOptions) {
-      userSession.sessionOptions = new SessionOptionManager(systemOptions);
+      userSession.sessionOptions = new SessionOptionManager(systemOptions, userSession);
       return this;
     }
 
@@ -87,7 +98,9 @@ public class UserSession {
     }
   }
 
-  private UserSession() { }
+  private UserSession() {
+    queryCount = new AtomicInteger(0);
+  }
 
   public boolean isSupportComplexTypes() {
     return supportComplexTypes;
@@ -103,6 +116,15 @@ public class UserSession {
 
   public UserCredentials getCredentials() {
     return credentials;
+  }
+
+  public void incrementQueryCount(final QueryCountIncrementer incrementer) {
+    assert incrementer != null;
+    queryCount.incrementAndGet();
+  }
+
+  public int getQueryCount() {
+    return queryCount.get();
   }
 
   /**
@@ -123,7 +145,7 @@ public class UserSession {
   /**
    * Get default schema from current default schema path and given schema tree.
    * @param rootSchema
-   * @return A {@link net.hydromatic.optiq.SchemaPlus} object.
+   * @return A {@link org.apache.calcite.schema.SchemaPlus} object.
    */
   public SchemaPlus getDefaultSchema(SchemaPlus rootSchema) {
     return findSchema(rootSchema, getProp(SCHEMA));

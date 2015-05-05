@@ -17,16 +17,19 @@
  */
 package org.apache.drill.exec.server.options;
 
+import java.io.IOException;
 import java.math.BigDecimal;
 import java.util.HashSet;
 import java.util.Set;
 
+import com.fasterxml.jackson.databind.ObjectMapper;
 import org.apache.drill.common.exceptions.ExpressionParsingException;
 import org.apache.drill.exec.server.options.OptionValue.Kind;
 import org.apache.drill.exec.server.options.OptionValue.OptionType;
-import org.eigenbase.sql.SqlLiteral;
-import org.eigenbase.sql.type.SqlTypeName;
-import org.eigenbase.util.NlsString;
+
+import org.apache.calcite.sql.type.SqlTypeName;
+import org.apache.calcite.sql.SqlLiteral;
+import org.apache.calcite.util.NlsString;
 
 public class TypeValidators {
 //  private static final org.slf4j.Logger logger = org.slf4j.LoggerFactory.getLogger(TypeValidators.class);
@@ -151,6 +154,35 @@ public class TypeValidators {
       super.validate(v);
       if (!valuesSet.contains(v.string_val.toLowerCase())) {
         throw new ExpressionParsingException(String.format("Option %s must be one of: %s", getOptionName(), valuesSet));
+      }
+    }
+  }
+
+  /**
+   * Validator for POJO passed in as JSON string
+   */
+  public static class JsonStringValidator extends StringValidator {
+
+    private static final ObjectMapper mapper = new ObjectMapper();
+    private final Class<?> clazz;
+
+    public JsonStringValidator(final String name, final Class<?> clazz, final String def) {
+      super(name, def);
+      this.clazz = clazz;
+      validateJson(def, clazz);
+    }
+
+    @Override
+    public void validate(final OptionValue v) throws ExpressionParsingException {
+      super.validate(v);
+      validateJson(v.string_val, clazz);
+    }
+
+    private static void validateJson(final String jsonString, final Class<?> clazz) {
+      try {
+        mapper.readValue(jsonString, clazz);
+      } catch (IOException e) {
+        throw new ExpressionParsingException("Invalid JSON string (" + jsonString + ") for class " + clazz.getName(), e);
       }
     }
   }

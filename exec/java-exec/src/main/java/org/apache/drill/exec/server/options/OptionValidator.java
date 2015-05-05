@@ -18,8 +18,7 @@
 package org.apache.drill.exec.server.options;
 
 import org.apache.drill.common.exceptions.ExpressionParsingException;
-import org.apache.drill.exec.server.options.OptionValue.OptionType;
-import org.eigenbase.sql.SqlLiteral;
+import org.apache.calcite.sql.SqlLiteral;
 
 /**
  * Validates the values provided to Drill options.
@@ -47,10 +46,36 @@ public abstract class OptionValidator {
    *            while allowing some flexibility for users
    * @throws ExpressionParsingException - message to describe error with value, including range or list of expected values
    */
-  public abstract OptionValue validate(SqlLiteral value, OptionType optionType) throws ExpressionParsingException;
+  public abstract OptionValue validate(SqlLiteral value, OptionValue.OptionType optionType) throws ExpressionParsingException;
 
   public String getOptionName() {
     return optionName;
+  }
+
+  /**
+   * This function returns true if and only if the validator is meant for a short-lived option.
+   *
+   * NOTE: By default, options are not short-lived. So, if a derived class is meant for a short-lived option,
+   * that class must do two things:
+   * (1) override this method to return true, and
+   * (2) return the number of queries for which the option is valid through {@link #getTtl}.
+   * E.g. {@link org.apache.drill.exec.testing.ExecutionControls.ControlsOptionValidator}
+   * @return if this validator is for a short-lived option
+   */
+  public boolean isShortLived() {
+    return false;
+  }
+
+  /**
+   * If an option is short-lived, this returns the number of queries for which the option is valid.
+   * Please read the note at {@link #isShortLived}
+   * @return number of queries for which the option should be valid
+   */
+  public int getTtl() {
+    if (!isShortLived()) {
+      throw new UnsupportedOperationException("This option is not short-lived.");
+    }
+    return 0;
   }
 
   public String getDefaultString() {

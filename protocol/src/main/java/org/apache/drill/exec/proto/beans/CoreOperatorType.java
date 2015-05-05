@@ -56,7 +56,9 @@ public enum CoreOperatorType implements com.dyuproject.protostuff.EnumLite<CoreO
     COMPLEX_TO_JSON(31),
     PRODUCER_CONSUMER(32),
     HBASE_SUB_SCAN(33),
-    WINDOW(34);
+    WINDOW(34),
+    NESTED_LOOP_JOIN(35),
+    AVRO_SUB_SCAN(36);
     
     public final int number;
     
@@ -109,6 +111,8 @@ public enum CoreOperatorType implements com.dyuproject.protostuff.EnumLite<CoreO
             case 32: return PRODUCER_CONSUMER;
             case 33: return HBASE_SUB_SCAN;
             case 34: return WINDOW;
+            case 35: return NESTED_LOOP_JOIN;
+            case 36: return AVRO_SUB_SCAN;
             default: return null;
         }
     }

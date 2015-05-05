@@ -23,11 +23,13 @@ import io.netty.buffer.DrillBuf;
 import java.util.concurrent.ConcurrentLinkedQueue;
 import java.util.concurrent.ConcurrentMap;
 
-import org.apache.drill.exec.proto.UserBitShared;
+import org.apache.drill.common.exceptions.UserRemoteException;
+import org.apache.drill.common.exceptions.UserException;
 import org.apache.drill.exec.proto.UserBitShared.QueryId;
 import org.apache.drill.exec.proto.UserBitShared.QueryResult;
 import org.apache.drill.exec.proto.UserBitShared.QueryData;
 import org.apache.drill.exec.proto.UserBitShared.QueryResult.QueryState;
+import org.apache.drill.exec.proto.helper.QueryIdHelper;
 import org.apache.drill.exec.rpc.BaseRpcOutcomeListener;
 import org.apache.drill.exec.rpc.RpcBus;
 import org.apache.drill.exec.rpc.RpcException;
@@ -107,16 +109,15 @@ public class QueryResultHandler {
       if (isFailureResult) {
         // Failure case--pass on via submissionFailed(...).
 
-        String message = buildErrorMessage(queryResult);
-        resultsListener.submissionFailed(new RpcException(message));
+        resultsListener.submissionFailed(new UserRemoteException(queryResult.getError(0)));
         // Note: Listener is removed in finally below.
       } else if (isTerminalResult) {
         // A successful completion/canceled case--pass on via resultArrived
 
         try {
-          resultsListener.queryCompleted();
+          resultsListener.queryCompleted(queryState);
         } catch ( Exception e ) {
-          resultsListener.submissionFailed(new RpcException(e));
+          resultsListener.submissionFailed(UserException.systemError(e).build());
         }
       } else {
         logger.warn("queryState {} was ignored", queryState);
@@ -157,7 +158,7 @@ public class QueryResultHandler {
       // That releases batch if successful.
     } catch ( Exception e ) {
       batch.release();
-      resultsListener.submissionFailed(new RpcException(e));
+      resultsListener.submissionFailed(UserException.systemError(e).build());
     }
   }
 
@@ -189,26 +190,17 @@ public class QueryResultHandler {
     return resultsListener;
   }
 
-  protected String buildErrorMessage(QueryResult result) {
-    StringBuilder sb = new StringBuilder();
-    for (UserBitShared.DrillPBError error : result.getErrorList()) {
-      sb.append(error.getMessage());
-      sb.append("\n");
-    }
-    return sb.toString();
-  }
-
   private void failAll() {
     for (UserResultsListener l : queryIdToResultsListenersMap.values()) {
-      l.submissionFailed(new RpcException("Received result without QueryId"));
+      l.submissionFailed(UserException.systemError(new RpcException("Received result without QueryId")).build());
     }
   }
 
   private static class BufferingResultsListener implements UserResultsListener {
 
     private ConcurrentLinkedQueue<QueryDataBatch> results = Queues.newConcurrentLinkedQueue();
-    private volatile boolean finished = false;
-    private volatile RpcException ex;
+    private volatile UserException ex;
+    private volatile QueryState queryState;
     private volatile UserResultsListener output;
     private volatile ConnectionThrottle throttle;
 
@@ -221,20 +213,22 @@ public class QueryResultHandler {
         if (ex != null) {
           l.submissionFailed(ex);
           return true;
-        } else if (finished) {
-          l.queryCompleted();
+        } else if (queryState != null) {
+          l.queryCompleted(queryState);
+          return true;
         }
 
-        return finished;
+        return false;
       }
     }
 
     @Override
-    public void queryCompleted() {
-      finished = true;
+    public void queryCompleted(QueryState state) {
+      assert queryState == null;
+      this.queryState = state;
       synchronized (this) {
         if (output != null) {
-          output.queryCompleted();
+          output.queryCompleted(state);
         }
       }
     }
@@ -253,8 +247,12 @@ public class QueryResultHandler {
     }
 
     @Override
-    public void submissionFailed(RpcException ex) {
-      finished = true;
+    public void submissionFailed(UserException ex) {
+      assert queryState == null;
+      // there is one case when submissionFailed() is called even though the query didn't fail on the server side
+      // it happens when UserResultsListener.batchArrived() throws an exception that will be passed to
+      // submissionFailed() by QueryResultHandler.dataArrived()
+      queryState = QueryState.FAILED;
       synchronized (this) {
         if (output == null) {
           this.ex = ex;
@@ -262,10 +260,6 @@ public class QueryResultHandler {
           output.submissionFailed(ex);
         }
       }
-    }
-
-    public boolean isFinished() {
-      return finished;
     }
 
     @Override
@@ -284,14 +278,16 @@ public class QueryResultHandler {
 
     @Override
     public void failed(RpcException ex) {
-      resultsListener.submissionFailed(ex);
+      resultsListener.submissionFailed(UserException.systemError(ex).build());
     }
 
     @Override
     public void success(QueryId queryId, ByteBuf buf) {
       resultsListener.queryIdArrived(queryId);
-      logger.debug("Received QueryId {} successfully.  Adding results listener {}.",
-                   queryId, resultsListener);
+      if (logger.isDebugEnabled()) {
+        logger.debug("Received QueryId {} successfully. Adding results listener {}.",
+          QueryIdHelper.getQueryId(queryId), resultsListener);
+      }
       UserResultsListener oldListener =
           queryIdToResultsListenersMap.putIfAbsent(queryId, resultsListener);
 

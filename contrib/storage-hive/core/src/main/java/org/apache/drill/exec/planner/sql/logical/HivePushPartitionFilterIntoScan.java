@@ -37,8 +37,8 @@ import org.apache.drill.exec.store.hive.HiveReadEntry;
 import org.apache.drill.exec.store.hive.HiveScan;
 import org.apache.drill.exec.store.hive.HiveTable;
 import org.apache.drill.exec.store.hive.HiveTable.HivePartition;
-import org.eigenbase.relopt.RelOptRuleCall;
-import org.eigenbase.relopt.RelOptRuleOperand;
+import org.apache.calcite.plan.RelOptRuleCall;
+import org.apache.calcite.plan.RelOptRuleOperand;
 
 import com.google.common.collect.Lists;
 
@@ -132,7 +132,7 @@ public abstract class HivePushPartitionFilterIntoScan extends StoragePluginOptim
 
     try {
       HiveScan oldScan = (HiveScan) scanRel.getGroupScan();
-      HiveScan hiveScan = new HiveScan(newReadEntry, oldScan.storagePlugin, oldScan.columns);
+      HiveScan hiveScan = new HiveScan(oldScan.getUserName(), newReadEntry, oldScan.storagePlugin, oldScan.columns);
       PartitionPruningUtil.rewritePlan(call, filterRel, projectRel, scanRel, hiveScan, builder);
     } catch (ExecutionSetupException e) {
       throw new DrillRuntimeException(e);

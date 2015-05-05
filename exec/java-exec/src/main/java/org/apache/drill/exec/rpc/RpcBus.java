@@ -30,9 +30,9 @@ import java.io.Closeable;
 import java.util.Arrays;
 import java.util.List;
 
+import org.apache.drill.common.exceptions.UserException;
 import org.apache.drill.exec.proto.GeneralRPCProtos.RpcMode;
 import org.apache.drill.exec.proto.UserBitShared.DrillPBError;
-import org.apache.drill.exec.work.ErrorHelper;
 
 import com.google.common.base.Preconditions;
 import com.google.protobuf.Internal.EnumLite;
@@ -193,8 +193,12 @@ public abstract class RpcBus<T extends EnumLite, C extends RemoteConnection> imp
         try {
           handle(connection, msg.rpcType, msg.pBody, msg.dBody, sender);
         } catch(UserRpcException e){
-          DrillPBError error = ErrorHelper.logAndConvertError(e.getEndpoint(), e.getUserMessage(), e, logger);
-          OutboundRpcMessage outMessage = new OutboundRpcMessage(RpcMode.RESPONSE_FAILURE, 0, msg.coordinationId, error);
+          UserException uex = UserException.systemError(e).addIdentity(e.getEndpoint()).build();
+
+          logger.error("Unexpected Error while handling request message", e);
+
+          OutboundRpcMessage outMessage = new OutboundRpcMessage(RpcMode.RESPONSE_FAILURE, 0, msg.coordinationId,
+            uex.getOrCreatePBError(false));
           if (RpcConstants.EXTRA_DEBUGGING) {
             logger.debug("Adding message to outbound buffer. {}", outMessage);
           }

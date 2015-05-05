@@ -21,18 +21,18 @@ import java.util.logging.Logger;
 
 import org.apache.drill.exec.planner.logical.DrillJoinRel;
 import org.apache.drill.exec.planner.logical.RelOptHelper;
-import org.eigenbase.rel.InvalidRelException;
-import org.eigenbase.rel.RelNode;
-import org.eigenbase.relopt.RelOptRule;
-import org.eigenbase.relopt.RelOptRuleCall;
-import org.eigenbase.relopt.RelOptRuleOperand;
-import org.eigenbase.trace.EigenbaseTrace;
+import org.apache.calcite.rel.InvalidRelException;
+import org.apache.calcite.rel.RelNode;
+import org.apache.calcite.plan.RelOptRule;
+import org.apache.calcite.plan.RelOptRuleCall;
+import org.apache.calcite.plan.RelOptRuleOperand;
+import org.apache.calcite.util.trace.CalciteTrace;
 
 public class HashJoinPrule extends JoinPruleBase {
   public static final RelOptRule DIST_INSTANCE = new HashJoinPrule("Prel.HashJoinDistPrule", RelOptHelper.any(DrillJoinRel.class), true);
   public static final RelOptRule BROADCAST_INSTANCE = new HashJoinPrule("Prel.HashJoinBroadcastPrule", RelOptHelper.any(DrillJoinRel.class), false);
 
-  protected static final Logger tracer = EigenbaseTrace.getPlannerTracer();
+  protected static final Logger tracer = CalciteTrace.getPlannerTracer();
 
   private final boolean isDist;
   private HashJoinPrule(String name, RelOptRuleOperand operand, boolean isDist) {
@@ -48,7 +48,8 @@ public class HashJoinPrule extends JoinPruleBase {
 
   @Override
   public void onMatch(RelOptRuleCall call) {
-    if (!PrelUtil.getPlannerSettings(call.getPlanner()).isHashJoinEnabled()) {
+    PlannerSettings settings = PrelUtil.getPlannerSettings(call.getPlanner());
+    if (!settings.isHashJoinEnabled()) {
       return;
     }
 
@@ -56,7 +57,7 @@ public class HashJoinPrule extends JoinPruleBase {
     final RelNode left = join.getLeft();
     final RelNode right = join.getRight();
 
-    if (!checkPreconditions(join, left, right)) {
+    if (!checkPreconditions(join, left, right, settings)) {
       return;
     }
 
@@ -65,10 +66,12 @@ public class HashJoinPrule extends JoinPruleBase {
     try {
 
       if(isDist){
-        createDistBothPlan(call, join, PhysicalJoinType.HASH_JOIN, left, right, null /* left collation */, null /* right collation */, hashSingleKey);
+        createDistBothPlan(call, join, PhysicalJoinType.HASH_JOIN,
+            left, right, null /* left collation */, null /* right collation */, hashSingleKey);
       }else{
         if (checkBroadcastConditions(call.getPlanner(), join, left, right)) {
-          createBroadcastPlan(call, join, PhysicalJoinType.HASH_JOIN, left, right, null /* left collation */, null /* right collation */);
+          createBroadcastPlan(call, join, join.getCondition(), PhysicalJoinType.HASH_JOIN,
+              left, right, null /* left collation */, null /* right collation */);
         }
       }
 

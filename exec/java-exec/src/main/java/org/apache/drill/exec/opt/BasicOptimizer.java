@@ -53,10 +53,12 @@ import org.apache.drill.exec.physical.config.SelectionVectorRemover;
 import org.apache.drill.exec.physical.config.Sort;
 import org.apache.drill.exec.physical.config.StreamingAggregate;
 import org.apache.drill.exec.physical.config.WindowPOP;
+import org.apache.drill.exec.rpc.user.UserServer.UserClientConnection;
 import org.apache.drill.exec.server.options.OptionManager;
 import org.apache.drill.exec.store.StoragePlugin;
-import org.eigenbase.rel.RelFieldCollation.Direction;
-import org.eigenbase.rel.RelFieldCollation.NullDirection;
+import org.apache.drill.exec.work.foreman.ForemanException;
+import org.apache.calcite.rel.RelFieldCollation.Direction;
+import org.apache.calcite.rel.RelFieldCollation.NullDirection;
 
 import java.io.IOException;
 import java.util.ArrayList;
@@ -69,9 +71,11 @@ public class BasicOptimizer extends Optimizer {
 //  private static final org.slf4j.Logger logger = org.slf4j.LoggerFactory.getLogger(BasicOptimizer.class);
 
   private final QueryContext queryContext;
+  private final UserClientConnection userSession;
 
-  public BasicOptimizer(final QueryContext queryContext) {
+  public BasicOptimizer(final QueryContext queryContext, final UserClientConnection userSession) {
     this.queryContext = queryContext;
+    this.userSession = userSession;
   }
 
   @Override
@@ -208,7 +212,8 @@ public class BasicOptimizer extends Optimizer {
       }
       try {
         final StoragePlugin storagePlugin = queryContext.getStorage().getPlugin(config);
-        return storagePlugin.getPhysicalScan(scan.getSelection());
+        final String user = userSession.getSession().getCredentials().getUserName();
+        return storagePlugin.getPhysicalScan(user, scan.getSelection());
       } catch (IOException | ExecutionSetupException e) {
         throw new OptimizerException("Failure while attempting to retrieve storage engine.", e);
       }
