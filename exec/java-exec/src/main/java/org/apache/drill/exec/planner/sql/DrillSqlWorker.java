@@ -119,7 +119,7 @@ public class DrillSqlWorker {
         DrillRuleSets.getDrillUserConfigurableLogicalRules(context));
     RuleSet drillPhysicalMem = DrillRuleSets.mergedRuleSets(
         DrillRuleSets.getPhysicalRules(context),
-        storagePluginRegistry.getStoragePluginRuleSet());
+        storagePluginRegistry.getStoragePluginRuleSet(context));
     RuleSet[] allRules = new RuleSet[] {drillLogicalRules, drillPhysicalMem};
     return allRules;
   }

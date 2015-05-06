@@ -87,11 +87,12 @@ public class ScanBatch implements CloseableRecordBatch {
                    Iterator<RecordReader> readers, List<String[]> partitionColumns, List<Integer> selectedPartitionColumns) throws ExecutionSetupException {
     this.context = context;
     this.readers = readers;
+    this.oContext = oContext;
     if (!readers.hasNext()) {
-      throw new ExecutionSetupException("A scan batch must contain at least one reader.");
+      this.done = true;
+      return;
     }
     this.currentReader = readers.next();
-    this.oContext = oContext;
     this.currentReader.setOperatorContext(this.oContext);
 
     boolean setup = false;
@@ -353,11 +354,15 @@ public class ScanBatch implements CloseableRecordBatch {
     if (tempContainer != null) {
       tempContainer.clear();
     }
-    for (ValueVector v : partitionVectors) {
-      v.clear();
+    if (partitionVectors != null) {
+      for (ValueVector v : partitionVectors) {
+        v.clear();
+      }
     }
     fieldVectorMap.clear();
-    currentReader.cleanup();
+    if (currentReader != null) {
+      currentReader.cleanup();
+    }
   }
 
   @Override

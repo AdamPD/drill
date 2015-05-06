@@ -28,7 +28,7 @@ import parquet.schema.MessageType;
 import java.util.Collection;
 import java.util.List;
 
-public class DrillParquetRecordMaterializer extends RecordMaterializer<Void> {
+public class DrillParquetRecordMaterializer extends RecordMaterializer<Boolean> {
 
   public DrillParquetGroupConverter root;
   private ComplexWriter complexWriter;
@@ -43,8 +43,8 @@ public class DrillParquetRecordMaterializer extends RecordMaterializer<Void> {
   }
 
   @Override
-  public Void getCurrentRecord() {
-    return null;
+  public Boolean getCurrentRecord() {
+    return true;
   }
 
   @Override

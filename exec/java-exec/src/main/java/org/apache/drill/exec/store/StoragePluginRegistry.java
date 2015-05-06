@@ -43,10 +43,8 @@ import org.apache.drill.common.util.PathScanner;
 import org.apache.drill.exec.ExecConstants;
 import org.apache.drill.exec.exception.DrillbitStartupException;
 import org.apache.drill.exec.ops.QueryContext;
-import org.apache.drill.exec.ops.ViewExpansionContext;
 import org.apache.drill.exec.planner.logical.DrillRuleSets;
 import org.apache.drill.exec.planner.logical.StoragePlugins;
-import org.apache.drill.exec.rpc.user.UserSession;
 import org.apache.drill.exec.server.DrillbitContext;
 import org.apache.drill.exec.store.dfs.FileSystemPlugin;
 import org.apache.drill.exec.store.dfs.FormatPlugin;
@@ -283,11 +281,11 @@ public class StoragePluginRegistry implements Iterable<Map.Entry<String, Storage
     return plugins.entrySet().iterator();
   }
 
-  public RuleSet getStoragePluginRuleSet() {
+  public RuleSet getStoragePluginRuleSet(QueryContext context) {
     // query registered engines for optimizer rules and build the storage plugin RuleSet
     Builder<RelOptRule> setBuilder = ImmutableSet.builder();
     for (StoragePlugin plugin : this.plugins.values()) {
-      Set<StoragePluginOptimizerRule> rules = plugin.getOptimizerRules();
+      Set<StoragePluginOptimizerRule> rules = plugin.getOptimizerRules(context);
       if (rules != null && rules.size() > 0) {
         setBuilder.addAll(rules);
       }

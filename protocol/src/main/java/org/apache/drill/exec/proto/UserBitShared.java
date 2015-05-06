@@ -637,7 +637,10 @@ public final class UserBitShared {
      * <code>AVRO_SUB_SCAN = 36;</code>
      */
     public static final int AVRO_SUB_SCAN_VALUE = 36;
-
+    /**
+     * <code>EMPTY_ROW_GROUP_SCAN = 37;</code>
+     */
+    public static final int EMPTY_ROW_GROUP_SCAN_VALUE = 37;
 
     public final int getNumber() { return value; }
 

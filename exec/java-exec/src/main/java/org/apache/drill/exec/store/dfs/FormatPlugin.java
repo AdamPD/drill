@@ -24,6 +24,7 @@ import java.util.Set;
 import org.apache.drill.common.expression.SchemaPath;
 import org.apache.drill.common.logical.FormatPluginConfig;
 import org.apache.drill.common.logical.StoragePluginConfig;
+import org.apache.drill.exec.ops.QueryContext;
 import org.apache.drill.exec.physical.base.AbstractGroupScan;
 import org.apache.drill.exec.physical.base.AbstractWriter;
 import org.apache.drill.exec.physical.base.PhysicalOperator;
@@ -44,7 +45,7 @@ public interface FormatPlugin {
 
   public AbstractWriter getWriter(PhysicalOperator child, String location) throws IOException;
 
-  public Set<StoragePluginOptimizerRule> getOptimizerRules();
+  public Set<StoragePluginOptimizerRule> getOptimizerRules(QueryContext context);
 
   public AbstractGroupScan getGroupScan(String userName, FileSelection selection, List<SchemaPath> columns) throws IOException;
 

@@ -31,6 +31,7 @@ import org.apache.drill.common.logical.StoragePluginConfig;
 import org.apache.drill.exec.ExecConstants;
 import org.apache.drill.exec.ops.FragmentContext;
 import org.apache.drill.exec.ops.OperatorContext;
+import org.apache.drill.exec.ops.QueryContext;
 import org.apache.drill.exec.physical.base.AbstractGroupScan;
 import org.apache.drill.exec.physical.base.AbstractWriter;
 import org.apache.drill.exec.physical.base.PhysicalOperator;
@@ -238,7 +239,7 @@ public abstract class EasyFormatPlugin<T extends FormatPluginConfig> implements 
   }
 
   @Override
-  public Set<StoragePluginOptimizerRule> getOptimizerRules() {
+  public Set<StoragePluginOptimizerRule> getOptimizerRules(QueryContext context) {
     return ImmutableSet.of();
   }
 
