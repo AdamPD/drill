@@ -30,14 +30,18 @@ import org.apache.drill.exec.compile.ClassTransformer;
 import org.apache.drill.exec.compile.QueryClassLoader;
 import org.apache.drill.exec.planner.physical.PlannerSettings;
 import org.apache.drill.exec.server.options.OptionValue.OptionType;
+import org.apache.drill.exec.server.options.TypeValidators.BooleanValidator;
+import org.apache.drill.exec.server.options.TypeValidators.DoubleValidator;
+import org.apache.drill.exec.server.options.TypeValidators.LongValidator;
+import org.apache.drill.exec.server.options.TypeValidators.StringValidator;
 import org.apache.drill.exec.store.sys.PStore;
 import org.apache.drill.exec.store.sys.PStoreConfig;
 import org.apache.drill.exec.store.sys.PStoreProvider;
-import org.eigenbase.sql.SqlLiteral;
+import org.apache.calcite.sql.SqlLiteral;
 
 import com.google.common.collect.Maps;
 
-public class SystemOptionManager implements OptionManager {
+public class SystemOptionManager extends BaseOptionManager {
   private static final org.slf4j.Logger logger = org.slf4j.LoggerFactory.getLogger(SystemOptionManager.class);
 
   private static final OptionValidator[] VALIDATORS = {
@@ -47,10 +51,13 @@ public class SystemOptionManager implements OptionManager {
       PlannerSettings.STREAMAGG,
       PlannerSettings.HASHJOIN,
       PlannerSettings.MERGEJOIN,
+      PlannerSettings.NESTEDLOOPJOIN,
       PlannerSettings.MULTIPHASE,
       PlannerSettings.BROADCAST,
       PlannerSettings.BROADCAST_THRESHOLD,
       PlannerSettings.BROADCAST_FACTOR,
+      PlannerSettings.NESTEDLOOPJOIN_FACTOR,
+      PlannerSettings.NLJOIN_FOR_SCALAR,
       PlannerSettings.JOIN_ROW_COUNT_ESTIMATE_FACTOR,
       PlannerSettings.MUX_EXCHANGE,
       PlannerSettings.DEMUX_EXCHANGE,
@@ -73,6 +80,7 @@ public class SystemOptionManager implements OptionManager {
       ExecConstants.PARQUET_RECORD_READER_IMPLEMENTATION_VALIDATOR,
       ExecConstants.PARQUET_ENABLE_PUSHDOWN_FILTER_IMPLEMENTATION_VALIDATOR,
       ExecConstants.JSON_READER_ALL_TEXT_MODE_VALIDATOR,
+      ExecConstants.JSON_EXTENDED_TYPES,
       ExecConstants.FILESYSTEM_PARTITION_COLUMN_LABEL_VALIDATOR,
       ExecConstants.MONGO_READER_ALL_TEXT_MODE_VALIDATOR,
       ExecConstants.SLICE_TARGET_OPTION,
@@ -92,12 +100,14 @@ public class SystemOptionManager implements OptionManager {
       ExecConstants.HASH_JOIN_TABLE_FACTOR,
       ExecConstants.HASH_AGG_TABLE_FACTOR,
       ExecConstants.AVERAGE_FIELD_WIDTH,
+      ExecConstants.NEW_VIEW_DEFAULT_PERMS_VALIDATOR,
+      ExecConstants.USE_OLD_ASSIGNMENT_CREATOR_VALIDATOR,
       QueryClassLoader.JAVA_COMPILER_VALIDATOR,
       QueryClassLoader.JAVA_COMPILER_JANINO_MAXSIZE,
       QueryClassLoader.JAVA_COMPILER_DEBUG,
       ExecConstants.ENABLE_VERBOSE_ERRORS,
       ExecConstants.ENABLE_WINDOW_FUNCTIONS_VALIDATOR,
-      ExecConstants.DRILLBIT_EXCEPTION_INJECTIONS_VALIDATOR,
+      ExecConstants.DRILLBIT_CONTROLS_VALIDATOR,
       ClassTransformer.SCALAR_REPLACEMENT_VALIDATOR,
   };
 
@@ -209,6 +219,11 @@ public class SystemOptionManager implements OptionManager {
         throw new IllegalArgumentException("Only one option is allowed to be registered with name: "
             + validator.getOptionName());
       }
+    }
+
+    @Override
+    public OptionValidator getValidator(final String name) {
+      return knownOptions.get(name);
     }
 
     @Override

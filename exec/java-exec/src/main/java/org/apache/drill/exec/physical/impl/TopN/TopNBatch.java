@@ -60,8 +60,8 @@ import org.apache.drill.exec.record.selection.SelectionVector2;
 import org.apache.drill.exec.record.selection.SelectionVector4;
 import org.apache.drill.exec.vector.ValueVector;
 import org.apache.drill.exec.vector.complex.AbstractContainerVector;
-import org.eigenbase.rel.RelFieldCollation.Direction;
-import org.eigenbase.rel.RelFieldCollation.NullDirection;
+import org.apache.calcite.rel.RelFieldCollation.Direction;
+import org.apache.calcite.rel.RelFieldCollation.NullDirection;
 
 import com.google.common.base.Stopwatch;
 import com.google.common.collect.Lists;
@@ -117,15 +117,14 @@ public class TopNBatch extends AbstractRecordBatch<TopN> {
   }
 
   @Override
-  public void cleanup() {
+  public void close() {
     if (sv4 != null) {
       sv4.clear();
     }
     if (priorityQueue != null) {
       priorityQueue.cleanup();
     }
-    super.cleanup();
-    incoming.cleanup();
+    super.close();
   }
 
   public void buildSchema() throws SchemaChangeException {
@@ -421,10 +420,6 @@ public class TopNBatch extends AbstractRecordBatch<TopN> {
     @Override
     public WritableBatch getWritableBatch() {
       throw new UnsupportedOperationException();
-    }
-
-    @Override
-    public void cleanup() {
     }
 
     @Override

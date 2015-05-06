@@ -31,8 +31,8 @@ import java.util.Set;
 import java.util.concurrent.ConcurrentMap;
 import java.util.concurrent.TimeUnit;
 
-import net.hydromatic.optiq.SchemaPlus;
-import net.hydromatic.optiq.tools.RuleSet;
+import org.apache.calcite.schema.SchemaPlus;
+import org.apache.calcite.tools.RuleSet;
 
 import org.apache.drill.common.config.DrillConfig;
 import org.apache.drill.common.exceptions.DrillRuntimeException;
@@ -45,7 +45,6 @@ import org.apache.drill.exec.exception.DrillbitStartupException;
 import org.apache.drill.exec.ops.QueryContext;
 import org.apache.drill.exec.planner.logical.DrillRuleSets;
 import org.apache.drill.exec.planner.logical.StoragePlugins;
-import org.apache.drill.exec.rpc.user.UserSession;
 import org.apache.drill.exec.server.DrillbitContext;
 import org.apache.drill.exec.store.dfs.FileSystemPlugin;
 import org.apache.drill.exec.store.dfs.FormatPlugin;
@@ -55,7 +54,7 @@ import org.apache.drill.exec.store.sys.PStore;
 import org.apache.drill.exec.store.sys.PStoreConfig;
 import org.apache.drill.exec.store.sys.SystemTablePlugin;
 import org.apache.drill.exec.store.sys.SystemTablePluginConfig;
-import org.eigenbase.relopt.RelOptRule;
+import org.apache.calcite.plan.RelOptRule;
 
 import com.google.common.base.Charsets;
 import com.google.common.base.Stopwatch;
@@ -302,7 +301,7 @@ public class StoragePluginRegistry implements Iterable<Map.Entry<String, Storage
   public class DrillSchemaFactory implements SchemaFactory {
 
     @Override
-    public void registerSchemas(UserSession session, SchemaPlus parent) {
+    public void registerSchemas(SchemaConfig schemaConfig, SchemaPlus parent) throws IOException {
       Stopwatch watch = new Stopwatch();
       watch.start();
 
@@ -326,7 +325,7 @@ public class StoragePluginRegistry implements Iterable<Map.Entry<String, Storage
 
         // finally register schemas with the refreshed plugins
         for (StoragePlugin plugin : plugins.values()) {
-          plugin.registerSchemas(session, parent);
+          plugin.registerSchemas(schemaConfig, parent);
         }
       } catch (ExecutionSetupException e) {
         throw new DrillRuntimeException("Failure while updating storage plugins", e);

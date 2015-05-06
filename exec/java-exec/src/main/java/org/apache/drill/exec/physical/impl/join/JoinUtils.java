@@ -18,21 +18,42 @@
 
 package org.apache.drill.exec.physical.impl.join;
 
+import org.apache.calcite.rel.core.Join;
+import org.apache.calcite.rel.core.JoinRelType;
+import org.apache.calcite.rex.RexNode;
 import org.apache.drill.common.logical.data.JoinCondition;
-import org.eigenbase.rel.JoinRelBase;
-import org.eigenbase.rel.JoinRelType;
-import org.eigenbase.rel.RelNode;
-import org.eigenbase.relopt.RelOptTable;
-import org.eigenbase.relopt.RelOptUtil;
-import org.eigenbase.rex.RexNode;
+import org.apache.calcite.rel.RelNode;
+import org.apache.calcite.plan.RelOptUtil;
+import org.apache.calcite.plan.volcano.RelSubset;
+import org.apache.drill.exec.planner.logical.DrillAggregateRel;
+import org.apache.drill.exec.planner.logical.DrillFilterRel;
 
+import org.apache.drill.common.exceptions.DrillRuntimeException;
+import org.apache.drill.common.expression.ErrorCollector;
+import org.apache.drill.common.expression.ErrorCollectorImpl;
+import org.apache.drill.common.expression.LogicalExpression;
+import org.apache.drill.common.logical.data.JoinCondition;
+import org.apache.drill.common.types.TypeProtos;
+import org.apache.drill.exec.expr.ExpressionTreeMaterializer;
+import org.apache.drill.exec.ops.FragmentContext;
+import org.apache.drill.exec.record.RecordBatch;
+import org.apache.drill.exec.resolver.TypeCastRules;
+
+import java.util.LinkedList;
 import java.util.List;
+import com.google.common.collect.Lists;
 
 public class JoinUtils {
   public static enum JoinComparator {
     NONE, // No comparator
     EQUALS, // Equality comparator
     IS_NOT_DISTINCT_FROM // 'IS NOT DISTINCT FROM' comparator
+  }
+
+  public static enum JoinCategory {
+    EQUALITY,  // equality join
+    INEQUALITY,  // inequality join: <>, <, >
+    CARTESIAN   // no join condition
   }
 
   // Check the comparator for the join condition. Note that a similar check is also
@@ -74,11 +95,11 @@ public class JoinUtils {
      *                  Otherwise, return false
      */
   public static boolean checkCartesianJoin(RelNode relNode, List<Integer> leftKeys, List<Integer> rightKeys) {
-    if (relNode instanceof JoinRelBase) {
+    if (relNode instanceof Join) {
       leftKeys.clear();
       rightKeys.clear();
 
-      JoinRelBase joinRel = (JoinRelBase) relNode;
+      Join joinRel = (Join) relNode;
       RelNode left = joinRel.getLeft();
       RelNode right = joinRel.getRight();
 
@@ -102,4 +123,125 @@ public class JoinUtils {
 
     return false;
   }
+
+  /**
+   * Checks if implicit cast is allowed between the two input types of the join condition. Currently we allow
+   * implicit casts in join condition only between numeric types and varchar/varbinary types.
+   * @param input1
+   * @param input2
+   * @return true if implicit cast is allowed false otherwise
+   */
+  private static boolean allowImplicitCast(TypeProtos.MinorType input1, TypeProtos.MinorType input2) {
+    // allow implicit cast if both the input types are numeric
+    if (TypeCastRules.isNumericType(input1) && TypeCastRules.isNumericType(input2)) {
+      return true;
+    }
+
+    // allow implicit cast if both the input types are varbinary/ varchar
+    if ((input1 == TypeProtos.MinorType.VARCHAR || input1 == TypeProtos.MinorType.VARBINARY) &&
+        (input2 == TypeProtos.MinorType.VARCHAR || input2 == TypeProtos.MinorType.VARBINARY)) {
+      return true;
+    }
+
+    return false;
+  }
+
+  /**
+   * Utility method used by joins to add implicit casts on one of the sides of the join condition in case the two
+   * expressions have different types.
+   * @param leftExpressions array of expressions from left input into the join
+   * @param leftBatch left input record batch
+   * @param rightExpressions array of expressions from right input into the join
+   * @param rightBatch right input record batch
+   * @param context fragment context
+   */
+  public static void addLeastRestrictiveCasts(LogicalExpression[] leftExpressions, RecordBatch leftBatch,
+                                              LogicalExpression[] rightExpressions, RecordBatch rightBatch,
+                                              FragmentContext context) {
+    assert rightExpressions.length == leftExpressions.length;
+
+    for (int i = 0; i < rightExpressions.length; i++) {
+      LogicalExpression rightExpression = rightExpressions[i];
+      LogicalExpression leftExpression = leftExpressions[i];
+      TypeProtos.MinorType rightType = rightExpression.getMajorType().getMinorType();
+      TypeProtos.MinorType leftType = leftExpression.getMajorType().getMinorType();
+
+      if (rightType != leftType) {
+
+        // currently we only support implicit casts if the input types are numeric or varchar/varbinary
+        if (!allowImplicitCast(rightType, leftType)) {
+          throw new DrillRuntimeException(String.format("Join only supports implicit casts between " +
+              "1. Numeric data\n 2. Varchar, Varbinary data " +
+              "Left type: %s, Right type: %s. Add explicit casts to avoid this error", leftType, rightType));
+        }
+
+        // We need to add a cast to one of the expressions
+        List<TypeProtos.MinorType> types = new LinkedList<>();
+        types.add(rightType);
+        types.add(leftType);
+        TypeProtos.MinorType result = TypeCastRules.getLeastRestrictiveType(types);
+        ErrorCollector errorCollector = new ErrorCollectorImpl();
+
+        if (result == null) {
+          throw new DrillRuntimeException(String.format("Join conditions cannot be compared failing left " +
+                  "expression:" + " %s failing right expression: %s", leftExpression.getMajorType().toString(),
+              rightExpression.getMajorType().toString()));
+        } else if (result != rightType) {
+          // Add a cast expression on top of the right expression
+          LogicalExpression castExpr = ExpressionTreeMaterializer.addCastExpression(rightExpression, leftExpression.getMajorType(), context.getFunctionRegistry(), errorCollector);
+          // Store the newly casted expression
+          rightExpressions[i] =
+              ExpressionTreeMaterializer.materialize(castExpr, rightBatch, errorCollector,
+                  context.getFunctionRegistry());
+        } else if (result != leftType) {
+          // Add a cast expression on top of the left expression
+          LogicalExpression castExpr = ExpressionTreeMaterializer.addCastExpression(leftExpression, rightExpression.getMajorType(), context.getFunctionRegistry(), errorCollector);
+          // store the newly casted expression
+          leftExpressions[i] =
+              ExpressionTreeMaterializer.materialize(castExpr, leftBatch, errorCollector,
+                  context.getFunctionRegistry());
+        }
+      }
+    }
+  }
+
+  public static boolean isScalarSubquery(RelNode childrel) {
+    DrillAggregateRel agg = null;
+    RelNode currentrel = childrel;
+    while (agg == null && currentrel != null) {
+      if (currentrel instanceof DrillAggregateRel) {
+        agg = (DrillAggregateRel)currentrel;
+      } else if (currentrel instanceof DrillFilterRel) {
+        currentrel = currentrel.getInput(0);
+      } else if (currentrel instanceof RelSubset) {
+        currentrel = ((RelSubset)currentrel).getBest() ;
+      } else {
+        break;
+      }
+    }
+
+    if (agg != null) {
+      if (agg.getGroupSet().isEmpty()) {
+        return true;
+      }
+    }
+    return false;
+  }
+
+  public static JoinCategory getJoinCategory(RelNode left, RelNode right, RexNode condition,
+      List<Integer> leftKeys, List<Integer> rightKeys) {
+    if (condition.isAlwaysTrue()) {
+      return JoinCategory.CARTESIAN;
+    }
+    leftKeys.clear();
+    rightKeys.clear();
+    RexNode remaining = RelOptUtil.splitJoinCondition(left, right, condition, leftKeys, rightKeys);
+
+    if (!remaining.isAlwaysTrue() || (leftKeys.size() == 0 || rightKeys.size() == 0) ) {
+      // for practical purposes these cases could be treated as inequality
+      return JoinCategory.INEQUALITY;
+    }
+    return JoinCategory.EQUALITY;
+  }
+
 }

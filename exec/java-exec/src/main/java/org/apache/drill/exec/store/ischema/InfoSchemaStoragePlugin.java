@@ -23,14 +23,14 @@ import java.util.Map;
 import java.util.Set;
 
 import com.google.common.collect.ImmutableSet;
-import net.hydromatic.optiq.SchemaPlus;
-import net.hydromatic.optiq.Table;
+import org.apache.calcite.schema.SchemaPlus;
+import org.apache.calcite.schema.Table;
 
+import static org.apache.drill.exec.store.ischema.InfoSchemaConstants.*;
 import org.apache.drill.common.JSONOptions;
 import org.apache.drill.common.expression.SchemaPath;
 import org.apache.drill.common.logical.StoragePluginConfig;
 import org.apache.drill.exec.ops.QueryContext;
-import org.apache.drill.exec.rpc.user.UserSession;
 import org.apache.drill.exec.server.DrillbitContext;
 import org.apache.drill.exec.store.AbstractSchema;
 import org.apache.drill.exec.store.AbstractStoragePlugin;
@@ -38,9 +38,10 @@ import org.apache.drill.exec.store.AbstractStoragePlugin;
 import com.google.common.collect.ImmutableList;
 import com.google.common.collect.ImmutableMap;
 import com.google.common.collect.Maps;
+import org.apache.drill.exec.store.SchemaConfig;
 import org.apache.drill.exec.store.StoragePluginOptimizerRule;
 
-public class InfoSchemaStoragePlugin extends AbstractStoragePlugin implements InfoSchemaConstants {
+public class InfoSchemaStoragePlugin extends AbstractStoragePlugin {
   static final org.slf4j.Logger logger = org.slf4j.LoggerFactory.getLogger(InfoSchemaStoragePlugin.class);
 
   private final InfoSchemaConfig config;
@@ -59,7 +60,8 @@ public class InfoSchemaStoragePlugin extends AbstractStoragePlugin implements In
   }
 
   @Override
-  public InfoSchemaGroupScan getPhysicalScan(JSONOptions selection, List<SchemaPath> columns) throws IOException {
+  public InfoSchemaGroupScan getPhysicalScan(String userName, JSONOptions selection, List<SchemaPath> columns)
+      throws IOException {
     SelectedTable table = selection.getWith(context.getConfig(),  SelectedTable.class);
     return new InfoSchemaGroupScan(table);
   }
@@ -70,11 +72,14 @@ public class InfoSchemaStoragePlugin extends AbstractStoragePlugin implements In
   }
 
   @Override
-  public void registerSchemas(UserSession session, SchemaPlus parent) {
+  public void registerSchemas(SchemaConfig schemaConfig, SchemaPlus parent) throws IOException {
     ISchema s = new ISchema(parent, this);
     parent.add(s.getName(), s);
   }
 
+  /**
+   * Representation of the INFORMATION_SCHEMA schema.
+   */
   private class ISchema extends AbstractSchema{
     private Map<String, InfoSchemaDrillTable> tables;
     public ISchema(SchemaPlus parent, InfoSchemaStoragePlugin plugin){

@@ -17,6 +17,8 @@
  */
 package org.apache.drill.exec.physical.impl;
 
+import java.util.List;
+
 import org.apache.drill.exec.memory.OutOfMemoryException;
 import org.apache.drill.exec.ops.FragmentContext;
 import org.apache.drill.exec.ops.OpProfileDef;
@@ -24,6 +26,7 @@ import org.apache.drill.exec.ops.OperatorContext;
 import org.apache.drill.exec.ops.OperatorStats;
 import org.apache.drill.exec.physical.base.PhysicalOperator;
 import org.apache.drill.exec.proto.ExecProtos.FragmentHandle;
+import org.apache.drill.exec.record.CloseableRecordBatch;
 import org.apache.drill.exec.record.RecordBatch;
 import org.apache.drill.exec.record.RecordBatch.IterOutcome;
 
@@ -33,9 +36,10 @@ public abstract class BaseRootExec implements RootExec {
   protected OperatorStats stats = null;
   protected OperatorContext oContext = null;
   protected FragmentContext fragmentContext = null;
+  private List<CloseableRecordBatch> operators;
 
-  public BaseRootExec(FragmentContext fragmentContext, PhysicalOperator config) throws OutOfMemoryException {
-    this.oContext = new OperatorContext(config, fragmentContext, stats, true);
+  public BaseRootExec(final FragmentContext fragmentContext, final PhysicalOperator config) throws OutOfMemoryException {
+    this.oContext = fragmentContext.newOperatorContext(config, stats, true);
     stats = new OperatorStats(new OpProfileDef(config.getOperatorId(),
         config.getOperatorType(), OperatorContext.getChildCount(config)),
         oContext.getAllocator());
@@ -43,20 +47,25 @@ public abstract class BaseRootExec implements RootExec {
     this.fragmentContext = fragmentContext;
   }
 
-  public BaseRootExec(FragmentContext fragmentContext, OperatorContext oContext, PhysicalOperator config) throws OutOfMemoryException {
+  public BaseRootExec(final FragmentContext fragmentContext, final OperatorContext oContext,
+      final PhysicalOperator config) throws OutOfMemoryException {
     this.oContext = oContext;
     stats = new OperatorStats(new OpProfileDef(config.getOperatorId(),
-      config.getOperatorType(), OperatorContext.getChildCount(config)),
+        config.getOperatorType(), OperatorContext.getChildCount(config)),
       oContext.getAllocator());
     fragmentContext.getStats().addOperatorStats(this.stats);
     this.fragmentContext = fragmentContext;
+  }
+
+  void setOperators(List<CloseableRecordBatch> operators) {
+    this.operators = operators;
   }
 
   @Override
   public final boolean next() {
     // Stats should have been initialized
     assert stats != null;
-    if (fragmentContext.isFailed()) {
+    if (!fragmentContext.shouldContinue()) {
       return false;
     }
     try {
@@ -67,7 +76,7 @@ public abstract class BaseRootExec implements RootExec {
     }
   }
 
-  public final IterOutcome next(RecordBatch b){
+  public final IterOutcome next(final RecordBatch b){
     stats.stopProcessing();
     IterOutcome next;
     try {
@@ -90,12 +99,12 @@ public abstract class BaseRootExec implements RootExec {
   public abstract boolean innerNext();
 
   @Override
-  public void receivingFragmentFinished(FragmentHandle handle) {
+  public void receivingFragmentFinished(final FragmentHandle handle) {
     logger.warn("Currently not handling FinishedFragment message");
   }
 
   @Override
-  public void stop() {
+  public void close() throws Exception {
     // We want to account for the time spent waiting here as Wait time in the operator profile
     try {
       stats.startProcessing();
@@ -104,6 +113,17 @@ public abstract class BaseRootExec implements RootExec {
     } finally {
       stats.stopWait();
       stats.stopProcessing();
+    }
+
+    // close all operators.
+    if (operators != null) {
+      for (CloseableRecordBatch b : operators) {
+        try {
+          b.close();
+        } catch (Exception e) {
+          fragmentContext.fail(e);
+        }
+      }
     }
   }
 }

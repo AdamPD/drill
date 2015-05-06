@@ -69,8 +69,8 @@ import org.apache.drill.exec.record.selection.SelectionVector4;
 import org.apache.drill.exec.vector.AllocationHelper;
 import org.apache.drill.exec.vector.IntVector;
 import org.apache.drill.exec.vector.ValueVector;
-import org.eigenbase.rel.RelFieldCollation.Direction;
-import org.eigenbase.rel.RelFieldCollation.NullDirection;
+import org.apache.calcite.rel.RelFieldCollation.Direction;
+import org.apache.calcite.rel.RelFieldCollation.NullDirection;
 
 import com.google.common.base.Preconditions;
 import com.google.common.collect.Lists;
@@ -158,9 +158,8 @@ public class OrderedPartitionRecordBatch extends AbstractRecordBatch<OrderedPart
 
 
   @Override
-  public void cleanup() {
-    incoming.cleanup();
-    super.cleanup();
+  public void close() {
+    super.close();
     this.partitionVectors.clear();
     this.partitionKeyVector.clear();
   }
@@ -302,9 +301,9 @@ public class OrderedPartitionRecordBatch extends AbstractRecordBatch<OrderedPart
       for (VectorWrapper<?> w : finalTable.get()) {
         partitionVectors.add(w.getValueVector());
       }
+
     } catch (ClassTransformationException | IOException | SchemaChangeException | InterruptedException ex) {
       kill(false);
-      logger.error("Failure while building final partition table.", ex);
       context.fail(ex);
       return false;
       // TODO InterruptedException
@@ -467,7 +466,7 @@ public class OrderedPartitionRecordBatch extends AbstractRecordBatch<OrderedPart
     // If this is the first iteration, we need to generate the partition vectors before we can proceed
     if (this.first && upstream == IterOutcome.OK_NEW_SCHEMA) {
       if (!getPartitionVectors()) {
-        cleanup();
+        close();
         return IterOutcome.STOP;
       }
 
@@ -503,7 +502,7 @@ public class OrderedPartitionRecordBatch extends AbstractRecordBatch<OrderedPart
     case NONE:
     case NOT_YET:
     case STOP:
-      cleanup();
+      close();
       recordCount = 0;
       return upstream;
     case OK_NEW_SCHEMA:

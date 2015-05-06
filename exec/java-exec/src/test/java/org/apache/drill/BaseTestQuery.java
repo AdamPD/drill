@@ -19,15 +19,14 @@ package org.apache.drill;
 
 import java.io.IOException;
 import java.net.URL;
+import java.util.Arrays;
 import java.util.List;
 import java.util.Properties;
 import java.util.concurrent.CountDownLatch;
 import java.util.concurrent.atomic.AtomicInteger;
 
-import com.google.common.base.Preconditions;
-import com.google.common.io.Files;
 import org.apache.drill.common.config.DrillConfig;
-import org.apache.drill.common.exceptions.ExecutionSetupException;
+import org.apache.drill.common.exceptions.UserException;
 import org.apache.drill.exec.ExecConstants;
 import org.apache.drill.exec.ExecTest;
 import org.apache.drill.exec.client.DrillClient;
@@ -35,9 +34,9 @@ import org.apache.drill.exec.exception.SchemaChangeException;
 import org.apache.drill.exec.memory.BufferAllocator;
 import org.apache.drill.exec.memory.TopLevelAllocator;
 import org.apache.drill.exec.proto.UserBitShared.QueryId;
+import org.apache.drill.exec.proto.UserBitShared.QueryResult.QueryState;
 import org.apache.drill.exec.proto.UserBitShared.QueryType;
 import org.apache.drill.exec.record.RecordBatchLoader;
-import org.apache.drill.exec.rpc.RpcException;
 import org.apache.drill.exec.rpc.user.ConnectionThrottle;
 import org.apache.drill.exec.rpc.user.QueryDataBatch;
 import org.apache.drill.exec.rpc.user.UserResultsListener;
@@ -45,11 +44,11 @@ import org.apache.drill.exec.server.Drillbit;
 import org.apache.drill.exec.server.DrillbitContext;
 import org.apache.drill.exec.server.RemoteServiceSet;
 import org.apache.drill.exec.store.StoragePluginRegistry;
-import org.apache.drill.exec.store.dfs.FileSystemConfig;
-import org.apache.drill.exec.store.dfs.FileSystemPlugin;
-import org.apache.drill.exec.store.dfs.WorkspaceConfig;
+import org.apache.drill.exec.util.JsonStringArrayList;
+import org.apache.drill.exec.util.JsonStringHashMap;
 import org.apache.drill.exec.util.TestUtilities;
 import org.apache.drill.exec.util.VectorUtil;
+import org.apache.hadoop.io.Text;
 import org.junit.AfterClass;
 import org.junit.BeforeClass;
 import org.junit.rules.TestRule;
@@ -57,6 +56,7 @@ import org.junit.rules.TestWatcher;
 import org.junit.runner.Description;
 
 import com.google.common.base.Charsets;
+import com.google.common.base.Preconditions;
 import com.google.common.io.Resources;
 
 public class BaseTestQuery extends ExecTest {
@@ -186,12 +186,24 @@ public class BaseTestQuery extends ExecTest {
    * @param properties
    */
   public static void updateClient(Properties properties) throws Exception {
+    Preconditions.checkState(bits != null && bits[0] != null, "Drillbits are not setup.");
     if (client != null) {
       client.close();
       client = null;
     }
 
     client = QueryTestUtil.createClient(config, serviceSet, MAX_WIDTH_PER_NODE, properties);
+  }
+
+  /*
+   * Close the current <i>client</i> and open a new client for the given user. All tests executed
+   * after this method call use the new <i>client</i>.
+   * @param user
+   */
+  public static void updateClient(String user) throws Exception {
+    final Properties props = new Properties();
+    props.setProperty("user", user);
+    updateClient(props);
   }
 
   protected static BufferAllocator getAllocator() {
@@ -207,7 +219,7 @@ public class BaseTestQuery extends ExecTest {
   }
 
   @AfterClass
-  public static void closeClient() throws IOException{
+  public static void closeClient() throws IOException, InterruptedException {
     if (client != null) {
       client.close();
     }
@@ -226,6 +238,40 @@ public class BaseTestQuery extends ExecTest {
     if (allocator != null) {
       allocator.close();
     }
+  }
+
+  private Object wrapStringInHadoopTextObject(Object o) {
+    if (o instanceof String) {
+      o = new Text((String)o);
+    }
+    return o;
+  }
+
+  // convenience method for making a list
+  protected JsonStringArrayList list(Object... values) {
+    JsonStringArrayList ret = new JsonStringArrayList<>();
+    for (int i = 0; i < values.length; i++) {
+      values[i] = wrapStringInHadoopTextObject(values[i]);
+    }
+    ret.addAll(Arrays.asList(values));
+    return ret;
+  }
+
+  protected JsonStringHashMap map(Object... keysAndValues) {
+    JsonStringHashMap ret = new JsonStringHashMap();
+    final String errorMsg = "Must provide a list of keys and values to construct a map, expects" +
+          "an even number or arguments, alternating strings for key names and objects for values.";
+    if (keysAndValues.length % 2 != 0) {
+      throw new RuntimeException(errorMsg);
+    }
+    for (int i = 0; i < keysAndValues.length - 1; i += 2) {
+      if ( ! (keysAndValues[i] instanceof String) )  {
+        throw new RuntimeException(errorMsg);
+      }
+      keysAndValues[i + 1] = wrapStringInHadoopTextObject(keysAndValues[i + 1]);
+      ret.put(keysAndValues[i], keysAndValues[i + 1]);
+    }
+    return ret;
   }
 
   @AfterClass
@@ -325,19 +371,19 @@ public class BaseTestQuery extends ExecTest {
   }
 
   private static class SilentListener implements UserResultsListener {
-    private volatile Exception exception;
+    private volatile UserException exception;
     private AtomicInteger count = new AtomicInteger();
     private CountDownLatch latch = new CountDownLatch(1);
 
     @Override
-    public void submissionFailed(RpcException ex) {
+    public void submissionFailed(UserException ex) {
       exception = ex;
       System.out.println("Query failed: " + ex.getMessage());
       latch.countDown();
     }
 
     @Override
-    public void queryCompleted() {
+    public void queryCompleted(QueryState state) {
       System.out.println("Query completed successfully with row count: " + count.get());
       latch.countDown();
     }

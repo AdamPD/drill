@@ -35,7 +35,6 @@ import org.apache.drill.exec.memory.OutOfMemoryException;
 import org.apache.drill.exec.ops.AccountingDataTunnel;
 import org.apache.drill.exec.ops.FragmentContext;
 import org.apache.drill.exec.ops.MetricDef;
-import org.apache.drill.exec.ops.OperatorContext;
 import org.apache.drill.exec.ops.OperatorStats;
 import org.apache.drill.exec.physical.MinorFragmentEndpoint;
 import org.apache.drill.exec.physical.config.HashPartitionSender;
@@ -51,6 +50,7 @@ import org.apache.drill.exec.record.VectorWrapper;
 import org.apache.drill.exec.server.options.OptionManager;
 import org.apache.drill.exec.vector.CopyUtil;
 
+import com.carrotsearch.hppc.IntArrayList;
 import com.google.common.annotations.VisibleForTesting;
 import com.sun.codemodel.JExpr;
 import com.sun.codemodel.JExpression;
@@ -79,6 +79,8 @@ public class PartitionSenderRootExec extends BaseRootExec {
   protected final int numberPartitions;
   protected final int actualPartitions;
 
+  private IntArrayList terminations = new IntArrayList();
+
   public enum Metric implements MetricDef {
     BATCHES_SENT,
     RECORDS_SENT,
@@ -98,7 +100,7 @@ public class PartitionSenderRootExec extends BaseRootExec {
   public PartitionSenderRootExec(FragmentContext context,
                                  RecordBatch incoming,
                                  HashPartitionSender operator) throws OutOfMemoryException {
-    super(context, new OperatorContext(operator, context, null, false), operator);
+    super(context, context.newOperatorContext(operator, null, false), operator);
     this.incoming = incoming;
     this.operator = operator;
     this.context = context;
@@ -138,8 +140,6 @@ public class PartitionSenderRootExec extends BaseRootExec {
   public boolean innerNext() {
 
     if (!ok) {
-      stop();
-
       return false;
     }
 
@@ -238,7 +238,15 @@ public class PartitionSenderRootExec extends BaseRootExec {
       subPartitioners.get(i).setup(context, incoming, popConfig, partitionStats, oContext,
         startIndex, endIndex);
     }
-    partitioner = new PartitionerDecorator(subPartitioners, stats, context);
+
+    synchronized(this){
+      partitioner = new PartitionerDecorator(subPartitioners, stats, context);
+      for (int index = 0; index < terminations.size(); index++) {
+        partitioner.getOutgoingBatches(terminations.buffer[index]).terminate();
+      }
+      terminations.clear();
+    }
+
   }
 
   private List<Partitioner> createClassInstances(int actualPartitions) throws SchemaChangeException {
@@ -296,7 +304,14 @@ public class PartitionSenderRootExec extends BaseRootExec {
   public void receivingFragmentFinished(FragmentHandle handle) {
     final int id = handle.getMinorFragmentId();
     if (remainingReceivers.compareAndSet(id, 0, 1)) {
-      partitioner.getOutgoingBatches(id).terminate();
+      synchronized (this) {
+        if (partitioner == null) {
+          terminations.add(id);
+        } else {
+          partitioner.getOutgoingBatches(id).terminate();
+        }
+      }
+
       int remaining = remaingReceiverCount.decrementAndGet();
       if (remaining == 0) {
         done = true;
@@ -304,17 +319,15 @@ public class PartitionSenderRootExec extends BaseRootExec {
     }
   }
 
-  public void stop() {
+  public void close() throws Exception {
     logger.debug("Partition sender stopping.");
-    super.stop();
+    super.close();
     ok = false;
     if (partitioner != null) {
       updateAggregateStats();
       partitioner.clear();
     }
 
-    oContext.close();
-    incoming.cleanup();
   }
 
   public void sendEmptyBatch(boolean isLast) {

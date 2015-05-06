@@ -18,18 +18,19 @@
 package org.apache.drill.exec.planner.sql;
 
 import java.io.IOException;
-import java.io.Reader;
 import java.util.ArrayList;
 import java.util.List;
 
-import net.hydromatic.optiq.config.Lex;
-import net.hydromatic.optiq.tools.FrameworkConfig;
-import net.hydromatic.optiq.tools.Frameworks;
-import net.hydromatic.optiq.tools.Planner;
-import net.hydromatic.optiq.tools.RelConversionException;
-import net.hydromatic.optiq.tools.RuleSet;
-import net.hydromatic.optiq.tools.ValidationException;
+import org.apache.calcite.config.Lex;
+import org.apache.calcite.rel.rules.ProjectToWindowRule;
+import org.apache.calcite.tools.FrameworkConfig;
+import org.apache.calcite.tools.Frameworks;
+import org.apache.calcite.tools.Planner;
+import org.apache.calcite.tools.RelConversionException;
+import org.apache.calcite.tools.RuleSet;
+import org.apache.calcite.tools.ValidationException;
 
+import org.apache.drill.common.exceptions.UserException;
 import org.apache.drill.exec.ops.QueryContext;
 import org.apache.drill.exec.physical.PhysicalPlan;
 import org.apache.drill.exec.planner.cost.DrillCostBase;
@@ -44,25 +45,30 @@ import org.apache.drill.exec.planner.sql.handlers.SqlHandlerConfig;
 import org.apache.drill.exec.planner.sql.parser.DrillSqlCall;
 import org.apache.drill.exec.planner.sql.parser.SqlCreateTable;
 import org.apache.drill.exec.planner.sql.parser.impl.DrillParserWithCompoundIdConverter;
+import org.apache.drill.exec.proto.UserBitShared.DrillPBError.ErrorType;
+import org.apache.drill.exec.planner.types.DrillRelDataTypeSystem;
 import org.apache.drill.exec.store.StoragePluginRegistry;
+import org.apache.drill.exec.testing.ExecutionControlsInjector;
 import org.apache.drill.exec.util.Pointer;
+import org.apache.drill.exec.work.foreman.ForemanException;
 import org.apache.drill.exec.work.foreman.ForemanSetupException;
-import org.eigenbase.rel.RelCollationTraitDef;
-import org.eigenbase.rel.rules.ReduceExpressionsRule;
-import org.eigenbase.rel.rules.WindowedAggSplitterRule;
-import org.eigenbase.relopt.ConventionTraitDef;
-import org.eigenbase.relopt.RelOptCostFactory;
-import org.eigenbase.relopt.RelTraitDef;
-import org.eigenbase.relopt.hep.HepPlanner;
-import org.eigenbase.relopt.hep.HepProgramBuilder;
-import org.eigenbase.sql.SqlNode;
-import org.eigenbase.sql.parser.SqlAbstractParserImpl;
-import org.eigenbase.sql.parser.SqlParseException;
-import org.eigenbase.sql.parser.SqlParser;
-import org.eigenbase.sql.parser.SqlParserImplFactory;
+import org.apache.calcite.rel.RelCollationTraitDef;
+import org.apache.calcite.rel.rules.ReduceExpressionsRule;
+import org.apache.calcite.plan.ConventionTraitDef;
+import org.apache.calcite.plan.RelOptCostFactory;
+import org.apache.calcite.plan.RelTraitDef;
+import org.apache.calcite.plan.hep.HepPlanner;
+import org.apache.calcite.plan.hep.HepProgramBuilder;
+import org.apache.calcite.sql.SqlNode;
+import org.apache.calcite.sql.parser.SqlAbstractParserImpl;
+import org.apache.calcite.sql.parser.SqlParseException;
+import org.apache.calcite.sql.parser.SqlParser;
+import org.apache.calcite.sql.parser.SqlParserImplFactory;
+import org.apache.hadoop.security.AccessControlException;
 
 public class DrillSqlWorker {
-  static final org.slf4j.Logger logger = org.slf4j.LoggerFactory.getLogger(DrillSqlWorker.class);
+//  private static final org.slf4j.Logger logger = org.slf4j.LoggerFactory.getLogger(DrillSqlWorker.class);
+  private final static ExecutionControlsInjector injector = ExecutionControlsInjector.getInjector(DrillSqlWorker.class);
 
   private final Planner planner;
   private final HepPlanner hepPlanner;
@@ -82,8 +88,11 @@ public class DrillSqlWorker {
     int idMaxLength = (int)context.getPlannerSettings().getIdentifierMaxLength();
 
     FrameworkConfig config = Frameworks.newConfigBuilder() //
-        .parserConfig(new SqlParser.ParserConfigImpl(Lex.MYSQL, idMaxLength)) //
-        .parserFactory(DrillParserWithCompoundIdConverter.FACTORY) //
+        .parserConfig(SqlParser.configBuilder()
+            .setLex(Lex.MYSQL)
+            .setIdentifierMaxLength(idMaxLength)
+            .setParserFactory(DrillParserWithCompoundIdConverter.FACTORY)
+            .build()) //
         .defaultSchema(context.getNewDefaultSchema()) //
         .operatorTable(context.getDrillOperatorTable()) //
         .traitDefs(traitDefs) //
@@ -92,14 +101,15 @@ public class DrillSqlWorker {
         .ruleSets(getRules(context)) //
         .costFactory(costFactory) //
         .executor(new DrillConstExecutor(context.getFunctionRegistry(), context))
+        .typeSystem(DrillRelDataTypeSystem.DRILL_REL_DATATYPE_SYSTEM) //
         .build();
     this.planner = Frameworks.getPlanner(config);
     HepProgramBuilder builder = new HepProgramBuilder();
     builder.addRuleClass(ReduceExpressionsRule.class);
-    builder.addRuleClass(WindowedAggSplitterRule.class);
+    builder.addRuleClass(ProjectToWindowRule.class);
     this.hepPlanner = new HepPlanner(builder.build());
     hepPlanner.addRule(ReduceExpressionsRule.CALC_INSTANCE);
-    hepPlanner.addRule(WindowedAggSplitterRule.PROJECT);
+    hepPlanner.addRule(ProjectToWindowRule.PROJECT);
   }
 
   private RuleSet[] getRules(QueryContext context) {
@@ -121,6 +131,7 @@ public class DrillSqlWorker {
   public PhysicalPlan getPlan(String sql, Pointer<String> textPlan) throws ForemanSetupException {
     SqlNode sqlNode;
     try {
+      injector.injectChecked(context.getExecutionControls(), "sql-parsing", ForemanSetupException.class);
       sqlNode = planner.parse(sql);
     } catch (SqlParseException e) {
       throw new QueryInputException("Failure parsing SQL. " + e.getMessage(), e);
@@ -152,14 +163,15 @@ public class DrillSqlWorker {
       handler = new DefaultSqlHandler(config, textPlan);
     }
 
-    try{
+    try {
       return handler.getPlan(sqlNode);
-    }catch(ValidationException e){
-      throw new QueryInputException("Failure validating SQL. " + e.getMessage(), e);
+    } catch(ValidationException e) {
+      String errorMessage = e.getCause() != null ? e.getCause().getMessage() : e.getMessage();
+      throw UserException.parseError(e).message(errorMessage).build();
+    } catch (AccessControlException e) {
+      throw UserException.permissionError(e).build();
     } catch (IOException | RelConversionException e) {
       throw new QueryInputException("Failure handling SQL.", e);
     }
-
   }
-
 }

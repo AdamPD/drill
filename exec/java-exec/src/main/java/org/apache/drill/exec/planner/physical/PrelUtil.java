@@ -23,7 +23,6 @@ import java.util.Iterator;
 import java.util.List;
 import java.util.Set;
 
-import org.apache.drill.common.expression.CastExpression;
 import org.apache.drill.common.expression.ExpressionPosition;
 import org.apache.drill.common.expression.FieldReference;
 import org.apache.drill.common.expression.FunctionCall;
@@ -33,32 +32,26 @@ import org.apache.drill.common.expression.PathSegment.ArraySegment;
 import org.apache.drill.common.expression.PathSegment.NameSegment;
 import org.apache.drill.common.expression.SchemaPath;
 import org.apache.drill.common.logical.data.Order.Ordering;
-import org.apache.drill.common.types.TypeProtos.MinorType;
-import org.apache.drill.common.types.Types;
-import org.apache.drill.exec.compile.sig.MappingSet;
-import org.apache.drill.exec.expr.ClassGenerator;
-import org.apache.drill.exec.expr.ClassGenerator.HoldingContainer;
-import org.apache.drill.exec.expr.fn.FunctionGenerationHelper;
-import org.apache.drill.exec.expr.fn.FunctionImplementationRegistry;
 import org.apache.drill.exec.planner.physical.DrillDistributionTrait.DistributionField;
 import org.apache.drill.exec.record.BatchSchema.SelectionVectorMode;
-import org.eigenbase.rel.RelCollation;
-import org.eigenbase.rel.RelFieldCollation;
-import org.eigenbase.rel.RelNode;
-import org.eigenbase.relopt.RelOptCluster;
-import org.eigenbase.relopt.RelOptPlanner;
-import org.eigenbase.relopt.RelOptRuleCall;
-import org.eigenbase.relopt.RelTraitSet;
-import org.eigenbase.reltype.RelDataType;
-import org.eigenbase.reltype.RelDataTypeFactory;
-import org.eigenbase.reltype.RelDataTypeField;
-import org.eigenbase.rex.RexCall;
-import org.eigenbase.rex.RexInputRef;
-import org.eigenbase.rex.RexLiteral;
-import org.eigenbase.rex.RexLocalRef;
-import org.eigenbase.rex.RexNode;
-import org.eigenbase.rex.RexShuttle;
-import org.eigenbase.rex.RexVisitorImpl;
+
+import org.apache.calcite.plan.RelOptPlanner;
+import org.apache.calcite.rel.RelCollation;
+import org.apache.calcite.rel.RelFieldCollation;
+import org.apache.calcite.rel.RelNode;
+import org.apache.calcite.plan.RelOptCluster;
+import org.apache.calcite.plan.RelOptRuleCall;
+import org.apache.calcite.plan.RelTraitSet;
+import org.apache.calcite.rel.type.RelDataType;
+import org.apache.calcite.rel.type.RelDataTypeFactory;
+import org.apache.calcite.rel.type.RelDataTypeField;
+import org.apache.calcite.rex.RexCall;
+import org.apache.calcite.rex.RexInputRef;
+import org.apache.calcite.rex.RexLiteral;
+import org.apache.calcite.rex.RexLocalRef;
+import org.apache.calcite.rex.RexNode;
+import org.apache.calcite.rex.RexShuttle;
+import org.apache.calcite.rex.RexVisitorImpl;
 
 import com.carrotsearch.hppc.IntIntOpenHashMap;
 import com.google.common.collect.ImmutableList;
@@ -66,10 +59,6 @@ import com.google.common.collect.Lists;
 import com.google.common.collect.Sets;
 
 public class PrelUtil {
-
-  public static final String HASH_EXPR_NAME = "E_X_P_R_H_A_S_H_F_I_E_L_D";
-  private static final String HASH64_FUNCTION_NAME = "hash64";
-  private static final String HASH64_DOUBLE_FUNCTION_NAME = "hash64AsDouble";
 
   public static List<Ordering> getOrdering(RelCollation collation, RelDataType rowType) {
     List<Ordering> orderExpr = Lists.newArrayList();
@@ -84,40 +73,6 @@ public class PrelUtil {
     return orderExpr;
   }
 
-  /*
-   * Return a hash expression :  (int) hash(field1, hash(field2, hash(field3, 0)));
-   */
-  public static LogicalExpression getHashExpression(List<LogicalExpression> fields, boolean hashAsDouble){
-    assert fields.size() > 0;
-
-    String functionName = hashAsDouble ? HASH64_DOUBLE_FUNCTION_NAME : HASH64_FUNCTION_NAME;
-    FunctionCall func = new FunctionCall(functionName,  ImmutableList.of(fields.get(0)), ExpressionPosition.UNKNOWN);
-    for (int i = 1; i<fields.size(); i++) {
-      func = new FunctionCall(functionName,  ImmutableList.of(fields.get(i), func), ExpressionPosition.UNKNOWN);
-    }
-
-    return new CastExpression(func, Types.required(MinorType.INT), ExpressionPosition.UNKNOWN);
-
-  }
-
-  public static LogicalExpression getHashExpression(List<DistributionField> fields, RelDataType rowType) {
-    assert fields.size() > 0;
-
-    final List<String> childFields = rowType.getFieldNames();
-
-    // If we already included a field with hash - no need to calculate hash further down
-    if ( childFields.contains(HASH_EXPR_NAME)) {
-      return new FieldReference(HASH_EXPR_NAME);
-    }
-
-    final List<LogicalExpression> expressions = new ArrayList<LogicalExpression>(childFields.size());
-    for(int i =0; i < fields.size(); i++){
-      expressions.add(new FieldReference(childFields.get(fields.get(i).getFieldId()), ExpressionPosition.UNKNOWN));
-    }
-
-    // for distribution always hash as double
-    return getHashExpression(expressions, true);
-  }
 
   public static Iterator<Prel> iter(RelNode... nodes) {
     return (Iterator<Prel>) (Object) Arrays.asList(nodes).iterator();

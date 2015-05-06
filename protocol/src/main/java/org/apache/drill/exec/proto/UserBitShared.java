@@ -236,6 +236,10 @@ public final class UserBitShared {
      * <code>FAILED = 5;</code>
      */
     FAILED(5, 5),
+    /**
+     * <code>CANCELLATION_REQUESTED = 6;</code>
+     */
+    CANCELLATION_REQUESTED(6, 6),
     ;
 
     /**
@@ -262,6 +266,10 @@ public final class UserBitShared {
      * <code>FAILED = 5;</code>
      */
     public static final int FAILED_VALUE = 5;
+    /**
+     * <code>CANCELLATION_REQUESTED = 6;</code>
+     */
+    public static final int CANCELLATION_REQUESTED_VALUE = 6;
 
 
     public final int getNumber() { return value; }
@@ -274,6 +282,7 @@ public final class UserBitShared {
         case 3: return FINISHED;
         case 4: return CANCELLED;
         case 5: return FAILED;
+        case 6: return CANCELLATION_REQUESTED;
         default: return null;
       }
     }
@@ -474,6 +483,10 @@ public final class UserBitShared {
      * <code>NESTED_LOOP_JOIN = 35;</code>
      */
     NESTED_LOOP_JOIN(35, 35),
+    /**
+     * <code>AVRO_SUB_SCAN = 36;</code>
+     */
+    AVRO_SUB_SCAN(36, 36),
     ;
 
     /**
@@ -621,10 +634,13 @@ public final class UserBitShared {
      */
     public static final int NESTED_LOOP_JOIN_VALUE = 35;
     /**
-     * <code>EMPTY_ROW_GROUP_SCAN = 36;</code>
+     * <code>AVRO_SUB_SCAN = 36;</code>
      */
-    public static final int EMPTY_ROW_GROUP_SCAN_VALUE = 36;
-
+    public static final int AVRO_SUB_SCAN_VALUE = 36;
+    /**
+     * <code>EMPTY_ROW_GROUP_SCAN = 37;</code>
+     */
+    public static final int EMPTY_ROW_GROUP_SCAN_VALUE = 37;
 
     public final int getNumber() { return value; }
 
@@ -666,6 +682,7 @@ public final class UserBitShared {
         case 33: return HBASE_SUB_SCAN;
         case 34: return WINDOW;
         case 35: return NESTED_LOOP_JOIN;
+        case 36: return AVRO_SUB_SCAN;
         default: return null;
       }
     }
@@ -1709,15 +1726,15 @@ public final class UserBitShared {
      */
     org.apache.drill.exec.proto.CoordinationProtos.DrillbitEndpointOrBuilder getEndpointOrBuilder();
 
-    // optional int32 error_type = 3;
+    // optional .exec.shared.DrillPBError.ErrorType error_type = 3;
     /**
-     * <code>optional int32 error_type = 3;</code>
+     * <code>optional .exec.shared.DrillPBError.ErrorType error_type = 3;</code>
      */
     boolean hasErrorType();
     /**
-     * <code>optional int32 error_type = 3;</code>
+     * <code>optional .exec.shared.DrillPBError.ErrorType error_type = 3;</code>
      */
-    int getErrorType();
+    org.apache.drill.exec.proto.UserBitShared.DrillPBError.ErrorType getErrorType();
 
     // optional string message = 4;
     /**
@@ -1863,8 +1880,14 @@ public final class UserBitShared {
               break;
             }
             case 24: {
-              bitField0_ |= 0x00000004;
-              errorType_ = input.readInt32();
+              int rawValue = input.readEnum();
+              org.apache.drill.exec.proto.UserBitShared.DrillPBError.ErrorType value = org.apache.drill.exec.proto.UserBitShared.DrillPBError.ErrorType.valueOf(rawValue);
+              if (value == null) {
+                unknownFields.mergeVarintField(3, rawValue);
+              } else {
+                bitField0_ |= 0x00000004;
+                errorType_ = value;
+              }
               break;
             }
             case 34: {
@@ -1933,6 +1956,272 @@ public final class UserBitShared {
     @java.lang.Override
     public com.google.protobuf.Parser<DrillPBError> getParserForType() {
       return PARSER;
+    }
+
+    /**
+     * Protobuf enum {@code exec.shared.DrillPBError.ErrorType}
+     */
+    public enum ErrorType
+        implements com.google.protobuf.ProtocolMessageEnum {
+      /**
+       * <code>CONNECTION = 0;</code>
+       *
+       * <pre>
+       * equivalent to SQLClientInfoException
+       * - handshake version error
+       * - invalid schema
+       * </pre>
+       */
+      CONNECTION(0, 0),
+      /**
+       * <code>DATA_READ = 1;</code>
+       *
+       * <pre>
+       * equivalent to SQLRecoverableException
+       * - corrupt files: can't be read. FS read error
+       * - parsing error due to incomplete or incorrectly written records
+       * </pre>
+       */
+      DATA_READ(1, 1),
+      /**
+       * <code>DATA_WRITE = 2;</code>
+       *
+       * <pre>
+       * equivalent to SQLDataException
+       * - data type unsupported by format
+       * </pre>
+       */
+      DATA_WRITE(2, 2),
+      /**
+       * <code>FUNCTION = 3;</code>
+       *
+       * <pre>
+       * equivalent to SQLDataException
+       * - Casting errors
+       * - function not found for incoming types after implicit casting
+       * - Flatten misuse
+       * </pre>
+       */
+      FUNCTION(3, 3),
+      /**
+       * <code>PARSE = 4;</code>
+       *
+       * <pre>
+       * equivalent to SQLSyntaxErrorException
+       * - typos
+       * - missing table
+       * - SQL keyword misuse
+       * - function names/resolution
+       * </pre>
+       */
+      PARSE(4, 4),
+      /**
+       * <code>PERMISSION = 5;</code>
+       *
+       * <pre>
+       * equivalent to SQLInvalidAuthorizationSpecException
+       * </pre>
+       */
+      PERMISSION(5, 5),
+      /**
+       * <code>PLAN = 6;</code>
+       *
+       * <pre>
+       * equivalent to SQLNonTransientException
+       * </pre>
+       */
+      PLAN(6, 6),
+      /**
+       * <code>RESOURCE = 7;</code>
+       *
+       * <pre>
+       * equivalent to SQLRecoverableException or SQLTransientException
+       * - Recoverable: memory, disk
+       * - Transient: network
+       * </pre>
+       */
+      RESOURCE(7, 7),
+      /**
+       * <code>SYSTEM = 8;</code>
+       *
+       * <pre>
+       * equivalent to SQLNonTransientException.
+       * </pre>
+       */
+      SYSTEM(8, 8),
+      /**
+       * <code>UNSUPPORTED_OPERATION = 9;</code>
+       *
+       * <pre>
+       * equivalent to SQLFeatureNotSupportedException
+       * - type change
+       * - schema change
+       * </pre>
+       */
+      UNSUPPORTED_OPERATION(9, 9),
+      ;
+
+      /**
+       * <code>CONNECTION = 0;</code>
+       *
+       * <pre>
+       * equivalent to SQLClientInfoException
+       * - handshake version error
+       * - invalid schema
+       * </pre>
+       */
+      public static final int CONNECTION_VALUE = 0;
+      /**
+       * <code>DATA_READ = 1;</code>
+       *
+       * <pre>
+       * equivalent to SQLRecoverableException
+       * - corrupt files: can't be read. FS read error
+       * - parsing error due to incomplete or incorrectly written records
+       * </pre>
+       */
+      public static final int DATA_READ_VALUE = 1;
+      /**
+       * <code>DATA_WRITE = 2;</code>
+       *
+       * <pre>
+       * equivalent to SQLDataException
+       * - data type unsupported by format
+       * </pre>
+       */
+      public static final int DATA_WRITE_VALUE = 2;
+      /**
+       * <code>FUNCTION = 3;</code>
+       *
+       * <pre>
+       * equivalent to SQLDataException
+       * - Casting errors
+       * - function not found for incoming types after implicit casting
+       * - Flatten misuse
+       * </pre>
+       */
+      public static final int FUNCTION_VALUE = 3;
+      /**
+       * <code>PARSE = 4;</code>
+       *
+       * <pre>
+       * equivalent to SQLSyntaxErrorException
+       * - typos
+       * - missing table
+       * - SQL keyword misuse
+       * - function names/resolution
+       * </pre>
+       */
+      public static final int PARSE_VALUE = 4;
+      /**
+       * <code>PERMISSION = 5;</code>
+       *
+       * <pre>
+       * equivalent to SQLInvalidAuthorizationSpecException
+       * </pre>
+       */
+      public static final int PERMISSION_VALUE = 5;
+      /**
+       * <code>PLAN = 6;</code>
+       *
+       * <pre>
+       * equivalent to SQLNonTransientException
+       * </pre>
+       */
+      public static final int PLAN_VALUE = 6;
+      /**
+       * <code>RESOURCE = 7;</code>
+       *
+       * <pre>
+       * equivalent to SQLRecoverableException or SQLTransientException
+       * - Recoverable: memory, disk
+       * - Transient: network
+       * </pre>
+       */
+      public static final int RESOURCE_VALUE = 7;
+      /**
+       * <code>SYSTEM = 8;</code>
+       *
+       * <pre>
+       * equivalent to SQLNonTransientException.
+       * </pre>
+       */
+      public static final int SYSTEM_VALUE = 8;
+      /**
+       * <code>UNSUPPORTED_OPERATION = 9;</code>
+       *
+       * <pre>
+       * equivalent to SQLFeatureNotSupportedException
+       * - type change
+       * - schema change
+       * </pre>
+       */
+      public static final int UNSUPPORTED_OPERATION_VALUE = 9;
+
+
+      public final int getNumber() { return value; }
+
+      public static ErrorType valueOf(int value) {
+        switch (value) {
+          case 0: return CONNECTION;
+          case 1: return DATA_READ;
+          case 2: return DATA_WRITE;
+          case 3: return FUNCTION;
+          case 4: return PARSE;
+          case 5: return PERMISSION;
+          case 6: return PLAN;
+          case 7: return RESOURCE;
+          case 8: return SYSTEM;
+          case 9: return UNSUPPORTED_OPERATION;
+          default: return null;
+        }
+      }
+
+      public static com.google.protobuf.Internal.EnumLiteMap<ErrorType>
+          internalGetValueMap() {
+        return internalValueMap;
+      }
+      private static com.google.protobuf.Internal.EnumLiteMap<ErrorType>
+          internalValueMap =
+            new com.google.protobuf.Internal.EnumLiteMap<ErrorType>() {
+              public ErrorType findValueByNumber(int number) {
+                return ErrorType.valueOf(number);
+              }
+            };
+
+      public final com.google.protobuf.Descriptors.EnumValueDescriptor
+          getValueDescriptor() {
+        return getDescriptor().getValues().get(index);
+      }
+      public final com.google.protobuf.Descriptors.EnumDescriptor
+          getDescriptorForType() {
+        return getDescriptor();
+      }
+      public static final com.google.protobuf.Descriptors.EnumDescriptor
+          getDescriptor() {
+        return org.apache.drill.exec.proto.UserBitShared.DrillPBError.getDescriptor().getEnumTypes().get(0);
+      }
+
+      private static final ErrorType[] VALUES = values();
+
+      public static ErrorType valueOf(
+          com.google.protobuf.Descriptors.EnumValueDescriptor desc) {
+        if (desc.getType() != getDescriptor()) {
+          throw new java.lang.IllegalArgumentException(
+            "EnumValueDescriptor is not for this type.");
+        }
+        return VALUES[desc.getIndex()];
+      }
+
+      private final int index;
+      private final int value;
+
+      private ErrorType(int index, int value) {
+        this.index = index;
+        this.value = value;
+      }
+
+      // @@protoc_insertion_point(enum_scope:exec.shared.DrillPBError.ErrorType)
     }
 
     private int bitField0_;
@@ -2013,19 +2302,19 @@ public final class UserBitShared {
       return endpoint_;
     }
 
-    // optional int32 error_type = 3;
+    // optional .exec.shared.DrillPBError.ErrorType error_type = 3;
     public static final int ERROR_TYPE_FIELD_NUMBER = 3;
-    private int errorType_;
+    private org.apache.drill.exec.proto.UserBitShared.DrillPBError.ErrorType errorType_;
     /**
-     * <code>optional int32 error_type = 3;</code>
+     * <code>optional .exec.shared.DrillPBError.ErrorType error_type = 3;</code>
      */
     public boolean hasErrorType() {
       return ((bitField0_ & 0x00000004) == 0x00000004);
     }
     /**
-     * <code>optional int32 error_type = 3;</code>
+     * <code>optional .exec.shared.DrillPBError.ErrorType error_type = 3;</code>
      */
-    public int getErrorType() {
+    public org.apache.drill.exec.proto.UserBitShared.DrillPBError.ErrorType getErrorType() {
       return errorType_;
     }
 
@@ -2153,7 +2442,7 @@ public final class UserBitShared {
     private void initFields() {
       errorId_ = "";
       endpoint_ = org.apache.drill.exec.proto.CoordinationProtos.DrillbitEndpoint.getDefaultInstance();
-      errorType_ = 0;
+      errorType_ = org.apache.drill.exec.proto.UserBitShared.DrillPBError.ErrorType.CONNECTION;
       message_ = "";
       exception_ = org.apache.drill.exec.proto.UserBitShared.ExceptionWrapper.getDefaultInstance();
       parsingError_ = java.util.Collections.emptyList();
@@ -2177,7 +2466,7 @@ public final class UserBitShared {
         output.writeMessage(2, endpoint_);
       }
       if (((bitField0_ & 0x00000004) == 0x00000004)) {
-        output.writeInt32(3, errorType_);
+        output.writeEnum(3, errorType_.getNumber());
       }
       if (((bitField0_ & 0x00000008) == 0x00000008)) {
         output.writeBytes(4, getMessageBytes());
@@ -2207,7 +2496,7 @@ public final class UserBitShared {
       }
       if (((bitField0_ & 0x00000004) == 0x00000004)) {
         size += com.google.protobuf.CodedOutputStream
-          .computeInt32Size(3, errorType_);
+          .computeEnumSize(3, errorType_.getNumber());
       }
       if (((bitField0_ & 0x00000008) == 0x00000008)) {
         size += com.google.protobuf.CodedOutputStream
@@ -2348,7 +2637,7 @@ public final class UserBitShared {
           endpointBuilder_.clear();
         }
         bitField0_ = (bitField0_ & ~0x00000002);
-        errorType_ = 0;
+        errorType_ = org.apache.drill.exec.proto.UserBitShared.DrillPBError.ErrorType.CONNECTION;
         bitField0_ = (bitField0_ & ~0x00000004);
         message_ = "";
         bitField0_ = (bitField0_ & ~0x00000008);
@@ -2732,35 +3021,38 @@ public final class UserBitShared {
         return endpointBuilder_;
       }
 
-      // optional int32 error_type = 3;
-      private int errorType_ ;
+      // optional .exec.shared.DrillPBError.ErrorType error_type = 3;
+      private org.apache.drill.exec.proto.UserBitShared.DrillPBError.ErrorType errorType_ = org.apache.drill.exec.proto.UserBitShared.DrillPBError.ErrorType.CONNECTION;
       /**
-       * <code>optional int32 error_type = 3;</code>
+       * <code>optional .exec.shared.DrillPBError.ErrorType error_type = 3;</code>
        */
       public boolean hasErrorType() {
         return ((bitField0_ & 0x00000004) == 0x00000004);
       }
       /**
-       * <code>optional int32 error_type = 3;</code>
+       * <code>optional .exec.shared.DrillPBError.ErrorType error_type = 3;</code>
        */
-      public int getErrorType() {
+      public org.apache.drill.exec.proto.UserBitShared.DrillPBError.ErrorType getErrorType() {
         return errorType_;
       }
       /**
-       * <code>optional int32 error_type = 3;</code>
+       * <code>optional .exec.shared.DrillPBError.ErrorType error_type = 3;</code>
        */
-      public Builder setErrorType(int value) {
+      public Builder setErrorType(org.apache.drill.exec.proto.UserBitShared.DrillPBError.ErrorType value) {
+        if (value == null) {
+          throw new NullPointerException();
+        }
         bitField0_ |= 0x00000004;
         errorType_ = value;
         onChanged();
         return this;
       }
       /**
-       * <code>optional int32 error_type = 3;</code>
+       * <code>optional .exec.shared.DrillPBError.ErrorType error_type = 3;</code>
        */
       public Builder clearErrorType() {
         bitField0_ = (bitField0_ & ~0x00000004);
-        errorType_ = 0;
+        errorType_ = org.apache.drill.exec.proto.UserBitShared.DrillPBError.ErrorType.CONNECTION;
         onChanged();
         return this;
       }
@@ -15425,6 +15717,26 @@ public final class UserBitShared {
      * <code>optional .exec.DrillbitEndpoint endpoint = 9;</code>
      */
     org.apache.drill.exec.proto.CoordinationProtos.DrillbitEndpointOrBuilder getEndpointOrBuilder();
+
+    // optional int64 last_update = 10;
+    /**
+     * <code>optional int64 last_update = 10;</code>
+     */
+    boolean hasLastUpdate();
+    /**
+     * <code>optional int64 last_update = 10;</code>
+     */
+    long getLastUpdate();
+
+    // optional int64 last_progress = 11;
+    /**
+     * <code>optional int64 last_progress = 11;</code>
+     */
+    boolean hasLastProgress();
+    /**
+     * <code>optional int64 last_progress = 11;</code>
+     */
+    long getLastProgress();
   }
   /**
    * Protobuf type {@code exec.shared.MinorFragmentProfile}
@@ -15545,6 +15857,16 @@ public final class UserBitShared {
                 endpoint_ = subBuilder.buildPartial();
               }
               bitField0_ |= 0x00000080;
+              break;
+            }
+            case 80: {
+              bitField0_ |= 0x00000100;
+              lastUpdate_ = input.readInt64();
+              break;
+            }
+            case 88: {
+              bitField0_ |= 0x00000200;
+              lastProgress_ = input.readInt64();
               break;
             }
           }
@@ -15766,6 +16088,38 @@ public final class UserBitShared {
       return endpoint_;
     }
 
+    // optional int64 last_update = 10;
+    public static final int LAST_UPDATE_FIELD_NUMBER = 10;
+    private long lastUpdate_;
+    /**
+     * <code>optional int64 last_update = 10;</code>
+     */
+    public boolean hasLastUpdate() {
+      return ((bitField0_ & 0x00000100) == 0x00000100);
+    }
+    /**
+     * <code>optional int64 last_update = 10;</code>
+     */
+    public long getLastUpdate() {
+      return lastUpdate_;
+    }
+
+    // optional int64 last_progress = 11;
+    public static final int LAST_PROGRESS_FIELD_NUMBER = 11;
+    private long lastProgress_;
+    /**
+     * <code>optional int64 last_progress = 11;</code>
+     */
+    public boolean hasLastProgress() {
+      return ((bitField0_ & 0x00000200) == 0x00000200);
+    }
+    /**
+     * <code>optional int64 last_progress = 11;</code>
+     */
+    public long getLastProgress() {
+      return lastProgress_;
+    }
+
     private void initFields() {
       state_ = org.apache.drill.exec.proto.UserBitShared.FragmentState.SENDING;
       error_ = org.apache.drill.exec.proto.UserBitShared.DrillPBError.getDefaultInstance();
@@ -15776,6 +16130,8 @@ public final class UserBitShared {
       memoryUsed_ = 0L;
       maxMemoryUsed_ = 0L;
       endpoint_ = org.apache.drill.exec.proto.CoordinationProtos.DrillbitEndpoint.getDefaultInstance();
+      lastUpdate_ = 0L;
+      lastProgress_ = 0L;
     }
     private byte memoizedIsInitialized = -1;
     public final boolean isInitialized() {
@@ -15815,6 +16171,12 @@ public final class UserBitShared {
       }
       if (((bitField0_ & 0x00000080) == 0x00000080)) {
         output.writeMessage(9, endpoint_);
+      }
+      if (((bitField0_ & 0x00000100) == 0x00000100)) {
+        output.writeInt64(10, lastUpdate_);
+      }
+      if (((bitField0_ & 0x00000200) == 0x00000200)) {
+        output.writeInt64(11, lastProgress_);
       }
       getUnknownFields().writeTo(output);
     }
@@ -15860,6 +16222,14 @@ public final class UserBitShared {
       if (((bitField0_ & 0x00000080) == 0x00000080)) {
         size += com.google.protobuf.CodedOutputStream
           .computeMessageSize(9, endpoint_);
+      }
+      if (((bitField0_ & 0x00000100) == 0x00000100)) {
+        size += com.google.protobuf.CodedOutputStream
+          .computeInt64Size(10, lastUpdate_);
+      }
+      if (((bitField0_ & 0x00000200) == 0x00000200)) {
+        size += com.google.protobuf.CodedOutputStream
+          .computeInt64Size(11, lastProgress_);
       }
       size += getUnknownFields().getSerializedSize();
       memoizedSerializedSize = size;
@@ -16010,6 +16380,10 @@ public final class UserBitShared {
           endpointBuilder_.clear();
         }
         bitField0_ = (bitField0_ & ~0x00000100);
+        lastUpdate_ = 0L;
+        bitField0_ = (bitField0_ & ~0x00000200);
+        lastProgress_ = 0L;
+        bitField0_ = (bitField0_ & ~0x00000400);
         return this;
       }
 
@@ -16087,6 +16461,14 @@ public final class UserBitShared {
         } else {
           result.endpoint_ = endpointBuilder_.build();
         }
+        if (((from_bitField0_ & 0x00000200) == 0x00000200)) {
+          to_bitField0_ |= 0x00000100;
+        }
+        result.lastUpdate_ = lastUpdate_;
+        if (((from_bitField0_ & 0x00000400) == 0x00000400)) {
+          to_bitField0_ |= 0x00000200;
+        }
+        result.lastProgress_ = lastProgress_;
         result.bitField0_ = to_bitField0_;
         onBuilt();
         return result;
@@ -16152,6 +16534,12 @@ public final class UserBitShared {
         }
         if (other.hasEndpoint()) {
           mergeEndpoint(other.getEndpoint());
+        }
+        if (other.hasLastUpdate()) {
+          setLastUpdate(other.getLastUpdate());
+        }
+        if (other.hasLastProgress()) {
+          setLastProgress(other.getLastProgress());
         }
         this.mergeUnknownFields(other.getUnknownFields());
         return this;
@@ -16853,6 +17241,72 @@ public final class UserBitShared {
           endpoint_ = null;
         }
         return endpointBuilder_;
+      }
+
+      // optional int64 last_update = 10;
+      private long lastUpdate_ ;
+      /**
+       * <code>optional int64 last_update = 10;</code>
+       */
+      public boolean hasLastUpdate() {
+        return ((bitField0_ & 0x00000200) == 0x00000200);
+      }
+      /**
+       * <code>optional int64 last_update = 10;</code>
+       */
+      public long getLastUpdate() {
+        return lastUpdate_;
+      }
+      /**
+       * <code>optional int64 last_update = 10;</code>
+       */
+      public Builder setLastUpdate(long value) {
+        bitField0_ |= 0x00000200;
+        lastUpdate_ = value;
+        onChanged();
+        return this;
+      }
+      /**
+       * <code>optional int64 last_update = 10;</code>
+       */
+      public Builder clearLastUpdate() {
+        bitField0_ = (bitField0_ & ~0x00000200);
+        lastUpdate_ = 0L;
+        onChanged();
+        return this;
+      }
+
+      // optional int64 last_progress = 11;
+      private long lastProgress_ ;
+      /**
+       * <code>optional int64 last_progress = 11;</code>
+       */
+      public boolean hasLastProgress() {
+        return ((bitField0_ & 0x00000400) == 0x00000400);
+      }
+      /**
+       * <code>optional int64 last_progress = 11;</code>
+       */
+      public long getLastProgress() {
+        return lastProgress_;
+      }
+      /**
+       * <code>optional int64 last_progress = 11;</code>
+       */
+      public Builder setLastProgress(long value) {
+        bitField0_ |= 0x00000400;
+        lastProgress_ = value;
+        onChanged();
+        return this;
+      }
+      /**
+       * <code>optional int64 last_progress = 11;</code>
+       */
+      public Builder clearLastProgress() {
+        bitField0_ = (bitField0_ & ~0x00000400);
+        lastProgress_ = 0L;
+        onChanged();
+        return this;
       }
 
       // @@protoc_insertion_point(builder_scope:exec.shared.MinorFragmentProfile)
@@ -19615,103 +20069,111 @@ public final class UserBitShared {
       "s.proto\032\022Coordination.proto\032\017SchemaDef.p" +
       "roto\"$\n\017UserCredentials\022\021\n\tuser_name\030\001 \001" +
       "(\t\"\'\n\007QueryId\022\r\n\005part1\030\001 \001(\020\022\r\n\005part2\030\002 " +
-      "\001(\020\"\323\001\n\014DrillPBError\022\020\n\010error_id\030\001 \001(\t\022(" +
+      "\001(\020\"\235\003\n\014DrillPBError\022\020\n\010error_id\030\001 \001(\t\022(" +
       "\n\010endpoint\030\002 \001(\0132\026.exec.DrillbitEndpoint" +
-      "\022\022\n\nerror_type\030\003 \001(\005\022\017\n\007message\030\004 \001(\t\0220\n" +
-      "\texception\030\005 \001(\0132\035.exec.shared.Exception" +
-      "Wrapper\0220\n\rparsing_error\030\006 \003(\0132\031.exec.sh" +
-      "ared.ParsingError\"\246\001\n\020ExceptionWrapper\022\027",
-      "\n\017exception_class\030\001 \001(\t\022\017\n\007message\030\002 \001(\t" +
-      "\022:\n\013stack_trace\030\003 \003(\0132%.exec.shared.Stac" +
-      "kTraceElementWrapper\022,\n\005cause\030\004 \001(\0132\035.ex" +
-      "ec.shared.ExceptionWrapper\"\205\001\n\030StackTrac" +
-      "eElementWrapper\022\022\n\nclass_name\030\001 \001(\t\022\021\n\tf" +
-      "ile_name\030\002 \001(\t\022\023\n\013line_number\030\003 \001(\005\022\023\n\013m" +
-      "ethod_name\030\004 \001(\t\022\030\n\020is_native_method\030\005 \001" +
-      "(\010\"\\\n\014ParsingError\022\024\n\014start_column\030\002 \001(\005" +
-      "\022\021\n\tstart_row\030\003 \001(\005\022\022\n\nend_column\030\004 \001(\005\022" +
-      "\017\n\007end_row\030\005 \001(\005\"~\n\016RecordBatchDef\022\024\n\014re",
-      "cord_count\030\001 \001(\005\022+\n\005field\030\002 \003(\0132\034.exec.s" +
-      "hared.SerializedField\022)\n!carries_two_byt" +
-      "e_selection_vector\030\003 \001(\010\"\205\001\n\010NamePart\022(\n" +
-      "\004type\030\001 \001(\0162\032.exec.shared.NamePart.Type\022" +
-      "\014\n\004name\030\002 \001(\t\022$\n\005child\030\003 \001(\0132\025.exec.shar" +
-      "ed.NamePart\"\033\n\004Type\022\010\n\004NAME\020\000\022\t\n\005ARRAY\020\001" +
-      "\"\351\001\n\017SerializedField\022%\n\nmajor_type\030\001 \001(\013" +
-      "2\021.common.MajorType\022(\n\tname_part\030\002 \001(\0132\025" +
-      ".exec.shared.NamePart\022+\n\005child\030\003 \003(\0132\034.e" +
-      "xec.shared.SerializedField\022\023\n\013value_coun",
-      "t\030\004 \001(\005\022\027\n\017var_byte_length\030\005 \001(\005\022\023\n\013grou" +
-      "p_count\030\006 \001(\005\022\025\n\rbuffer_length\030\007 \001(\005\"7\n\n" +
-      "NodeStatus\022\017\n\007node_id\030\001 \001(\005\022\030\n\020memory_fo" +
-      "otprint\030\002 \001(\003\"\206\002\n\013QueryResult\0228\n\013query_s" +
-      "tate\030\001 \001(\0162#.exec.shared.QueryResult.Que" +
-      "ryState\022&\n\010query_id\030\002 \001(\0132\024.exec.shared." +
-      "QueryId\022(\n\005error\030\003 \003(\0132\031.exec.shared.Dri" +
-      "llPBError\"k\n\nQueryState\022\013\n\007PENDING\020\000\022\013\n\007" +
-      "RUNNING\020\001\022\r\n\tCOMPLETED\020\002\022\014\n\010CANCELED\020\003\022\n" +
-      "\n\006FAILED\020\004\022\032\n\026CANCELLATION_REQUESTED\020\005\"p",
-      "\n\tQueryData\022&\n\010query_id\030\001 \001(\0132\024.exec.sha" +
-      "red.QueryId\022\021\n\trow_count\030\002 \001(\005\022(\n\003def\030\003 " +
-      "\001(\0132\033.exec.shared.RecordBatchDef\"\224\001\n\tQue" +
-      "ryInfo\022\r\n\005query\030\001 \001(\t\022\r\n\005start\030\002 \001(\003\0222\n\005" +
-      "state\030\003 \001(\0162#.exec.shared.QueryResult.Qu" +
-      "eryState\022\014\n\004user\030\004 \001(\t\022\'\n\007foreman\030\005 \001(\0132" +
-      "\026.exec.DrillbitEndpoint\"\336\002\n\014QueryProfile" +
-      "\022 \n\002id\030\001 \001(\0132\024.exec.shared.QueryId\022$\n\004ty" +
-      "pe\030\002 \001(\0162\026.exec.shared.QueryType\022\r\n\005star" +
-      "t\030\003 \001(\003\022\013\n\003end\030\004 \001(\003\022\r\n\005query\030\005 \001(\t\022\014\n\004p",
-      "lan\030\006 \001(\t\022\'\n\007foreman\030\007 \001(\0132\026.exec.Drillb" +
-      "itEndpoint\0222\n\005state\030\010 \001(\0162#.exec.shared." +
-      "QueryResult.QueryState\022\027\n\017total_fragment" +
-      "s\030\t \001(\005\022\032\n\022finished_fragments\030\n \001(\005\022;\n\020f" +
-      "ragment_profile\030\013 \003(\0132!.exec.shared.Majo" +
-      "rFragmentProfile\"t\n\024MajorFragmentProfile" +
-      "\022\031\n\021major_fragment_id\030\001 \001(\005\022A\n\026minor_fra" +
-      "gment_profile\030\002 \003(\0132!.exec.shared.MinorF" +
-      "ragmentProfile\"\274\002\n\024MinorFragmentProfile\022" +
-      ")\n\005state\030\001 \001(\0162\032.exec.shared.FragmentSta",
-      "te\022(\n\005error\030\002 \001(\0132\031.exec.shared.DrillPBE" +
-      "rror\022\031\n\021minor_fragment_id\030\003 \001(\005\0226\n\020opera" +
-      "tor_profile\030\004 \003(\0132\034.exec.shared.Operator" +
-      "Profile\022\022\n\nstart_time\030\005 \001(\003\022\020\n\010end_time\030" +
-      "\006 \001(\003\022\023\n\013memory_used\030\007 \001(\003\022\027\n\017max_memory" +
-      "_used\030\010 \001(\003\022(\n\010endpoint\030\t \001(\0132\026.exec.Dri" +
-      "llbitEndpoint\"\377\001\n\017OperatorProfile\0221\n\rinp" +
-      "ut_profile\030\001 \003(\0132\032.exec.shared.StreamPro" +
-      "file\022\023\n\013operator_id\030\003 \001(\005\022\025\n\roperator_ty" +
-      "pe\030\004 \001(\005\022\023\n\013setup_nanos\030\005 \001(\003\022\025\n\rprocess",
-      "_nanos\030\006 \001(\003\022#\n\033peak_local_memory_alloca" +
-      "ted\030\007 \001(\003\022(\n\006metric\030\010 \003(\0132\030.exec.shared." +
-      "MetricValue\022\022\n\nwait_nanos\030\t \001(\003\"B\n\rStrea" +
-      "mProfile\022\017\n\007records\030\001 \001(\003\022\017\n\007batches\030\002 \001" +
-      "(\003\022\017\n\007schemas\030\003 \001(\003\"J\n\013MetricValue\022\021\n\tme" +
-      "tric_id\030\001 \001(\005\022\022\n\nlong_value\030\002 \001(\003\022\024\n\014dou" +
-      "ble_value\030\003 \001(\001*5\n\nRpcChannel\022\017\n\013BIT_CON" +
-      "TROL\020\000\022\014\n\010BIT_DATA\020\001\022\010\n\004USER\020\002*/\n\tQueryT" +
-      "ype\022\007\n\003SQL\020\001\022\013\n\007LOGICAL\020\002\022\014\n\010PHYSICAL\020\003*" +
-      "k\n\rFragmentState\022\013\n\007SENDING\020\000\022\027\n\023AWAITIN",
-      "G_ALLOCATION\020\001\022\013\n\007RUNNING\020\002\022\014\n\010FINISHED\020" +
-      "\003\022\r\n\tCANCELLED\020\004\022\n\n\006FAILED\020\005*\264\005\n\020CoreOpe" +
-      "ratorType\022\021\n\rSINGLE_SENDER\020\000\022\024\n\020BROADCAS" +
-      "T_SENDER\020\001\022\n\n\006FILTER\020\002\022\022\n\016HASH_AGGREGATE" +
-      "\020\003\022\r\n\tHASH_JOIN\020\004\022\016\n\nMERGE_JOIN\020\005\022\031\n\025HAS" +
-      "H_PARTITION_SENDER\020\006\022\t\n\005LIMIT\020\007\022\024\n\020MERGI" +
-      "NG_RECEIVER\020\010\022\034\n\030ORDERED_PARTITION_SENDE" +
-      "R\020\t\022\013\n\007PROJECT\020\n\022\026\n\022UNORDERED_RECEIVER\020\013" +
-      "\022\020\n\014RANGE_SENDER\020\014\022\n\n\006SCREEN\020\r\022\034\n\030SELECT" +
-      "ION_VECTOR_REMOVER\020\016\022\027\n\023STREAMING_AGGREG",
-      "ATE\020\017\022\016\n\nTOP_N_SORT\020\020\022\021\n\rEXTERNAL_SORT\020\021" +
-      "\022\t\n\005TRACE\020\022\022\t\n\005UNION\020\023\022\014\n\010OLD_SORT\020\024\022\032\n\026" +
-      "PARQUET_ROW_GROUP_SCAN\020\025\022\021\n\rHIVE_SUB_SCA" +
-      "N\020\026\022\025\n\021SYSTEM_TABLE_SCAN\020\027\022\021\n\rMOCK_SUB_S" +
-      "CAN\020\030\022\022\n\016PARQUET_WRITER\020\031\022\023\n\017DIRECT_SUB_" +
-      "SCAN\020\032\022\017\n\013TEXT_WRITER\020\033\022\021\n\rTEXT_SUB_SCAN" +
-      "\020\034\022\021\n\rJSON_SUB_SCAN\020\035\022\030\n\024INFO_SCHEMA_SUB" +
-      "_SCAN\020\036\022\023\n\017COMPLEX_TO_JSON\020\037\022\025\n\021PRODUCER" +
-      "_CONSUMER\020 \022\022\n\016HBASE_SUB_SCAN\020!\022\n\n\006WINDO" +
-      "W\020\"B.\n\033org.apache.drill.exec.protoB\rUser",
-      "BitSharedH\001"
+      "\0227\n\nerror_type\030\003 \001(\0162#.exec.shared.Drill" +
+      "PBError.ErrorType\022\017\n\007message\030\004 \001(\t\0220\n\tex" +
+      "ception\030\005 \001(\0132\035.exec.shared.ExceptionWra" +
+      "pper\0220\n\rparsing_error\030\006 \003(\0132\031.exec.share",
+      "d.ParsingError\"\242\001\n\tErrorType\022\016\n\nCONNECTI" +
+      "ON\020\000\022\r\n\tDATA_READ\020\001\022\016\n\nDATA_WRITE\020\002\022\014\n\010F" +
+      "UNCTION\020\003\022\t\n\005PARSE\020\004\022\016\n\nPERMISSION\020\005\022\010\n\004" +
+      "PLAN\020\006\022\014\n\010RESOURCE\020\007\022\n\n\006SYSTEM\020\010\022\031\n\025UNSU" +
+      "PPORTED_OPERATION\020\t\"\246\001\n\020ExceptionWrapper" +
+      "\022\027\n\017exception_class\030\001 \001(\t\022\017\n\007message\030\002 \001" +
+      "(\t\022:\n\013stack_trace\030\003 \003(\0132%.exec.shared.St" +
+      "ackTraceElementWrapper\022,\n\005cause\030\004 \001(\0132\035." +
+      "exec.shared.ExceptionWrapper\"\205\001\n\030StackTr" +
+      "aceElementWrapper\022\022\n\nclass_name\030\001 \001(\t\022\021\n",
+      "\tfile_name\030\002 \001(\t\022\023\n\013line_number\030\003 \001(\005\022\023\n" +
+      "\013method_name\030\004 \001(\t\022\030\n\020is_native_method\030\005" +
+      " \001(\010\"\\\n\014ParsingError\022\024\n\014start_column\030\002 \001" +
+      "(\005\022\021\n\tstart_row\030\003 \001(\005\022\022\n\nend_column\030\004 \001(" +
+      "\005\022\017\n\007end_row\030\005 \001(\005\"~\n\016RecordBatchDef\022\024\n\014" +
+      "record_count\030\001 \001(\005\022+\n\005field\030\002 \003(\0132\034.exec" +
+      ".shared.SerializedField\022)\n!carries_two_b" +
+      "yte_selection_vector\030\003 \001(\010\"\205\001\n\010NamePart\022" +
+      "(\n\004type\030\001 \001(\0162\032.exec.shared.NamePart.Typ" +
+      "e\022\014\n\004name\030\002 \001(\t\022$\n\005child\030\003 \001(\0132\025.exec.sh",
+      "ared.NamePart\"\033\n\004Type\022\010\n\004NAME\020\000\022\t\n\005ARRAY" +
+      "\020\001\"\351\001\n\017SerializedField\022%\n\nmajor_type\030\001 \001" +
+      "(\0132\021.common.MajorType\022(\n\tname_part\030\002 \001(\013" +
+      "2\025.exec.shared.NamePart\022+\n\005child\030\003 \003(\0132\034" +
+      ".exec.shared.SerializedField\022\023\n\013value_co" +
+      "unt\030\004 \001(\005\022\027\n\017var_byte_length\030\005 \001(\005\022\023\n\013gr" +
+      "oup_count\030\006 \001(\005\022\025\n\rbuffer_length\030\007 \001(\005\"7" +
+      "\n\nNodeStatus\022\017\n\007node_id\030\001 \001(\005\022\030\n\020memory_" +
+      "footprint\030\002 \001(\003\"\206\002\n\013QueryResult\0228\n\013query" +
+      "_state\030\001 \001(\0162#.exec.shared.QueryResult.Q",
+      "ueryState\022&\n\010query_id\030\002 \001(\0132\024.exec.share" +
+      "d.QueryId\022(\n\005error\030\003 \003(\0132\031.exec.shared.D" +
+      "rillPBError\"k\n\nQueryState\022\013\n\007PENDING\020\000\022\013" +
+      "\n\007RUNNING\020\001\022\r\n\tCOMPLETED\020\002\022\014\n\010CANCELED\020\003" +
+      "\022\n\n\006FAILED\020\004\022\032\n\026CANCELLATION_REQUESTED\020\005" +
+      "\"p\n\tQueryData\022&\n\010query_id\030\001 \001(\0132\024.exec.s" +
+      "hared.QueryId\022\021\n\trow_count\030\002 \001(\005\022(\n\003def\030" +
+      "\003 \001(\0132\033.exec.shared.RecordBatchDef\"\224\001\n\tQ" +
+      "ueryInfo\022\r\n\005query\030\001 \001(\t\022\r\n\005start\030\002 \001(\003\0222" +
+      "\n\005state\030\003 \001(\0162#.exec.shared.QueryResult.",
+      "QueryState\022\014\n\004user\030\004 \001(\t\022\'\n\007foreman\030\005 \001(" +
+      "\0132\026.exec.DrillbitEndpoint\"\336\002\n\014QueryProfi" +
+      "le\022 \n\002id\030\001 \001(\0132\024.exec.shared.QueryId\022$\n\004" +
+      "type\030\002 \001(\0162\026.exec.shared.QueryType\022\r\n\005st" +
+      "art\030\003 \001(\003\022\013\n\003end\030\004 \001(\003\022\r\n\005query\030\005 \001(\t\022\014\n" +
+      "\004plan\030\006 \001(\t\022\'\n\007foreman\030\007 \001(\0132\026.exec.Dril" +
+      "lbitEndpoint\0222\n\005state\030\010 \001(\0162#.exec.share" +
+      "d.QueryResult.QueryState\022\027\n\017total_fragme" +
+      "nts\030\t \001(\005\022\032\n\022finished_fragments\030\n \001(\005\022;\n" +
+      "\020fragment_profile\030\013 \003(\0132!.exec.shared.Ma",
+      "jorFragmentProfile\"t\n\024MajorFragmentProfi" +
+      "le\022\031\n\021major_fragment_id\030\001 \001(\005\022A\n\026minor_f" +
+      "ragment_profile\030\002 \003(\0132!.exec.shared.Mino" +
+      "rFragmentProfile\"\350\002\n\024MinorFragmentProfil" +
+      "e\022)\n\005state\030\001 \001(\0162\032.exec.shared.FragmentS" +
+      "tate\022(\n\005error\030\002 \001(\0132\031.exec.shared.DrillP" +
+      "BError\022\031\n\021minor_fragment_id\030\003 \001(\005\0226\n\020ope" +
+      "rator_profile\030\004 \003(\0132\034.exec.shared.Operat" +
+      "orProfile\022\022\n\nstart_time\030\005 \001(\003\022\020\n\010end_tim" +
+      "e\030\006 \001(\003\022\023\n\013memory_used\030\007 \001(\003\022\027\n\017max_memo",
+      "ry_used\030\010 \001(\003\022(\n\010endpoint\030\t \001(\0132\026.exec.D" +
+      "rillbitEndpoint\022\023\n\013last_update\030\n \001(\003\022\025\n\r" +
+      "last_progress\030\013 \001(\003\"\377\001\n\017OperatorProfile\022" +
+      "1\n\rinput_profile\030\001 \003(\0132\032.exec.shared.Str" +
+      "eamProfile\022\023\n\013operator_id\030\003 \001(\005\022\025\n\ropera" +
+      "tor_type\030\004 \001(\005\022\023\n\013setup_nanos\030\005 \001(\003\022\025\n\rp" +
+      "rocess_nanos\030\006 \001(\003\022#\n\033peak_local_memory_" +
+      "allocated\030\007 \001(\003\022(\n\006metric\030\010 \003(\0132\030.exec.s" +
+      "hared.MetricValue\022\022\n\nwait_nanos\030\t \001(\003\"B\n" +
+      "\rStreamProfile\022\017\n\007records\030\001 \001(\003\022\017\n\007batch",
+      "es\030\002 \001(\003\022\017\n\007schemas\030\003 \001(\003\"J\n\013MetricValue" +
+      "\022\021\n\tmetric_id\030\001 \001(\005\022\022\n\nlong_value\030\002 \001(\003\022" +
+      "\024\n\014double_value\030\003 \001(\001*5\n\nRpcChannel\022\017\n\013B" +
+      "IT_CONTROL\020\000\022\014\n\010BIT_DATA\020\001\022\010\n\004USER\020\002*/\n\t" +
+      "QueryType\022\007\n\003SQL\020\001\022\013\n\007LOGICAL\020\002\022\014\n\010PHYSI" +
+      "CAL\020\003*\207\001\n\rFragmentState\022\013\n\007SENDING\020\000\022\027\n\023" +
+      "AWAITING_ALLOCATION\020\001\022\013\n\007RUNNING\020\002\022\014\n\010FI" +
+      "NISHED\020\003\022\r\n\tCANCELLED\020\004\022\n\n\006FAILED\020\005\022\032\n\026C" +
+      "ANCELLATION_REQUESTED\020\006*\335\005\n\020CoreOperator" +
+      "Type\022\021\n\rSINGLE_SENDER\020\000\022\024\n\020BROADCAST_SEN",
+      "DER\020\001\022\n\n\006FILTER\020\002\022\022\n\016HASH_AGGREGATE\020\003\022\r\n" +
+      "\tHASH_JOIN\020\004\022\016\n\nMERGE_JOIN\020\005\022\031\n\025HASH_PAR" +
+      "TITION_SENDER\020\006\022\t\n\005LIMIT\020\007\022\024\n\020MERGING_RE" +
+      "CEIVER\020\010\022\034\n\030ORDERED_PARTITION_SENDER\020\t\022\013" +
+      "\n\007PROJECT\020\n\022\026\n\022UNORDERED_RECEIVER\020\013\022\020\n\014R" +
+      "ANGE_SENDER\020\014\022\n\n\006SCREEN\020\r\022\034\n\030SELECTION_V" +
+      "ECTOR_REMOVER\020\016\022\027\n\023STREAMING_AGGREGATE\020\017" +
+      "\022\016\n\nTOP_N_SORT\020\020\022\021\n\rEXTERNAL_SORT\020\021\022\t\n\005T" +
+      "RACE\020\022\022\t\n\005UNION\020\023\022\014\n\010OLD_SORT\020\024\022\032\n\026PARQU" +
+      "ET_ROW_GROUP_SCAN\020\025\022\021\n\rHIVE_SUB_SCAN\020\026\022\025",
+      "\n\021SYSTEM_TABLE_SCAN\020\027\022\021\n\rMOCK_SUB_SCAN\020\030" +
+      "\022\022\n\016PARQUET_WRITER\020\031\022\023\n\017DIRECT_SUB_SCAN\020" +
+      "\032\022\017\n\013TEXT_WRITER\020\033\022\021\n\rTEXT_SUB_SCAN\020\034\022\021\n" +
+      "\rJSON_SUB_SCAN\020\035\022\030\n\024INFO_SCHEMA_SUB_SCAN" +
+      "\020\036\022\023\n\017COMPLEX_TO_JSON\020\037\022\025\n\021PRODUCER_CONS" +
+      "UMER\020 \022\022\n\016HBASE_SUB_SCAN\020!\022\n\n\006WINDOW\020\"\022\024" +
+      "\n\020NESTED_LOOP_JOIN\020#\022\021\n\rAVRO_SUB_SCAN\020$B" +
+      ".\n\033org.apache.drill.exec.protoB\rUserBitS" +
+      "haredH\001"
     };
     com.google.protobuf.Descriptors.FileDescriptor.InternalDescriptorAssigner assigner =
       new com.google.protobuf.Descriptors.FileDescriptor.InternalDescriptorAssigner() {
@@ -19813,7 +20275,7 @@ public final class UserBitShared {
           internal_static_exec_shared_MinorFragmentProfile_fieldAccessorTable = new
             com.google.protobuf.GeneratedMessage.FieldAccessorTable(
               internal_static_exec_shared_MinorFragmentProfile_descriptor,
-              new java.lang.String[] { "State", "Error", "MinorFragmentId", "OperatorProfile", "StartTime", "EndTime", "MemoryUsed", "MaxMemoryUsed", "Endpoint", });
+              new java.lang.String[] { "State", "Error", "MinorFragmentId", "OperatorProfile", "StartTime", "EndTime", "MemoryUsed", "MaxMemoryUsed", "Endpoint", "LastUpdate", "LastProgress", });
           internal_static_exec_shared_OperatorProfile_descriptor =
             getDescriptor().getMessageTypes().get(16);
           internal_static_exec_shared_OperatorProfile_fieldAccessorTable = new

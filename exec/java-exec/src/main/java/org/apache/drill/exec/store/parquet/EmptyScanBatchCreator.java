@@ -32,9 +32,11 @@ import java.util.List;
 
 public class EmptyScanBatchCreator implements BatchCreator<EmptyRowGroupScan> {
     @Override
-    public RecordBatch getBatch(FragmentContext context, EmptyRowGroupScan rowGroupScan, List<RecordBatch> children) throws ExecutionSetupException {
-        OperatorContext oContext = new OperatorContext(rowGroupScan, context,
-                false /* ScanBatch is not subject to fragment memory limit */);
+    public ScanBatch getBatch(FragmentContext context, EmptyRowGroupScan rowGroupScan, List<RecordBatch> children) throws ExecutionSetupException {
+        OperatorContext oContext = context.newOperatorContext(rowGroupScan, false /*
+                                                                                   * ScanBatch is not subject to fragment
+                                                                                   * memory limit
+                                                                                   */);
 
         List<String[]> partitionColumns = Lists.newArrayList();
         List<Integer> selectedPartitionColumns = Lists.newArrayList();

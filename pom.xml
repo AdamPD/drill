@@ -21,7 +21,7 @@
 
   <groupId>org.apache.drill</groupId>
   <artifactId>drill-root</artifactId>
-  <version>0.9.0-SNAPSHOT</version>
+  <version>1.0.0-SNAPSHOT</version>
   <packaging>pom</packaging>
 
   <name>Apache Drill Root POM</name>
@@ -32,7 +32,7 @@
     <target.gen.source.path>${project.basedir}/target/generated-sources</target.gen.source.path>
     <proto.cas.path>${project.basedir}/src/main/protobuf/</proto.cas.path>
     <dep.junit.version>4.11</dep.junit.version>
-    <dep.slf4j.version>1.7.5</dep.slf4j.version>
+    <dep.slf4j.version>1.7.6</dep.slf4j.version>
     <parquet.version>1.6.0rc3-drill-r0.1</parquet.version>
   </properties>
 
@@ -90,7 +90,7 @@
     </repository>
 
     <repository>
-      <!-- Keep until we move back to released optiq versions. -->
+      <!-- Keep until we move back to released calcite versions. -->
       <id>mapr-drill-optiq-snapshots</id>
       <name>MapR Drill Optiq Snapshots</name>
       <url>http://repository.mapr.com/nexus/content/repositories/drill-optiq/</url>
@@ -365,7 +365,7 @@
           <artifactId>maven-surefire-plugin</artifactId>
           <version>2.17</version>
           <configuration>
-            <argLine>-Xms512m -Xmx2g -Ddrill.exec.http.enabled=false
+            <argLine>-Xms512m -Xmx3g -Ddrill.exec.http.enabled=false
               -Ddrill.exec.sys.store.provider.local.write=false
               -Dorg.apache.drill.exec.server.Drillbit.system_options="org.apache.drill.exec.compile.ClassTransformer.scalar_replacement=on"
               -XX:MaxPermSize=256M -XX:MaxDirectMemorySize=3072M
@@ -480,7 +480,7 @@
     <dependency>
       <groupId>io.netty</groupId>
       <artifactId>netty-handler</artifactId>
-      <version>4.0.24.Final</version>
+      <version>4.0.27.Final</version>
     </dependency>
 
     <dependency>
@@ -616,6 +616,99 @@
             <groupId>org.apache.hadoop</groupId>
             <artifactId>hadoop-common</artifactId>
             <version>2.4.1</version>
+            <exclusions>
+              <exclusion>
+                <groupId>org.mortbay.jetty</groupId>
+                <artifactId>servlet-api</artifactId>
+              </exclusion>
+              <exclusion>
+                <groupId>org.mortbay.jetty</groupId>
+                <artifactId>servlet-api-2.5</artifactId>
+              </exclusion>
+              <exclusion>
+                <groupId>org.mortbay.jetty</groupId>
+                <artifactId>servlet-api-2.5</artifactId>
+              </exclusion>
+              <exclusion>
+                <groupId>javax.servlet</groupId>
+                <artifactId>servlet-api</artifactId>
+              </exclusion>
+              <exclusion>
+                <groupId>org.mortbay.jetty</groupId>
+                <artifactId>jetty-util</artifactId>
+              </exclusion>
+              <exclusion>
+                <groupId>org.apache.hadoop</groupId>
+                <artifactId>hadoop-yarn-api</artifactId>
+              </exclusion>
+              <exclusion>
+                <artifactId>jets3t</artifactId>
+                <groupId>net.java.dev.jets3t</groupId>
+              </exclusion>
+              <exclusion>
+                <artifactId>log4j</artifactId>
+                <groupId>log4j</groupId>
+              </exclusion>
+              <exclusion>
+                <artifactId>slf4j-log4j12</artifactId>
+                <groupId>org.slf4j</groupId>
+              </exclusion>
+              <exclusion>
+                <artifactId>mockito-all</artifactId>
+                <groupId>org.mockito</groupId>
+              </exclusion>
+              <exclusion>
+                <artifactId>commons-logging-api</artifactId>
+                <groupId>commons-logging</groupId>
+              </exclusion>
+              <exclusion>
+                <artifactId>commons-logging</artifactId>
+                <groupId>commons-logging</groupId>
+              </exclusion>
+              <exclusion>
+                <groupId>com.sun.jersey</groupId>
+                <artifactId>jersey-core</artifactId>
+              </exclusion>
+              <exclusion>
+                <groupId>com.sun.jersey</groupId>
+                <artifactId>jersey-server</artifactId>
+              </exclusion>
+              <exclusion>
+                <groupId>com.sun.jersey</groupId>
+                <artifactId>jersey-json</artifactId>
+              </exclusion>
+              <exclusion>
+                <groupId>com.sun.jersey</groupId>
+                <artifactId>jersey-client</artifactId>
+              </exclusion>
+              <exclusion>
+                <artifactId>core</artifactId>
+                <groupId>org.eclipse.jdt</groupId>
+              </exclusion>
+              <exclusion>
+                <groupId>org.codehaus.jackson</groupId>
+                <artifactId>jackson-core-asl</artifactId>
+              </exclusion>
+              <exclusion>
+                <groupId>org.codehaus.jackson</groupId>
+                <artifactId>jackson-mapper-asl</artifactId>
+              </exclusion>
+              <exclusion>
+                <groupId>org.codehaus.jackson</groupId>
+                <artifactId>jackson-xc</artifactId>
+              </exclusion>
+              <exclusion>
+                <groupId>org.codehaus.jackson</groupId>
+                <artifactId>jackson-jaxrs</artifactId>
+              </exclusion>
+            </exclusions>
+          </dependency>
+          <dependency>
+            <groupId>org.apache.hadoop</groupId>
+            <artifactId>hadoop-common</artifactId>
+            <version>2.4.1</version>
+            <scope>test</scope>
+            <classifier>tests</classifier>
             <exclusions>
               <exclusion>
                 <groupId>org.mortbay.jetty</groupId>
@@ -943,14 +1036,18 @@
           </dependency>
 
           <dependency>
-            <groupId>net.hydromatic</groupId>
-            <artifactId>optiq-core</artifactId>
-            <version>0.9-drill-r21</version>
+            <groupId>org.apache.calcite</groupId>
+            <artifactId>calcite-core</artifactId>
+            <version>1.1.0-drill-r2</version>
             <exclusions>
               <exclusion>
                 <groupId>org.jgrapht</groupId>
                 <artifactId>jgrapht-jdk1.5</artifactId>
               </exclusion>
+            <exclusion>
+                <groupId>commons-logging</groupId>
+                <artifactId>commons-logging</artifactId>
+            </exclusion>
             </exclusions>
           </dependency>
 
@@ -996,6 +1093,32 @@
               <exclusion>
                 <groupId>javax.servlet</groupId>
                 <artifactId>servlet-api</artifactId>
+              </exclusion>
+            </exclusions>
+          </dependency>
+          <!-- Test Dependencies -->
+          <dependency>
+            <groupId>org.apache.hadoop</groupId>
+            <artifactId>hadoop-hdfs</artifactId>
+            <version>2.4.1</version>
+            <scope>test</scope>
+            <classifier>tests</classifier>
+            <exclusions>
+              <exclusion>
+                <groupId>commons-logging</groupId>
+                <artifactId>commons-logging</artifactId>
+              </exclusion>
+              <exclusion>
+                <groupId>org.mortbay.jetty</groupId>
+                <artifactId>servlet-api</artifactId>
+              </exclusion>
+              <exclusion>
+                <groupId>javax.servlet</groupId>
+                <artifactId>servlet-api</artifactId>
+              </exclusion>
+              <exclusion>
+                <groupId>log4j</groupId>
+                <artifactId>log4j</artifactId>
               </exclusion>
             </exclusions>
           </dependency>

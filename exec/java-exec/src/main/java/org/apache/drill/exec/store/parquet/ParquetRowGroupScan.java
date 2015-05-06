@@ -61,6 +61,7 @@ public class ParquetRowGroupScan extends AbstractBase implements SubScan {
   @JsonCreator
   public ParquetRowGroupScan( //
       @JacksonInject StoragePluginRegistry registry, //
+      @JsonProperty("userName") String userName, //
       @JsonProperty("storage") StoragePluginConfig storageConfig, //
       @JsonProperty("format") FormatPluginConfig formatConfig, //
       @JsonProperty("entries") LinkedList<RowGroupReadEntry> rowGroupReadEntries, //
@@ -68,17 +69,20 @@ public class ParquetRowGroupScan extends AbstractBase implements SubScan {
       @JsonProperty("selectionRoot") String selectionRoot, //
       @JsonProperty("filter") @JsonDeserialize(using = FilterPredicateSerializer.De.class) FilterPredicate filter
   ) throws ExecutionSetupException {
-    this((ParquetFormatPlugin) registry.getFormatPlugin(Preconditions.checkNotNull(storageConfig),
+    this(userName, (ParquetFormatPlugin) registry.getFormatPlugin(Preconditions.checkNotNull(storageConfig),
             formatConfig == null ? new ParquetFormatConfig() : formatConfig),
         rowGroupReadEntries, columns, selectionRoot, filter);
   }
 
   public ParquetRowGroupScan( //
+      String userName, //
       ParquetFormatPlugin formatPlugin, //
       List<RowGroupReadEntry> rowGroupReadEntries, //
-      List<SchemaPath> columns,
-      String selectionRoot,
-      FilterPredicate filter) {
+      List<SchemaPath> columns, //
+      String selectionRoot, //,]
+      FilterPredicate filter //
+  ) {
+    super(userName);
     this.formatPlugin = Preconditions.checkNotNull(formatPlugin);
     this.formatConfig = formatPlugin.getConfig();
     this.rowGroupReadEntries = rowGroupReadEntries;
@@ -123,7 +127,7 @@ public class ParquetRowGroupScan extends AbstractBase implements SubScan {
   @Override
   public PhysicalOperator getNewWithChildren(List<PhysicalOperator> children) throws ExecutionSetupException {
     Preconditions.checkArgument(children.isEmpty());
-    return new ParquetRowGroupScan(formatPlugin, rowGroupReadEntries, columns, selectionRoot, filter);
+    return new ParquetRowGroupScan(getUserName(), formatPlugin, rowGroupReadEntries, columns, selectionRoot, filter);
   }
 
   @Override

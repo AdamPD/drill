@@ -17,8 +17,7 @@
  */
 package org.apache.drill.exec.server.options;
 
-import org.apache.drill.exec.server.options.OptionValue.OptionType;
-import org.eigenbase.sql.SqlLiteral;
+import org.apache.calcite.sql.SqlLiteral;
 
 public interface OptionManager extends Iterable<OptionValue> {
   public OptionValue getOption(String name);
@@ -28,9 +27,15 @@ public interface OptionManager extends Iterable<OptionValue> {
   public OptionManager getSystemManager();
   public OptionList getOptionList();
 
+  public boolean getOption(TypeValidators.BooleanValidator validator);
+  public double getOption(TypeValidators.DoubleValidator validator);
+  public long getOption(TypeValidators.LongValidator validator);
+  public String getOption(TypeValidators.StringValidator validator);
+
   public interface OptionAdmin {
     public void registerOptionType(OptionValidator validator);
+    public OptionValidator getValidator(String name);
     public void validate(OptionValue v) throws SetOptionException;
-    public OptionValue validate(String name, SqlLiteral value, OptionType optionType) throws SetOptionException;
+    public OptionValue validate(String name, SqlLiteral value, OptionValue.OptionType optionType) throws SetOptionException;
   }
 }

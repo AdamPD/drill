@@ -25,7 +25,9 @@ import org.apache.drill.exec.server.options.TypeValidators.EnumeratedStringValid
 import org.apache.drill.exec.server.options.TypeValidators.LongValidator;
 import org.apache.drill.exec.server.options.TypeValidators.PositiveLongValidator;
 import org.apache.drill.exec.server.options.TypeValidators.PowerOfTwoLongValidator;
+import org.apache.drill.exec.server.options.TypeValidators.RangeLongValidator;
 import org.apache.drill.exec.server.options.TypeValidators.StringValidator;
+import org.apache.drill.exec.testing.ExecutionControls;
 
 public interface ExecConstants {
   public static final String ZK_RETRY_TIMES = "drill.exec.zk.retry.count";
@@ -74,6 +76,8 @@ public interface ExecConstants {
   public static final String SYS_STORE_PROVIDER_CLASS = "drill.exec.sys.store.provider.class";
   public static final String SYS_STORE_PROVIDER_LOCAL_PATH = "drill.exec.sys.store.provider.local.path";
   public static final String SYS_STORE_PROVIDER_LOCAL_ENABLE_WRITE = "drill.exec.sys.store.provider.local.write";
+  public static final String IMPERSONATION_ENABLED = "drill.exec.impersonation.enabled";
+  public static final String IMPERSONATION_MAX_CHAINED_USER_HOPS = "drill.exec.impersonation.max_chained_user_hops";
   public static final String USER_AUTHENTICATOR_IMPL_PACKAGES = "drill.exec.security.user.auth.packages";
   public static final String USER_AUTHENTICATION_ENABLED = "drill.exec.security.user.auth.enabled";
   public static final String USER_AUTHENTICATOR_IMPL = "drill.exec.security.user.auth.impl";
@@ -109,7 +113,8 @@ public interface ExecConstants {
   public static OptionValidator COMPILE_SCALAR_REPLACEMENT = new BooleanValidator("exec.compile.scalar_replacement", false);
 
   public static String JSON_ALL_TEXT_MODE = "store.json.all_text_mode";
-  public static OptionValidator JSON_READER_ALL_TEXT_MODE_VALIDATOR = new BooleanValidator(JSON_ALL_TEXT_MODE, false);
+  public static BooleanValidator JSON_READER_ALL_TEXT_MODE_VALIDATOR = new BooleanValidator(JSON_ALL_TEXT_MODE, false);
+  public static final BooleanValidator JSON_EXTENDED_TYPES = new BooleanValidator("store.json.extended_types", true);
 
   /**
    * The column label (for directory levels) in results when querying files in a directory
@@ -168,8 +173,8 @@ public interface ExecConstants {
    * DEFAULT: 2048 MB
    */
   public static final String MAX_QUERY_MEMORY_PER_NODE_KEY = "planner.memory.max_query_memory_per_node";
-  public static final OptionValidator MAX_QUERY_MEMORY_PER_NODE = new PowerOfTwoLongValidator(
-    MAX_QUERY_MEMORY_PER_NODE_KEY, Runtime.getRuntime().maxMemory(), 2*1024*1024*1024L);
+  public static final LongValidator MAX_QUERY_MEMORY_PER_NODE = new RangeLongValidator(
+      MAX_QUERY_MEMORY_PER_NODE_KEY, 1024 * 1024, Long.MAX_VALUE, 2 * 1024 * 1024 * 1024L);
 
   /**
    * Extra query memory per node for non-blocking operators.
@@ -217,7 +222,14 @@ public interface ExecConstants {
   public static final String ENABLE_WINDOW_FUNCTIONS = "window.enable";
   public static final OptionValidator ENABLE_WINDOW_FUNCTIONS_VALIDATOR = new BooleanValidator(ENABLE_WINDOW_FUNCTIONS, false);
 
-  public static final String DRILLBIT_EXCEPTION_INJECTIONS = "drill.exec.testing.exception-injections";
-  public static final OptionValidator DRILLBIT_EXCEPTION_INJECTIONS_VALIDATOR =
-      new StringValidator(DRILLBIT_EXCEPTION_INJECTIONS, "");
+  public static final String DRILLBIT_CONTROL_INJECTIONS = "drill.exec.testing.controls";
+  public static final OptionValidator DRILLBIT_CONTROLS_VALIDATOR =
+    new ExecutionControls.ControlsOptionValidator(DRILLBIT_CONTROL_INJECTIONS, ExecutionControls.DEFAULT_CONTROLS, 1);
+
+  public static final String NEW_VIEW_DEFAULT_PERMS_KEY = "new_view_default_permissions";
+  public static final OptionValidator NEW_VIEW_DEFAULT_PERMS_VALIDATOR =
+      new StringValidator(NEW_VIEW_DEFAULT_PERMS_KEY, "700");
+
+  public static final String USE_OLD_ASSIGNMENT_CREATOR = "exec.schedule.assignment.old";
+  public static final OptionValidator USE_OLD_ASSIGNMENT_CREATOR_VALIDATOR = new BooleanValidator(USE_OLD_ASSIGNMENT_CREATOR, false);
 }

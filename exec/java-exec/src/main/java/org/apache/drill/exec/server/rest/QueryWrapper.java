@@ -30,14 +30,15 @@ import com.google.common.collect.Lists;
 import com.google.common.collect.Maps;
 import com.google.common.collect.Sets;
 import org.apache.drill.common.config.DrillConfig;
+import org.apache.drill.common.exceptions.UserException;
 import org.apache.drill.exec.client.DrillClient;
 import org.apache.drill.exec.coord.ClusterCoordinator;
 import org.apache.drill.exec.exception.SchemaChangeException;
 import org.apache.drill.exec.memory.BufferAllocator;
 import org.apache.drill.exec.proto.UserBitShared;
+import org.apache.drill.exec.proto.UserBitShared.QueryResult.QueryState;
 import org.apache.drill.exec.record.RecordBatchLoader;
 import org.apache.drill.exec.record.VectorWrapper;
-import org.apache.drill.exec.rpc.RpcException;
 import org.apache.drill.exec.rpc.user.ConnectionThrottle;
 import org.apache.drill.exec.rpc.user.QueryDataBatch;
 import org.apache.drill.exec.rpc.user.UserResultsListener;
@@ -118,7 +119,7 @@ public class QueryWrapper {
 
 
   private static class Listener implements UserResultsListener {
-    private volatile Exception exception;
+    private volatile UserException exception;
     private final CountDownLatch latch = new CountDownLatch(1);
     private final BufferAllocator allocator;
     public final List<Map<String, String>> results = Lists.newArrayList();
@@ -129,14 +130,14 @@ public class QueryWrapper {
     }
 
     @Override
-    public void submissionFailed(RpcException ex) {
+    public void submissionFailed(UserException ex) {
       exception = ex;
       logger.error("Query Failed", ex);
       latch.countDown();
     }
 
     @Override
-    public void queryCompleted() {
+    public void queryCompleted(QueryState state) {
       latch.countDown();
     }
 

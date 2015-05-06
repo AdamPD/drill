@@ -25,6 +25,7 @@ import javax.annotation.Nullable;
 
 import com.google.common.base.Predicate;
 import com.google.common.collect.Iterables;
+
 import org.apache.drill.common.exceptions.DrillRuntimeException;
 import org.apache.drill.common.exceptions.ExecutionSetupException;
 import org.apache.drill.common.expression.FieldReference;
@@ -39,6 +40,7 @@ import org.apache.drill.exec.record.MaterializedField;
 import org.apache.drill.exec.store.AbstractRecordReader;
 import org.apache.drill.exec.vector.RepeatedVarCharVector;
 import org.apache.drill.exec.vector.ValueVector;
+import org.apache.hadoop.conf.Configuration;
 import org.apache.hadoop.io.LongWritable;
 import org.apache.hadoop.io.Text;
 import org.apache.hadoop.mapred.FileSplit;
@@ -69,7 +71,8 @@ public class DrillTextRecordReader extends AbstractRecordReader {
   private FileSplit split;
   private long totalRecordsRead;
 
-  public DrillTextRecordReader(FileSplit split, FragmentContext context, char delimiter, List<SchemaPath> columns) {
+  public DrillTextRecordReader(FileSplit split, Configuration fsConf, FragmentContext context, char delimiter,
+      List<SchemaPath> columns) {
     this.fragmentContext = context;
     this.delimiter = (byte) delimiter;
     this.split = split;
@@ -95,7 +98,7 @@ public class DrillTextRecordReader extends AbstractRecordReader {
     targetRecordCount = context.getConfig().getInt(ExecConstants.TEXT_LINE_READER_BATCH_SIZE);
 
     TextInputFormat inputFormat = new TextInputFormat();
-    JobConf job = new JobConf();
+    JobConf job = new JobConf(fsConf);
     job.setInt("io.file.buffer.size", context.getConfig().getInt(ExecConstants.TEXT_LINE_READER_BUFFER_SIZE));
     job.setInputFormat(inputFormat.getClass());
     try {

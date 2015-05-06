@@ -21,12 +21,12 @@ import java.io.IOException;
 import java.util.Collections;
 import java.util.Set;
 
-import net.hydromatic.optiq.Schema;
-import net.hydromatic.optiq.SchemaPlus;
-import net.hydromatic.optiq.Table;
+import org.apache.calcite.schema.Schema;
+import org.apache.calcite.schema.SchemaPlus;
+import org.apache.calcite.schema.Table;
 
-import org.apache.drill.exec.rpc.user.UserSession;
 import org.apache.drill.exec.store.AbstractSchema;
+import org.apache.drill.exec.store.SchemaConfig;
 import org.apache.drill.exec.store.SchemaFactory;
 import org.apache.hadoop.hbase.HTableDescriptor;
 import org.apache.hadoop.hbase.client.HBaseAdmin;
@@ -46,7 +46,7 @@ public class HBaseSchemaFactory implements SchemaFactory {
   }
 
   @Override
-  public void registerSchemas(UserSession session, SchemaPlus parent) {
+  public void registerSchemas(SchemaConfig schemaConfig, SchemaPlus parent) throws IOException {
     HBaseSchema schema = new HBaseSchema(schemaName);
     SchemaPlus hPlus = parent.add(schemaName, schema);
     schema.setHolder(hPlus);
