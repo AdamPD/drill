@@ -19,12 +19,15 @@ package org.apache.drill.exec.store.mongo;
 
 import java.io.IOException;
 
+import org.apache.calcite.plan.RelOptRuleOperand;
+import org.apache.calcite.plan.RelOptUtil;
 import org.apache.drill.common.exceptions.DrillRuntimeException;
 import org.apache.drill.common.expression.LogicalExpression;
 import org.apache.drill.exec.planner.logical.DrillOptiq;
 import org.apache.drill.exec.planner.logical.DrillParseContext;
 import org.apache.drill.exec.planner.logical.RelOptHelper;
 import org.apache.drill.exec.planner.physical.FilterPrel;
+import org.apache.drill.exec.planner.physical.ProjectPrel;
 import org.apache.drill.exec.planner.physical.ScanPrel;
 import org.apache.drill.exec.store.StoragePluginOptimizerRule;
 import org.apache.calcite.rel.RelNode;
@@ -35,22 +38,69 @@ import org.slf4j.LoggerFactory;
 
 import com.google.common.collect.ImmutableList;
 
-public class MongoPushDownFilterForScan extends StoragePluginOptimizerRule {
+public abstract class MongoPushDownFilterForScan extends StoragePluginOptimizerRule {
   private static final Logger logger = LoggerFactory
       .getLogger(MongoPushDownFilterForScan.class);
-  public static final StoragePluginOptimizerRule INSTANCE = new MongoPushDownFilterForScan();
 
-  private MongoPushDownFilterForScan() {
-    super(
-        RelOptHelper.some(FilterPrel.class, RelOptHelper.any(ScanPrel.class)),
-        "MongoPushDownFilterForScan");
+  public static final StoragePluginOptimizerRule getFilterOnProject(){
+    return new MongoPushDownFilterForScan(
+            RelOptHelper.some(FilterPrel.class, RelOptHelper.some(ProjectPrel.class, RelOptHelper.any(ScanPrel.class))),
+            "MongoPushDownFilterForScan:Filter_On_Project") {
+
+      @Override
+      public boolean matches(RelOptRuleCall call) {
+        final ScanPrel scan = call.rel(2);
+        if (scan.getGroupScan() instanceof MongoGroupScan) {
+          return super.matches(call);
+        }
+        return false;
+      }
+
+      @Override
+      public void onMatch(RelOptRuleCall call) {
+        final FilterPrel filterRel = call.rel(0);
+        final ProjectPrel projectRel = call.rel(1);
+        final ScanPrel scanRel = call.rel(2);
+        doOnMatch(call, filterRel, projectRel, scanRel);
+      };
+    };
   }
 
-  @Override
-  public void onMatch(RelOptRuleCall call) {
-    final ScanPrel scan = (ScanPrel) call.rel(1);
-    final FilterPrel filter = (FilterPrel) call.rel(0);
-    final RexNode condition = filter.getCondition();
+  public static final StoragePluginOptimizerRule getFilterOnScan(){
+    return new MongoPushDownFilterForScan(
+            RelOptHelper.some(FilterPrel.class, RelOptHelper.any(ScanPrel.class)),
+            "MongoPushDownFilterForScan:Filter_On_Scan") {
+
+      @Override
+      public boolean matches(RelOptRuleCall call) {
+        final ScanPrel scan = call.rel(1);
+        if (scan.getGroupScan() instanceof MongoGroupScan) {
+          return super.matches(call);
+        }
+        return false;
+      }
+
+      @Override
+      public void onMatch(RelOptRuleCall call) {
+        final FilterPrel filterRel = call.rel(0);
+        final ScanPrel scanRel = call.rel(1);
+        doOnMatch(call, filterRel, null, scanRel);
+      }
+    };
+  }
+
+  private MongoPushDownFilterForScan(RelOptRuleOperand operand, String id) {
+    super(operand, id);
+  }
+
+  protected void doOnMatch(RelOptRuleCall call, FilterPrel filter, ProjectPrel project, ScanPrel scan) {
+    RexNode condition = null;
+    if(project == null){
+      condition = filter.getCondition();
+    }else{
+      // get the filter as if it were below the projection.
+      condition = RelOptUtil.pushFilterPastProject(filter.getCondition(), project);
+    }
 
     MongoGroupScan groupScan = (MongoGroupScan) scan.getGroupScan();
     if (groupScan.isFilterPushedDown()) {
@@ -78,26 +128,23 @@ public class MongoPushDownFilterForScan extends StoragePluginOptimizerRule {
 
     final ScanPrel newScanPrel = ScanPrel.create(scan, filter.getTraitSet(),
         newGroupsScan, scan.getRowType());
+
+    RelNode inputPrel = newScanPrel;
+
+    if(project != null){
+      inputPrel = project.copy(project.getTraitSet(), ImmutableList.of(inputPrel));
+    }
+
     if (mongoFilterBuilder.isAllExpressionsConverted()) {
       /*
        * Since we could convert the entire filter condition expression into an
        * Mongo filter, we can eliminate the filter operator altogether.
        */
-      call.transformTo(newScanPrel);
+      call.transformTo(inputPrel);
     } else {
       call.transformTo(filter.copy(filter.getTraitSet(),
-          ImmutableList.of((RelNode) newScanPrel)));
+          ImmutableList.of(inputPrel)));
     }
 
   }
-
-  @Override
-  public boolean matches(RelOptRuleCall call) {
-    final ScanPrel scan = (ScanPrel) call.rel(1);
-    if (scan.getGroupScan() instanceof MongoGroupScan) {
-      return super.matches(call);
-    }
-    return false;
-  }
-
 }
