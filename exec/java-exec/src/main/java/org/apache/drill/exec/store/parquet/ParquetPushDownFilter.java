@@ -132,11 +132,9 @@ public abstract class ParquetPushDownFilter extends StoragePluginOptimizerRule {
             inputPrel = project.copy(project.getTraitSet(), ImmutableList.of(inputPrel));
         }
 
-        if (useNewReader && parquetFilterBuilder.areAllExpressionsConverted()) {
-            call.transformTo(inputPrel);
-        } else {
-            final RelNode newFilter = filter.copy(filter.getTraitSet(), ImmutableList.of(inputPrel));
-            call.transformTo(newFilter);
-        }
+        // Normally we could eliminate the filter if all expressions were pushed down;
+        // however, the Parquet filter implementation is type specific (whereas Drill is not)
+        final RelNode newFilter = filter.copy(filter.getTraitSet(), ImmutableList.of(inputPrel));
+        call.transformTo(newFilter);
     }
 }
