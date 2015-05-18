@@ -273,12 +273,9 @@ public class DrillParquetReader extends AbstractRecordReader {
         writer = new VectorContainerWriter(output);
         recordMaterializer = new DrillParquetRecordMaterializer(output, writer, projection, getColumns());
         primitiveVectors = writer.getMapVector().getPrimitiveVectors();
-        if (filter != null) {
-          recordReader = columnIO.getRecordReader(pageReadStore, recordMaterializer, FilterCompat.get(filter));
-        }
-        else {
-          recordReader = columnIO.getRecordReader(pageReadStore, recordMaterializer);
-        }
+        // We would normally pass the filter predicate into the record reader; however,
+        // it is specifically typed and thus may throw type mismatch exceptions
+        recordReader = columnIO.getRecordReader(pageReadStore, recordMaterializer);
       }
     } catch (Exception e) {
       handleAndRaise("Failure in setting up reader", e);
