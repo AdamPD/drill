@@ -245,8 +245,9 @@ public class ParquetGroupScan extends AbstractFileGroupScan {
 
     ColumnChunkMetaData columnChunkMetaData;
 
-    if (footers == null)
+    if (footers == null) {
       footers = FooterGatherer.getFooters(formatPlugin.getFsConf(), statuses, 16);
+    }
     for (Footer footer : footers) {
       int index = 0;
       ParquetMetadata metadata = footer.getParquetMetadata();
