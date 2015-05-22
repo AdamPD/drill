@@ -100,6 +100,7 @@ public class ParquetGroupScan extends AbstractFileGroupScan {
   private FilterPredicate filter;
   private ListMultimap<Integer, RowGroupInfo> mappings;
   private List<RowGroupInfo> rowGroupInfos;
+  private List<Footer> footers;
 
   /*
    * total number of rows (obtained from parquet footer)
@@ -182,6 +183,7 @@ public class ParquetGroupScan extends AbstractFileGroupScan {
     this.selectionRoot = that.selectionRoot;
     this.columnValueCounts = that.columnValueCounts;
     this.filter = that.filter;
+    this.footers = that.footers;
   }
 
 
@@ -243,7 +245,8 @@ public class ParquetGroupScan extends AbstractFileGroupScan {
 
     ColumnChunkMetaData columnChunkMetaData;
 
-    List<Footer> footers = FooterGatherer.getFooters(formatPlugin.getFsConf(), statuses, 16);
+    if (footers == null)
+      footers = FooterGatherer.getFooters(formatPlugin.getFsConf(), statuses, 16);
     for (Footer footer : footers) {
       int index = 0;
       ParquetMetadata metadata = footer.getParquetMetadata();
@@ -322,6 +325,7 @@ public class ParquetGroupScan extends AbstractFileGroupScan {
   @Override
   public void modifyFileSelection(FileSelection selection) {
     entries.clear();
+    footers = null;
     for (String fileName : selection.getAsFiles()) {
       entries.add(new ReadEntryWithPath(fileName));
     }
