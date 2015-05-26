@@ -29,6 +29,7 @@ import org.apache.drill.exec.planner.logical.DrillOptiq;
 import org.apache.drill.exec.planner.logical.DrillParseContext;
 import org.apache.drill.exec.planner.logical.RelOptHelper;
 import org.apache.drill.exec.planner.physical.FilterPrel;
+import org.apache.drill.exec.planner.physical.PrelUtil;
 import org.apache.drill.exec.planner.physical.ProjectPrel;
 import org.apache.drill.exec.planner.physical.ScanPrel;
 import org.apache.drill.exec.store.StoragePluginOptimizerRule;
@@ -115,7 +116,7 @@ public abstract class ParquetPushDownFilter extends StoragePluginOptimizerRule {
         }
 
         LogicalExpression conditionExp = DrillOptiq.toDrill(
-                new DrillParseContext(), scan, condition);
+                new DrillParseContext(PrelUtil.getPlannerSettings(call.getPlanner())), scan, condition);
         ParquetFilterBuilder parquetFilterBuilder = new ParquetFilterBuilder(groupScan,
                 conditionExp);
         ParquetGroupScan newGroupScan = parquetFilterBuilder.parseTree();
