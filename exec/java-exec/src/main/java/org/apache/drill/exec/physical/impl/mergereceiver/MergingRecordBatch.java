@@ -70,12 +70,12 @@ import org.apache.drill.exec.record.selection.SelectionVector2;
 import org.apache.drill.exec.record.selection.SelectionVector4;
 import org.apache.drill.exec.rpc.RpcException;
 import org.apache.drill.exec.rpc.RpcOutcomeListener;
+import org.apache.drill.exec.testing.ExecutionControlsInjector;
 import org.apache.drill.exec.vector.AllocationHelper;
 import org.apache.drill.exec.vector.CopyUtil;
 import org.apache.drill.exec.vector.FixedWidthVector;
 import org.apache.drill.exec.vector.ValueVector;
 import org.apache.calcite.rel.RelFieldCollation.Direction;
-import org.apache.calcite.rel.RelFieldCollation.NullDirection;
 
 import parquet.Preconditions;
 
@@ -88,10 +88,9 @@ import com.sun.codemodel.JExpr;
  * The MergingRecordBatch merges pre-sorted record batches from remote senders.
  */
 public class MergingRecordBatch extends AbstractRecordBatch<MergingReceiverPOP> implements RecordBatch {
-  static final org.slf4j.Logger logger = org.slf4j.LoggerFactory.getLogger(MergingRecordBatch.class);
+  private static final org.slf4j.Logger logger = org.slf4j.LoggerFactory.getLogger(MergingRecordBatch.class);
+  private final static ExecutionControlsInjector injector = ExecutionControlsInjector.getInjector(MergingRecordBatch.class);
 
-  private static final long ALLOCATOR_INITIAL_RESERVATION = 1*1024*1024;
-  private static final long ALLOCATOR_MAX_RESERVATION = 20L*1000*1000*1000;
   private static final int OUTGOING_BATCH_SIZE = 32 * 1024;
 
   private RecordBatchLoader[] batchLoaders;
@@ -144,6 +143,7 @@ public class MergingRecordBatch extends AbstractRecordBatch<MergingReceiverPOP> 
     stats.startWait();
     final RawFragmentBatchProvider provider = fragProviders[providerIndex];
     try {
+      injector.injectInterruptiblePause(context.getExecutionControls(), "waiting-for-data", logger);
       final RawFragmentBatch b = provider.getNext();
       if (b != null) {
         stats.addLongStat(Metric.BYTES_RECEIVED, b.getByteCount());
@@ -151,6 +151,12 @@ public class MergingRecordBatch extends AbstractRecordBatch<MergingReceiverPOP> 
         inputCounts[providerIndex] += b.getHeader().getDef().getRecordCount();
       }
       return b;
+    } catch(final InterruptedException e) {
+      // Preserve evidence that the interruption occurred so that code higher up on the call stack can learn of the
+      // interruption and respond to it if it wants to.
+      Thread.currentThread().interrupt();
+
+      return null;
     } finally {
       stats.stopWait();
     }
@@ -170,7 +176,7 @@ public class MergingRecordBatch extends AbstractRecordBatch<MergingReceiverPOP> 
       prevBatchWasFull = false;
     }
 
-    if (hasMoreIncoming == false) {
+    if (!hasMoreIncoming) {
       logger.debug("next() was called after all values have been processed");
       outgoingPosition = 0;
       return IterOutcome.NONE;
@@ -243,6 +249,8 @@ public class MergingRecordBatch extends AbstractRecordBatch<MergingReceiverPOP> 
         final UserBitShared.RecordBatchDef rbd = batch.getHeader().getDef();
         try {
           batchLoaders[i].load(rbd, batch.getBody());
+          // TODO:  Clean:  DRILL-2933:  That load(...) no longer throws
+          // SchemaChangeException, so check/clean catch clause below.
         } catch(final SchemaChangeException e) {
           logger.error("MergingReceiver failed to load record batch from remote host.  {}", e);
           context.fail(e);
@@ -313,6 +321,8 @@ public class MergingRecordBatch extends AbstractRecordBatch<MergingReceiverPOP> 
             incomingBatches[b] = batch;
             if (batch != null) {
               batchLoaders[b].load(batch.getHeader().getDef(), batch.getBody());
+              // TODO:  Clean:  DRILL-2933:  That load(...) no longer throws
+              // SchemaChangeException, so check/clean catch clause below.
             } else {
               batchLoaders[b].clear();
               batchLoaders[b] = null;
@@ -358,6 +368,7 @@ public class MergingRecordBatch extends AbstractRecordBatch<MergingReceiverPOP> 
           while (nextBatch != null && nextBatch.getHeader().getDef().getRecordCount() == 0) {
             nextBatch = getNext(node.batchId);
           }
+
           assert nextBatch != null || inputCounts[node.batchId] == outputCounts[node.batchId]
               : String.format("Stream %d input count: %d output count %d", node.batchId, inputCounts[node.batchId], outputCounts[node.batchId]);
           if (nextBatch == null && !context.shouldContinue()) {
@@ -399,6 +410,8 @@ public class MergingRecordBatch extends AbstractRecordBatch<MergingReceiverPOP> 
         final UserBitShared.RecordBatchDef rbd = incomingBatches[node.batchId].getHeader().getDef();
         try {
           batchLoaders[node.batchId].load(rbd, incomingBatches[node.batchId].getBody());
+          // TODO:  Clean:  DRILL-2933:  That load(...) no longer throws
+          // SchemaChangeException, so check/clean catch clause below.
         } catch(final SchemaChangeException ex) {
           context.fail(ex);
           return IterOutcome.STOP;
@@ -447,7 +460,8 @@ public class MergingRecordBatch extends AbstractRecordBatch<MergingReceiverPOP> 
     return outgoingContainer.getSchema();
   }
 
-  public void buildSchema() {
+  @Override
+  public void buildSchema() throws SchemaChangeException {
     // find frag provider that has data to use to build schema, and put in tempBatchHolder for later use
     tempBatchHolder = new RawFragmentBatch[fragProviders.length];
     int i = 0;
@@ -458,6 +472,15 @@ public class MergingRecordBatch extends AbstractRecordBatch<MergingReceiverPOP> 
           return;
         }
         final RawFragmentBatch batch = getNext(i);
+        if (batch == null) {
+          if (!context.shouldContinue()) {
+            state = BatchState.STOP;
+          } else {
+            state = BatchState.DONE;
+          }
+
+          break;
+        }
         if (batch.getHeader().getDef().getFieldCount() == 0) {
           i++;
           continue;
@@ -511,6 +534,7 @@ public class MergingRecordBatch extends AbstractRecordBatch<MergingReceiverPOP> 
     }
   }
 
+  // TODO: Code duplication. UnorderedReceiverBatch has the same implementation.
   private class OutcomeListener implements RpcOutcomeListener<Ack> {
 
     @Override
@@ -521,6 +545,15 @@ public class MergingRecordBatch extends AbstractRecordBatch<MergingReceiverPOP> 
     @Override
     public void success(final Ack value, final ByteBuf buffer) {
       // Do nothing
+    }
+
+    @Override
+    public void interrupted(final InterruptedException e) {
+      if (context.shouldContinue()) {
+        final String errMsg = "Received an interrupt RPC outcome while sending ReceiverFinished message";
+        logger.error(errMsg, e);
+        context.fail(new RpcException(errMsg, e));
+      }
     }
   }
 
@@ -705,11 +738,7 @@ public class MergingRecordBatch extends AbstractRecordBatch<MergingReceiverPOP> 
         }
       }
     }
-    if (fragProviders != null) {
-      for (final RawFragmentBatchProvider f : fragProviders) {
-        f.cleanup();
-      }
-    }
+    super.close();
   }
 
 }

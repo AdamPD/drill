@@ -19,8 +19,8 @@ package org.apache.drill.exec.rpc.data;
 
 import io.netty.buffer.ByteBuf;
 import io.netty.buffer.DrillBuf;
-import io.netty.channel.Channel;
 import io.netty.channel.ChannelFuture;
+import io.netty.channel.socket.SocketChannel;
 import io.netty.util.concurrent.GenericFutureListener;
 
 import java.io.IOException;
@@ -57,7 +57,8 @@ public class DataServer extends BasicServer<RpcType, BitServerConnection> {
   private final DataResponseHandler dataHandler;
 
   public DataServer(BootStrapContext context, WorkEventBus workBus, DataResponseHandler dataHandler) {
-    super(DataRpcConfig.MAPPING, context.getAllocator().getUnderlyingAllocator(), context.getBitLoopGroup());
+    super(DataRpcConfig.getMapping(context.getConfig()), context.getAllocator().getUnderlyingAllocator(), context
+        .getBitLoopGroup());
     this.context = context;
     this.workBus = workBus;
     this.dataHandler = dataHandler;
@@ -69,13 +70,14 @@ public class DataServer extends BasicServer<RpcType, BitServerConnection> {
   }
 
   @Override
-  protected GenericFutureListener<ChannelFuture> getCloseHandler(BitServerConnection connection) {
-    this.proxyCloseHandler = new ProxyCloseHandler(super.getCloseHandler(connection));
+  protected GenericFutureListener<ChannelFuture> getCloseHandler(SocketChannel ch, BitServerConnection connection) {
+    this.proxyCloseHandler = new ProxyCloseHandler(super.getCloseHandler(ch, connection));
     return proxyCloseHandler;
   }
 
   @Override
-  public BitServerConnection initRemoteConnection(Channel channel) {
+  public BitServerConnection initRemoteConnection(SocketChannel channel) {
+    super.initRemoteConnection(channel);
     return new BitServerConnection(channel, context.getAllocator());
   }
 
@@ -149,7 +151,7 @@ public class DataServer extends BasicServer<RpcType, BitServerConnection> {
       logger.error("Failure while getting fragment manager. {}",
           QueryIdHelper.getQueryIdentifiers(fragmentBatch.getQueryId(),
               fragmentBatch.getReceivingMajorFragmentId(),
-              fragmentBatch.getReceivingMinorFragmentIdList()));
+              fragmentBatch.getReceivingMinorFragmentIdList()), e);
       ack.clear();
       sender.send(new Response(RpcType.ACK, Acks.FAIL));
     } finally {

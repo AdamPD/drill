@@ -17,6 +17,7 @@
  */
 package org.apache.drill.exec.planner.fragment;
 
+import java.util.ArrayList;
 import java.util.Collection;
 import java.util.Collections;
 import java.util.Comparator;
@@ -26,24 +27,24 @@ import java.util.Map;
 import java.util.Set;
 import java.util.concurrent.ThreadLocalRandom;
 
-import com.google.common.annotations.VisibleForTesting;
-import com.google.common.collect.Sets;
-import com.google.common.collect.Iterators;
-import com.google.common.collect.Ordering;
 import org.apache.drill.common.exceptions.ExecutionSetupException;
 import org.apache.drill.common.util.DrillStringUtils;
 import org.apache.drill.exec.ExecConstants;
 import org.apache.drill.exec.ops.QueryContext;
-import org.apache.drill.exec.ops.QueryDateTimeInfo;
 import org.apache.drill.exec.physical.EndpointAffinity;
+import org.apache.drill.exec.physical.MinorFragmentEndpoint;
 import org.apache.drill.exec.physical.PhysicalOperatorSetupException;
+import org.apache.drill.exec.physical.base.AbstractPhysicalVisitor;
 import org.apache.drill.exec.physical.base.Exchange.ParallelizationDependency;
 import org.apache.drill.exec.physical.base.FragmentRoot;
 import org.apache.drill.exec.physical.base.PhysicalOperator;
+import org.apache.drill.exec.physical.base.Receiver;
 import org.apache.drill.exec.planner.PhysicalPlanReader;
 import org.apache.drill.exec.planner.fragment.Fragment.ExchangeFragmentPair;
 import org.apache.drill.exec.planner.fragment.Materializer.IndexedFragmentNode;
+import org.apache.drill.exec.proto.BitControl.Collector;
 import org.apache.drill.exec.proto.BitControl.PlanFragment;
+import org.apache.drill.exec.proto.BitControl.QueryContextInformation;
 import org.apache.drill.exec.proto.CoordinationProtos.DrillbitEndpoint;
 import org.apache.drill.exec.proto.ExecProtos.FragmentHandle;
 import org.apache.drill.exec.proto.UserBitShared.QueryId;
@@ -54,8 +55,12 @@ import org.apache.drill.exec.work.QueryWorkUnit;
 import org.apache.drill.exec.work.foreman.ForemanSetupException;
 
 import com.fasterxml.jackson.core.JsonProcessingException;
+import com.google.common.annotations.VisibleForTesting;
 import com.google.common.base.Preconditions;
+import com.google.common.collect.Iterators;
 import com.google.common.collect.Lists;
+import com.google.common.collect.Ordering;
+import com.google.common.collect.Sets;
 
 /**
  * The simple parallelizer determines the level of parallelization of a plan based on the cost of the underlying
@@ -107,12 +112,13 @@ public class SimpleParallelizer {
    * @param reader          Tool used to read JSON plans
    * @param rootFragment    The root node of the PhysicalPlan that we will be parallelizing.
    * @param session         UserSession of user who launched this query.
+   * @param queryContextInfo Info related to the context when query has started.
    * @return The list of generated PlanFragment protobuf objects to be assigned out to the individual nodes.
    * @throws ExecutionSetupException
    */
   public QueryWorkUnit getFragments(OptionList options, DrillbitEndpoint foremanNode, QueryId queryId,
       Collection<DrillbitEndpoint> activeEndpoints, PhysicalPlanReader reader, Fragment rootFragment,
-      UserSession session, QueryDateTimeInfo queryDateTimeInfo) throws ExecutionSetupException {
+      UserSession session, QueryContextInformation queryContextInfo) throws ExecutionSetupException {
 
     final PlanningSet planningSet = new PlanningSet();
 
@@ -125,7 +131,8 @@ public class SimpleParallelizer {
       parallelizeFragment(wrapper, planningSet, activeEndpoints);
     }
 
-    return generateWorkUnit(options, foremanNode, queryId, reader, rootFragment, planningSet, session, queryDateTimeInfo);
+    return generateWorkUnit(
+        options, foremanNode, queryId, reader, rootFragment, planningSet, session, queryContextInfo);
   }
 
   // For every fragment, create a Wrapper in PlanningSet.
@@ -320,14 +327,11 @@ public class SimpleParallelizer {
 
   private QueryWorkUnit generateWorkUnit(OptionList options, DrillbitEndpoint foremanNode, QueryId queryId,
       PhysicalPlanReader reader, Fragment rootNode, PlanningSet planningSet,
-      UserSession session, QueryDateTimeInfo queryDateTimeInfo) throws ExecutionSetupException {
+      UserSession session, QueryContextInformation queryContextInfo) throws ExecutionSetupException {
     List<PlanFragment> fragments = Lists.newArrayList();
 
     PlanFragment rootFragment = null;
     FragmentRoot rootOperator = null;
-
-    long queryStartTime = queryDateTimeInfo.getQueryStartTime();
-    int timeZone = queryDateTimeInfo.getRootFragmentTimeZone();
 
     // now we generate all the individual plan fragments and associated assignments. Note, we need all endpoints
     // assigned before we can materialize, so we start a new loop here rather than utilizing the previous one.
@@ -368,18 +372,19 @@ public class SimpleParallelizer {
             .setMinorFragmentId(minorFragmentId) //
             .setQueryId(queryId) //
             .build();
+
         PlanFragment fragment = PlanFragment.newBuilder() //
             .setForeman(foremanNode) //
             .setFragmentJson(plan) //
             .setHandle(handle) //
             .setAssignment(wrapper.getAssignedEndpoint(minorFragmentId)) //
             .setLeafFragment(isLeafFragment) //
-            .setQueryStartTime(queryStartTime)
-            .setTimeZone(timeZone)//
+            .setContext(queryContextInfo)
             .setMemInitial(wrapper.getInitialAllocation())//
             .setMemMax(wrapper.getMaxAllocation())
             .setOptionsJson(optionsData)
             .setCredentials(session.getCredentials())
+            .addAllCollector(CountRequiredFragments.getCollectors(root))
             .build();
 
         if (isRootNode) {
@@ -394,5 +399,45 @@ public class SimpleParallelizer {
     }
 
     return new QueryWorkUnit(rootOperator, rootFragment, fragments);
+  }
+
+  /**
+   * Designed to setup initial values for arriving fragment accounting.
+   */
+  private static class CountRequiredFragments extends AbstractPhysicalVisitor<Void, List<Collector>, RuntimeException> {
+    private static final CountRequiredFragments INSTANCE = new CountRequiredFragments();
+
+    public static List<Collector> getCollectors(PhysicalOperator root) {
+      List<Collector> collectors = Lists.newArrayList();
+      root.accept(INSTANCE, collectors);
+      return collectors;
+    }
+
+    @Override
+    public Void visitReceiver(Receiver receiver, List<Collector> collectors) throws RuntimeException {
+      List<MinorFragmentEndpoint> endpoints = receiver.getProvidingEndpoints();
+      List<Integer> list = new ArrayList<>(endpoints.size());
+      for (MinorFragmentEndpoint ep : endpoints) {
+        list.add(ep.getId());
+      }
+
+
+      collectors.add(Collector.newBuilder()
+        .setIsSpooling(receiver.isSpooling())
+        .setOppositeMajorFragmentId(receiver.getOppositeMajorFragmentId())
+        .setSupportsOutOfOrder(receiver.supportsOutOfOrderExchange())
+          .addAllIncomingMinorFragment(list)
+          .build());
+      return null;
+    }
+
+    @Override
+    public Void visitOp(PhysicalOperator op, List<Collector> collectors) throws RuntimeException {
+      for (PhysicalOperator o : op) {
+        o.accept(this, collectors);
+      }
+      return null;
+    }
+
   }
 }

@@ -19,18 +19,23 @@ package org.apache.drill.exec.rpc.user;
 
 import io.netty.buffer.ByteBuf;
 import io.netty.buffer.DrillBuf;
+import io.netty.channel.ChannelFuture;
+import io.netty.util.concurrent.Future;
+import io.netty.util.concurrent.GenericFutureListener;
 
 import java.util.concurrent.ConcurrentLinkedQueue;
 import java.util.concurrent.ConcurrentMap;
+import java.util.concurrent.atomic.AtomicBoolean;
 
-import org.apache.drill.common.exceptions.UserRemoteException;
 import org.apache.drill.common.exceptions.UserException;
+import org.apache.drill.common.exceptions.UserRemoteException;
+import org.apache.drill.exec.proto.UserBitShared.QueryData;
 import org.apache.drill.exec.proto.UserBitShared.QueryId;
 import org.apache.drill.exec.proto.UserBitShared.QueryResult;
-import org.apache.drill.exec.proto.UserBitShared.QueryData;
 import org.apache.drill.exec.proto.UserBitShared.QueryResult.QueryState;
 import org.apache.drill.exec.proto.helper.QueryIdHelper;
 import org.apache.drill.exec.rpc.BaseRpcOutcomeListener;
+import org.apache.drill.exec.rpc.RemoteConnection;
 import org.apache.drill.exec.rpc.RpcBus;
 import org.apache.drill.exec.rpc.RpcException;
 import org.apache.drill.exec.rpc.RpcOutcomeListener;
@@ -63,8 +68,9 @@ public class QueryResultHandler {
   private final ConcurrentMap<QueryId, UserResultsListener> queryIdToResultsListenersMap =
       Maps.newConcurrentMap();
 
-  public RpcOutcomeListener<QueryId> getWrappedListener(UserResultsListener resultsListener) {
-    return new SubmissionListener(resultsListener);
+  public RpcOutcomeListener<QueryId> getWrappedListener(RemoteConnection connection,
+      UserResultsListener resultsListener) {
+    return new SubmissionListener(connection, resultsListener);
   }
 
   /**
@@ -81,7 +87,7 @@ public class QueryResultHandler {
 
     assert queryResult.hasQueryState() : "received query result without QueryState";
 
-    final boolean isFailureResult    = QueryState.FAILED    == queryState;
+    final boolean isFailureResult = QueryState.FAILED == queryState;
     // CANCELED queries are handled the same way as COMPLETED
     final boolean isTerminalResult;
     switch ( queryState ) {
@@ -268,21 +274,52 @@ public class QueryResultHandler {
 
   }
 
-  private class SubmissionListener extends BaseRpcOutcomeListener<QueryId> {
-    private UserResultsListener resultsListener;
 
-    public SubmissionListener(UserResultsListener resultsListener) {
+  private class SubmissionListener extends BaseRpcOutcomeListener<QueryId> {
+    private final UserResultsListener resultsListener;
+    private final RemoteConnection connection;
+    private final ChannelFuture closeFuture;
+    private final ChannelClosedListener closeListener;
+    private final AtomicBoolean isTerminal = new AtomicBoolean(false);
+
+    public SubmissionListener(RemoteConnection connection, UserResultsListener resultsListener) {
       super();
       this.resultsListener = resultsListener;
+      this.connection = connection;
+      this.closeFuture = connection.getChannel().closeFuture();
+      this.closeListener = new ChannelClosedListener();
+      closeFuture.addListener(closeListener);
+    }
+
+    private class ChannelClosedListener implements GenericFutureListener<Future<Void>> {
+
+      @Override
+      public void operationComplete(Future<Void> future) throws Exception {
+        resultsListener.submissionFailed(UserException.connectionError()
+            .message("Connection %s closed unexpectedly.", connection.getName())
+            .build());
+      }
+
     }
 
     @Override
     public void failed(RpcException ex) {
+      if (!isTerminal.compareAndSet(false, true)) {
+        return;
+      }
+
+      closeFuture.removeListener(closeListener);
       resultsListener.submissionFailed(UserException.systemError(ex).build());
+
     }
 
     @Override
     public void success(QueryId queryId, ByteBuf buf) {
+      if (!isTerminal.compareAndSet(false, true)) {
+        return;
+      }
+
+      closeFuture.removeListener(closeListener);
       resultsListener.queryIdArrived(queryId);
       if (logger.isDebugEnabled()) {
         logger.debug("Received QueryId {} successfully. Adding results listener {}.",
@@ -312,9 +349,21 @@ public class QueryResultHandler {
           throw new IllegalStateException("Trying to replace a non-buffering User Results listener.");
         }
       }
-
     }
 
+    @Override
+    public void interrupted(final InterruptedException ex) {
+      logger.warn("Interrupted while waiting for query results from Drillbit", ex);
+
+      if (!isTerminal.compareAndSet(false, true)) {
+        return;
+      }
+
+      closeFuture.removeListener(closeListener);
+
+      // Throw an interrupted UserException?
+      resultsListener.submissionFailed(UserException.systemError(ex).build());
+    }
   }
 
 }

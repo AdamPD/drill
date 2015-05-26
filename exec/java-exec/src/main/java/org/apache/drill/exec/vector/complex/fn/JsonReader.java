@@ -52,11 +52,10 @@ public class JsonReader extends BaseJsonProcessor {
   private final List<SchemaPath> columns;
   private final boolean allTextMode;
   private boolean atLeastOneWrite = false;
-  private final boolean readNumbersAsDouble;
-
   private final MapVectorOutput mapOutput;
   private final ListVectorOutput listOutput;
   private final boolean extended = true;
+  private final boolean readNumbersAsDouble;
 
   /**
    * Describes whether or not this reader can unwrap a single root array record and treat it like a set of distinct records.
@@ -86,10 +85,10 @@ public class JsonReader extends BaseJsonProcessor {
     this.skipOuterList = skipOuterList;
     this.allTextMode = allTextMode;
     this.columns = columns;
-    this.readNumbersAsDouble = readNumbersAsDouble;
     this.mapOutput = new MapVectorOutput(workingBuffer);
     this.listOutput = new ListVectorOutput(workingBuffer);
     this.currentFieldName="<none>";
+    this.readNumbersAsDouble = readNumbersAsDouble;
   }
 
   @Override

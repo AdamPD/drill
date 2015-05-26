@@ -69,50 +69,6 @@ public class TestJsonRecordReader extends BaseTestQuery{
   }
 
   @Test
-  public void testMixedNumberTypes() throws Exception {
-    testNoResult("alter session set `store.json.all_text_mode`= false");
-    testNoResult("alter session set `store.json.read_numbers_as_double`= false");
-    try {
-      testBuilder()
-          .sqlQuery("select * from cp.`jsoninput/mixed_number_types.json`")
-          .unOrdered()
-          .jsonBaselineFile("jsoninput/mixed_number_types.json")
-          .build().run();
-    } catch (Exception ex) {
-      assertTrue(ex.getMessage().startsWith("Query stopped., You tried to write a BigInt type when you are using a ValueWriter of type NullableFloat8WriterImpl."));
-      // this indicates successful completion of the test
-      return;
-    }
-    throw new Exception("Mixed number types verification failed, expected failure on conflicting number types.");
-  }
-
-  @Test
-  public void testMixedNumberTypesInAllTextMode() throws Exception {
-    testNoResult("alter session set `store.json.all_text_mode`= true");
-    testNoResult("alter session set `store.json.read_numbers_as_double`= false");
-    testBuilder()
-        .sqlQuery("select * from cp.`jsoninput/mixed_number_types.json`")
-        .unOrdered()
-        .baselineColumns("a")
-        .baselineValues("5.2")
-        .baselineValues("6")
-        .build().run();
-  }
-
-  @Test
-  public void testMixedNumberTypesWhenReadingNumbersAsDouble() throws Exception {
-    testNoResult("alter session set `store.json.all_text_mode`= false");
-    testNoResult("alter session set `store.json.read_numbers_as_double`= true");
-    testBuilder()
-        .sqlQuery("select * from cp.`jsoninput/mixed_number_types.json`")
-        .unOrdered()
-        .baselineColumns("a")
-        .baselineValues(5.2D)
-        .baselineValues(6D)
-        .build().run();
-  }
-
-  @Test
   public void testEnableAllTextMode() throws Exception {
     testNoResult("alter session set `store.json.all_text_mode`= true");
     test("select * from cp.`jsoninput/big_numeric.json`");
@@ -155,4 +111,47 @@ public class TestJsonRecordReader extends BaseTestQuery{
             .go();
   }
 
+  @Test
+  public void testMixedNumberTypes() throws Exception {
+    try {
+      testBuilder()
+          .sqlQuery("select * from cp.`jsoninput/mixed_number_types.json`")
+          .unOrdered()
+          .jsonBaselineFile("jsoninput/mixed_number_types.json")
+          .build().run();
+    } catch (Exception ex) {
+      assertTrue(ex.getMessage().contains("DATA_READ ERROR: Error parsing JSON - You tried to write a BigInt type when you are using a ValueWriter of type NullableFloat8WriterImpl."));
+      // this indicates successful completion of the test
+      return;
+    }
+    throw new Exception("Mixed number types verification failed, expected failure on conflicting number types.");
+  }
+
+  @Test
+  public void testMixedNumberTypesInAllTextMode() throws Exception {
+    testNoResult("alter session set `store.json.all_text_mode`= true");
+    testBuilder()
+        .sqlQuery("select * from cp.`jsoninput/mixed_number_types.json`")
+        .unOrdered()
+        .baselineColumns("a")
+        .baselineValues("5.2")
+        .baselineValues("6")
+        .build().run();
+  }
+
+  @Test
+  public void testMixedNumberTypesWhenReadingNumbersAsDouble() throws Exception {
+    try {
+    testNoResult("alter session set `store.json.read_numbers_as_double`= true");
+    testBuilder()
+        .sqlQuery("select * from cp.`jsoninput/mixed_number_types.json`")
+        .unOrdered()
+        .baselineColumns("a")
+        .baselineValues(5.2D)
+        .baselineValues(6D)
+        .build().run();
+    } finally {
+      testNoResult("alter session set `store.json.read_numbers_as_double`= false");
+    }
+  }
 }

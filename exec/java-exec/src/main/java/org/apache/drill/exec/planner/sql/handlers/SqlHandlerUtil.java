@@ -17,10 +17,14 @@
  */
 package org.apache.drill.exec.planner.sql.handlers;
 
+import com.google.common.collect.Sets;
 import org.apache.calcite.schema.Table;
+import org.apache.calcite.sql.TypedSqlNode;
 import org.apache.calcite.tools.Planner;
 import org.apache.calcite.tools.RelConversionException;
 import org.apache.drill.common.exceptions.DrillException;
+import org.apache.drill.common.exceptions.DrillRuntimeException;
+import org.apache.drill.common.exceptions.UserException;
 import org.apache.drill.exec.planner.common.DrillRelOptUtil;
 import org.apache.drill.exec.planner.sql.DirectPlan;
 import org.apache.drill.exec.planner.types.DrillFixedRelDataTypeImpl;
@@ -33,6 +37,7 @@ import org.apache.calcite.rel.type.RelDataType;
 import org.apache.calcite.sql.SqlNode;
 import org.apache.drill.exec.store.ischema.Records;
 
+import java.util.HashSet;
 import java.util.List;
 
 public class SqlHandlerUtil {
@@ -55,28 +60,44 @@ public class SqlHandlerUtil {
   public static RelNode resolveNewTableRel(boolean isNewTableView, Planner planner, List<String> tableFieldNames,
       SqlNode newTableQueryDef) throws ValidationException, RelConversionException {
 
-    SqlNode validatedQuery = planner.validate(newTableQueryDef);
-    RelNode validatedQueryRelNode = planner.convert(validatedQuery);
+
+    TypedSqlNode validatedSqlNodeWithType = planner.validateAndGetType(newTableQueryDef);
+
+    // Get the row type of view definition query.
+    // Reason for getting the row type from validated SqlNode than RelNode is because SqlNode -> RelNode involves
+    // renaming duplicate fields which is not desired when creating a view or table.
+    // For ex: SELECT region_id, region_id FROM cp.`region.json` LIMIT 1 returns
+    //  +------------+------------+
+    //  | region_id  | region_id0 |
+    //  +------------+------------+
+    //  | 0          | 0          |
+    //  +------------+------------+
+    // which is not desired when creating new views or tables.
+    final RelDataType queryRowType = validatedSqlNodeWithType.getType();
+    final RelNode validatedQueryRelNode = planner.convert(validatedSqlNodeWithType.getSqlNode());
 
     if (tableFieldNames.size() > 0) {
-      final RelDataType queryRowType = validatedQueryRelNode.getRowType();
-
       // Field count should match.
       if (tableFieldNames.size() != queryRowType.getFieldCount()) {
         final String tblType = isNewTableView ? "view" : "table";
-        throw new ValidationException(
-            String.format("%s's field list and the %s's query field list have different counts.", tblType, tblType));
+        throw UserException.validationError()
+            .message("%s's field list and the %s's query field list have different counts.", tblType, tblType)
+            .build();
       }
 
       // CTAS's query field list shouldn't have "*" when table's field list is specified.
       for (String field : queryRowType.getFieldNames()) {
         if (field.equals("*")) {
           final String tblType = isNewTableView ? "view" : "table";
-          throw new ValidationException(
-              String.format("%s's query field list has a '*', which is invalid when %s's field list is specified.",
-                  tblType, tblType));
+          throw UserException.validationError()
+              .message("%s's query field list has a '*', which is invalid when %s's field list is specified.",
+                  tblType, tblType)
+              .build();
         }
       }
+
+      // validate the given field names to make sure there are no duplicates
+      ensureNoDuplicateColumnNames(tableFieldNames);
 
       // CTAS statement has table field list (ex. below), add a project rel to rename the query fields.
       // Ex. CREATE TABLE tblname(col1, medianOfCol2, avgOfCol3) AS
@@ -86,15 +107,28 @@ public class SqlHandlerUtil {
       return DrillRelOptUtil.createRename(validatedQueryRelNode, tableFieldNames);
     }
 
+    // As the column names of the view are derived from SELECT query, make sure the query has no duplicate column names
+    ensureNoDuplicateColumnNames(queryRowType.getFieldNames());
+
     return validatedQueryRelNode;
   }
 
-  public static Table getTableFromSchema(AbstractSchema drillSchema, String tblName) throws DrillException {
+  private static void ensureNoDuplicateColumnNames(List<String> fieldNames) throws ValidationException {
+    final HashSet<String> fieldHashSet = Sets.newHashSetWithExpectedSize(fieldNames.size());
+    for(String field : fieldNames) {
+      if (fieldHashSet.contains(field.toLowerCase())) {
+        throw new ValidationException(String.format("Duplicate column name [%s]", field));
+      }
+      fieldHashSet.add(field.toLowerCase());
+    }
+  }
+
+  public static Table getTableFromSchema(AbstractSchema drillSchema, String tblName) {
     try {
       return drillSchema.getTable(tblName);
     } catch (Exception e) {
       // TODO: Move to better exception types.
-      throw new DrillException(
+      throw new DrillRuntimeException(
           String.format("Failure while trying to check if a table or view with given name [%s] already exists " +
               "in schema [%s]: %s", tblName, drillSchema.getFullSchemaName(), e.getMessage()), e);
     }

@@ -70,6 +70,8 @@ public class SystemOptionManager extends BaseOptionManager {
       PlannerSettings.PARTITION_SENDER_THREADS_FACTOR,
       PlannerSettings.PARTITION_SENDER_MAX_THREADS,
       PlannerSettings.PARTITION_SENDER_SET_THREADS,
+      PlannerSettings.ENABLE_DECIMAL_DATA_TYPE,
+      PlannerSettings.HEP_JOIN_OPT,
       ExecConstants.CAST_TO_NULLABLE_NUMERIC_OPTION,
       ExecConstants.OUTPUT_FORMAT_VALIDATOR,
       ExecConstants.PARQUET_BLOCK_SIZE_VALIDATOR,
@@ -80,8 +82,9 @@ public class SystemOptionManager extends BaseOptionManager {
       ExecConstants.PARQUET_RECORD_READER_IMPLEMENTATION_VALIDATOR,
       ExecConstants.PARQUET_ENABLE_PUSHDOWN_FILTER_IMPLEMENTATION_VALIDATOR,
       ExecConstants.JSON_READER_ALL_TEXT_MODE_VALIDATOR,
-      ExecConstants.JSON_READ_NUMBERS_AS_DOUBLE_VALIDATOR,
+      ExecConstants.TEXT_ESTIMATED_ROW_SIZE,
       ExecConstants.JSON_EXTENDED_TYPES,
+      ExecConstants.JSON_READ_NUMBERS_AS_DOUBLE_VALIDATOR,
       ExecConstants.FILESYSTEM_PARTITION_COLUMN_LABEL_VALIDATOR,
       ExecConstants.MONGO_READER_ALL_TEXT_MODE_VALIDATOR,
       ExecConstants.MONGO_READER_READ_NUMBERS_AS_DOUBLE_VALIDATOR,
@@ -111,6 +114,7 @@ public class SystemOptionManager extends BaseOptionManager {
       ExecConstants.ENABLE_WINDOW_FUNCTIONS_VALIDATOR,
       ExecConstants.DRILLBIT_CONTROLS_VALIDATOR,
       ClassTransformer.SCALAR_REPLACEMENT_VALIDATOR,
+      ExecConstants.ENABLE_NEW_TEXT_READER
   };
 
   private final PStoreConfig<OptionValue> config;
@@ -155,6 +159,16 @@ public class SystemOptionManager extends BaseOptionManager {
 
     // otherwise, return default.
     OptionValidator validator = knownOptions.get(name);
+    if(validator == null) {
+      return null;
+    } else {
+      return validator.getDefault();
+    }
+  }
+
+  @Override
+  public OptionValue getDefault(final String name) {
+    final OptionValidator validator = knownOptions.get(name);
     if(validator == null) {
       return null;
     } else {

@@ -22,6 +22,8 @@ import io.netty.util.concurrent.GenericFutureListener;
 
 import java.io.Closeable;
 import java.util.concurrent.ExecutionException;
+import java.util.concurrent.TimeUnit;
+import java.util.concurrent.TimeoutException;
 import java.util.concurrent.atomic.AtomicReference;
 
 import com.google.common.base.Preconditions;
@@ -100,25 +102,47 @@ public abstract class ReconnectingConnection<CONNECTION_TYPE extends RemoteConne
      * Called by
      */
     public void waitAndRun() {
-      try {
-//        logger.debug("Waiting for connection.");
-        CONNECTION_TYPE connection = this.get();
+      boolean isInterrupted = false;
 
-        if (connection == null) {
-//          logger.debug("Connection failed.");
-          return;
-        } else {
-//          logger.debug("Connection received. {}", connection);
-          cmd.connectionSucceeded(connection);
-//          logger.debug("Finished connection succeeded activity.");
+      // We want to wait for at least 120 secs when interrupts occur. Establishing a connection fails/succeeds quickly,
+      // So there is no point propagating the interruption as failure immediately.
+      long remainingWaitTimeMills = 120000;
+      long startTime = System.currentTimeMillis();
+
+      while(true) {
+        try {
+          //        logger.debug("Waiting for connection.");
+          CONNECTION_TYPE connection = this.get(remainingWaitTimeMills, TimeUnit.MILLISECONDS);
+
+          if (connection == null) {
+            //          logger.debug("Connection failed.");
+          } else {
+            //          logger.debug("Connection received. {}", connection);
+            cmd.connectionSucceeded(connection);
+            //          logger.debug("Finished connection succeeded activity.");
+          }
+          break;
+        } catch (final InterruptedException interruptEx) {
+          remainingWaitTimeMills -= (System.currentTimeMillis() - startTime);
+          startTime = System.currentTimeMillis();
+          isInterrupted = true;
+          if (remainingWaitTimeMills < 1) {
+            cmd.connectionFailed(FailureType.CONNECTION, interruptEx);
+            break;
+          }
+          // Ignore the interrupt and continue to wait until we elapse remainingWaitTimeMills.
+        } catch (final ExecutionException | TimeoutException ex) {
+          logger.error("Failed to establish connection", ex);
+          cmd.connectionFailed(FailureType.CONNECTION, ex);
+          break;
         }
-      } catch (InterruptedException e) {
-        cmd.connectionFailed(FailureType.CONNECTION, e);
-        // TODO InterruptedException
-      } catch (ExecutionException e) {
-        throw new IllegalStateException();
       }
 
+      if (isInterrupted) {
+        // Preserve evidence that the interruption occurred so that code higher up on the call stack can learn of the
+        // interruption and respond to it if it wants to.
+        Thread.currentThread().interrupt();
+      }
     }
 
     @Override
@@ -240,7 +264,6 @@ public abstract class ReconnectingConnection<CONNECTION_TYPE extends RemoteConne
     public void connectionFailed(org.apache.drill.exec.rpc.RpcConnectionHandler.FailureType type, Throwable t) {
       delegate.connectionFailed(type, t);
     }
-
   }
 
 }

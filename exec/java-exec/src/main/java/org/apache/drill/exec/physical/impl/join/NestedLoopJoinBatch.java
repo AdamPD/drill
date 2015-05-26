@@ -39,6 +39,7 @@ import org.apache.drill.exec.record.MaterializedField;
 import org.apache.drill.exec.record.RecordBatch;
 import org.apache.drill.exec.record.TypedFieldId;
 import org.apache.drill.exec.record.VectorWrapper;
+import org.apache.drill.exec.server.options.DrillConfigIterator.Iter;
 import org.apache.drill.exec.vector.AllocationHelper;
 
 import com.google.common.base.Preconditions;
@@ -140,8 +141,16 @@ public class NestedLoopJoinBatch extends AbstractRecordBatch<NestedLoopJoinPOP> 
 
     // Accumulate batches on the right in a hyper container
     if (state == BatchState.FIRST) {
+
+      // exit if we have an empty left batch
+      if (leftUpstream == IterOutcome.NONE) {
+        // inform upstream that we don't need anymore data and make sure we clean up any batches already in queue
+        killAndDrainRight();
+        return IterOutcome.NONE;
+      }
+
       boolean drainRight = true;
-      while (drainRight == true) {
+      while (drainRight) {
         rightUpstream = next(RIGHT_INPUT, right);
         switch (rightUpstream) {
           case OK_NEW_SCHEMA:
@@ -153,8 +162,11 @@ public class NestedLoopJoinBatch extends AbstractRecordBatch<NestedLoopJoinPOP> 
           case OK:
             addBatchToHyperContainer(right);
             break;
+          case OUT_OF_MEMORY:
+            return IterOutcome.OUT_OF_MEMORY;
           case NONE:
           case STOP:
+            //TODO we got a STOP, shouldn't we stop immediately ?
           case NOT_YET:
             drainRight = false;
             break;
@@ -182,6 +194,23 @@ public class NestedLoopJoinBatch extends AbstractRecordBatch<NestedLoopJoinPOP> 
     logger.debug("Number of records emitted: " + outputRecords);
 
     return (outputRecords > 0) ? IterOutcome.OK : IterOutcome.NONE;
+  }
+
+  private void killAndDrainRight() {
+    if (!hasMore(rightUpstream)) {
+      return;
+    }
+    right.kill(true);
+    while (hasMore(rightUpstream)) {
+      for (VectorWrapper<?> wrapper : right) {
+        wrapper.getValueVector().clear();
+      }
+      rightUpstream = next(HashJoinHelper.RIGHT_INPUT, right);
+    }
+  }
+
+  private boolean hasMore(IterOutcome outcome) {
+    return outcome == IterOutcome.OK || outcome == IterOutcome.OK_NEW_SCHEMA;
   }
 
   /**
@@ -268,6 +297,16 @@ public class NestedLoopJoinBatch extends AbstractRecordBatch<NestedLoopJoinPOP> 
       leftUpstream = next(LEFT_INPUT, left);
       rightUpstream = next(RIGHT_INPUT, right);
 
+      if (leftUpstream == IterOutcome.STOP || rightUpstream == IterOutcome.STOP) {
+        state = BatchState.STOP;
+        return;
+      }
+
+      if (leftUpstream == IterOutcome.OUT_OF_MEMORY || rightUpstream == IterOutcome.OUT_OF_MEMORY) {
+        state = BatchState.OUT_OF_MEMORY;
+        return;
+      }
+
       if (leftUpstream != IterOutcome.NONE) {
         leftSchema = left.getSchema();
         for (VectorWrapper vw : left) {
@@ -303,8 +342,16 @@ public class NestedLoopJoinBatch extends AbstractRecordBatch<NestedLoopJoinPOP> 
 
   private void addBatchToHyperContainer(RecordBatch inputBatch) {
     RecordBatchData batchCopy = new RecordBatchData(inputBatch);
-    rightCounts.addLast(inputBatch.getRecordCount());
-    rightContainer.addBatch(batchCopy.getContainer());
+    boolean success = false;
+    try {
+      rightCounts.addLast(inputBatch.getRecordCount());
+      rightContainer.addBatch(batchCopy.getContainer());
+      success = true;
+    } finally {
+      if (!success) {
+        batchCopy.clear();
+      }
+    }
   }
 
   @Override

@@ -24,6 +24,8 @@ import java.io.Externalizable;
 import java.io.IOException;
 import java.io.ObjectInput;
 import java.io.ObjectOutput;
+import java.util.ArrayList;
+import java.util.List;
 
 import com.dyuproject.protostuff.GraphIOUtil;
 import com.dyuproject.protostuff.Input;
@@ -60,10 +62,10 @@ public final class PlanFragment implements Externalizable, Message<PlanFragment>
     private DrillbitEndpoint foreman;
     private long memInitial = DEFAULT_MEM_INITIAL;
     private long memMax = DEFAULT_MEM_MAX;
-    private long queryStartTime;
     private UserCredentials credentials;
-    private int timeZone;
     private String optionsJson;
+    private QueryContextInformation context;
+    private List<Collector> collector;
 
     public PlanFragment()
     {
@@ -215,19 +217,6 @@ public final class PlanFragment implements Externalizable, Message<PlanFragment>
         return this;
     }
 
-    // queryStartTime
-
-    public long getQueryStartTime()
-    {
-        return queryStartTime;
-    }
-
-    public PlanFragment setQueryStartTime(long queryStartTime)
-    {
-        this.queryStartTime = queryStartTime;
-        return this;
-    }
-
     // credentials
 
     public UserCredentials getCredentials()
@@ -241,19 +230,6 @@ public final class PlanFragment implements Externalizable, Message<PlanFragment>
         return this;
     }
 
-    // timeZone
-
-    public int getTimeZone()
-    {
-        return timeZone;
-    }
-
-    public PlanFragment setTimeZone(int timeZone)
-    {
-        this.timeZone = timeZone;
-        return this;
-    }
-
     // optionsJson
 
     public String getOptionsJson()
@@ -264,6 +240,32 @@ public final class PlanFragment implements Externalizable, Message<PlanFragment>
     public PlanFragment setOptionsJson(String optionsJson)
     {
         this.optionsJson = optionsJson;
+        return this;
+    }
+
+    // context
+
+    public QueryContextInformation getContext()
+    {
+        return context;
+    }
+
+    public PlanFragment setContext(QueryContextInformation context)
+    {
+        this.context = context;
+        return this;
+    }
+
+    // collector
+
+    public List<Collector> getCollectorList()
+    {
+        return collector;
+    }
+
+    public PlanFragment setCollectorList(List<Collector> collector)
+    {
+        this.collector = collector;
         return this;
     }
 
@@ -358,18 +360,22 @@ public final class PlanFragment implements Externalizable, Message<PlanFragment>
                     message.memMax = input.readInt64();
                     break;
                 case 14:
-                    message.queryStartTime = input.readInt64();
-                    break;
-                case 15:
                     message.credentials = input.mergeObject(message.credentials, UserCredentials.getSchema());
                     break;
 
-                case 16:
-                    message.timeZone = input.readInt32();
-                    break;
-                case 17:
+                case 15:
                     message.optionsJson = input.readString();
                     break;
+                case 16:
+                    message.context = input.mergeObject(message.context, QueryContextInformation.getSchema());
+                    break;
+
+                case 17:
+                    if(message.collector == null)
+                        message.collector = new ArrayList<Collector>();
+                    message.collector.add(input.mergeObject(null, Collector.getSchema()));
+                    break;
+
                 default:
                     input.handleUnknownField(number, this);
             }   
@@ -415,18 +421,26 @@ public final class PlanFragment implements Externalizable, Message<PlanFragment>
         if(message.memMax != DEFAULT_MEM_MAX)
             output.writeInt64(13, message.memMax, false);
 
-        if(message.queryStartTime != 0)
-            output.writeInt64(14, message.queryStartTime, false);
-
         if(message.credentials != null)
-             output.writeObject(15, message.credentials, UserCredentials.getSchema(), false);
+             output.writeObject(14, message.credentials, UserCredentials.getSchema(), false);
 
-
-        if(message.timeZone != 0)
-            output.writeInt32(16, message.timeZone, false);
 
         if(message.optionsJson != null)
-            output.writeString(17, message.optionsJson, false);
+            output.writeString(15, message.optionsJson, false);
+
+        if(message.context != null)
+             output.writeObject(16, message.context, QueryContextInformation.getSchema(), false);
+
+
+        if(message.collector != null)
+        {
+            for(Collector collector : message.collector)
+            {
+                if(collector != null)
+                    output.writeObject(17, collector, Collector.getSchema(), true);
+            }
+        }
+
     }
 
     public String getFieldName(int number)
@@ -444,10 +458,10 @@ public final class PlanFragment implements Externalizable, Message<PlanFragment>
             case 11: return "foreman";
             case 12: return "memInitial";
             case 13: return "memMax";
-            case 14: return "queryStartTime";
-            case 15: return "credentials";
-            case 16: return "timeZone";
-            case 17: return "optionsJson";
+            case 14: return "credentials";
+            case 15: return "optionsJson";
+            case 16: return "context";
+            case 17: return "collector";
             default: return null;
         }
     }
@@ -472,10 +486,10 @@ public final class PlanFragment implements Externalizable, Message<PlanFragment>
         __fieldMap.put("foreman", 11);
         __fieldMap.put("memInitial", 12);
         __fieldMap.put("memMax", 13);
-        __fieldMap.put("queryStartTime", 14);
-        __fieldMap.put("credentials", 15);
-        __fieldMap.put("timeZone", 16);
-        __fieldMap.put("optionsJson", 17);
+        __fieldMap.put("credentials", 14);
+        __fieldMap.put("optionsJson", 15);
+        __fieldMap.put("context", 16);
+        __fieldMap.put("collector", 17);
     }
     
 }

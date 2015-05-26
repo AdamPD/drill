@@ -69,7 +69,7 @@ import com.sun.codemodel.JVar;
  */
 public class MergeJoinBatch extends AbstractRecordBatch<MergeJoinPOP> {
 
-  static final org.slf4j.Logger logger = org.slf4j.LoggerFactory.getLogger(MergeJoinBatch.class);
+  private static final org.slf4j.Logger logger = org.slf4j.LoggerFactory.getLogger(MergeJoinBatch.class);
 
   public static final long ALLOCATOR_INITIAL_RESERVATION = 1*1024*1024;
   public static final long ALLOCATOR_MAX_RESERVATION = 20L*1000*1000*1000;
@@ -134,7 +134,7 @@ public class MergeJoinBatch extends AbstractRecordBatch<MergeJoinPOP> {
       comparator = JoinUtils.checkAndSetComparison(condition, comparator);
     }
     assert comparator != JoinComparator.NONE;
-    areNullsEqual = (comparator == JoinComparator.IS_NOT_DISTINCT_FROM) ? true : false;
+    areNullsEqual = (comparator == JoinComparator.IS_NOT_DISTINCT_FROM);
   }
 
   public JoinRelType getJoinType() {
@@ -146,8 +146,22 @@ public class MergeJoinBatch extends AbstractRecordBatch<MergeJoinPOP> {
     return status.getOutPosition();
   }
 
+  @Override
   public void buildSchema() throws SchemaChangeException {
     status.ensureInitial();
+
+    final IterOutcome leftOutcome = status.getLastLeft();
+    final IterOutcome rightOutcome = status.getLastRight();
+    if (leftOutcome == IterOutcome.STOP || rightOutcome == IterOutcome.STOP) {
+      state = BatchState.STOP;
+      return;
+    }
+
+    if (leftOutcome == IterOutcome.OUT_OF_MEMORY || rightOutcome == IterOutcome.OUT_OF_MEMORY) {
+      state = BatchState.OUT_OF_MEMORY;
+      return;
+    }
+
     allocateBatch(true);
   }
 
@@ -242,6 +256,7 @@ public class MergeJoinBatch extends AbstractRecordBatch<MergeJoinPOP> {
   }
 
   public void resetBatchBuilder() {
+    batchBuilder.close();
     batchBuilder = new MergeJoinBatchBuilder(oContext.getAllocator(), status);
   }
 

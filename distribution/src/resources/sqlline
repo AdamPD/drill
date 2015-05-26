@@ -39,15 +39,20 @@ bin=`cd "$bin">/dev/null; pwd`
 # is.) 
 # Put our property specification before previous value of DRILL_SHELL_JAVA_OPTS
 # so that it can still be overridden via DRILL_SHELL_JAVA_OPTS.
-DRILL_SHELL_JAVA_OPTS="-Dsqlline.isolation=TRANSACTION_NONE $DRILL_SHELL_JAVA_OPTS"
+#
+# This is not currently needed as the new SQLLine we are using doesn't isolate.
+# DRILL_SHELL_JAVA_OPTS="-Dsqlline.isolation=TRANSACTION_NONE $DRILL_SHELL_JAVA_OPTS"
 
-DRILL_SHELL_JAVA_OPTS="$DRILL_SHELL_JAVA_OPTS -Dlog.path=$DRILL_LOG_DIR/sqlline.log"
+DRILL_SHELL_JAVA_OPTS="$DRILL_SHELL_JAVA_OPTS -Dlog.path=$DRILL_LOG_DIR/sqlline.log -Dlog.query.path=$DRILL_LOG_DIR/sqlline_queries.json"
 
+if ! $is_cygwin; then
+  DRILL_SHELL_OPTS="$DRILL_SHELL_OPTS --color=true"
+fi
 
 if [ -n "$QUERY" ] ; then
   echo $QUERY | exec "$JAVA" $DRILL_SHELL_JAVA_OPTS $DRILL_JAVA_OPTS -cp $CP sqlline.SqlLine -d org.apache.drill.jdbc.Driver  --maxWidth=10000 "${ARGS[@]}"
 elif [ -n "$FILE" ] ; then
   exec "$JAVA" $DRILL_SHELL_JAVA_OPTS $DRILL_JAVA_OPTS -cp $CP sqlline.SqlLine -d org.apache.drill.jdbc.Driver  --maxWidth=10000 "${ARGS[@]}" --run=$FILE
 else
-  exec "$JAVA" $DRILL_SHELL_JAVA_OPTS $DRILL_JAVA_OPTS -cp $CP sqlline.SqlLine -d org.apache.drill.jdbc.Driver --maxWidth=10000 "${ARGS[@]}"
+  exec "$JAVA" $DRILL_SHELL_JAVA_OPTS $DRILL_JAVA_OPTS -cp $CP sqlline.SqlLine -d org.apache.drill.jdbc.Driver --maxWidth=10000 $DRILL_SHELL_OPTS "${ARGS[@]}"
 fi

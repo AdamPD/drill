@@ -32,6 +32,7 @@ import org.apache.drill.exec.expr.ClassGenerator;
 import org.apache.drill.exec.expr.CodeGenerator;
 import org.apache.drill.exec.expr.ExpressionTreeMaterializer;
 import org.apache.drill.exec.memory.OutOfMemoryException;
+import org.apache.drill.exec.memory.OutOfMemoryRuntimeException;
 import org.apache.drill.exec.ops.AccountingDataTunnel;
 import org.apache.drill.exec.ops.FragmentContext;
 import org.apache.drill.exec.ops.MetricDef;
@@ -111,8 +112,6 @@ public class PartitionSenderRootExec extends BaseRootExec {
     stats.setLongStat(Metric.N_RECEIVERS, outGoingBatchCount);
     // Algorithm to figure out number of threads to parallelize output
     // numberOfRows/sliceTarget/numReceivers/threadfactor
-    // threadFactor = 4 by default
-    // one more param to put a limit on number max number of threads: default 32
     this.cost = operator.getChild().getCost();
     final OptionManager optMgr = context.getOptions();
     long sliceTarget = optMgr.getOption(ExecConstants.SLICE_TARGET).num_val;
@@ -171,6 +170,9 @@ public class PartitionSenderRootExec extends BaseRootExec {
         }
         return false;
 
+      case OUT_OF_MEMORY:
+        throw new OutOfMemoryRuntimeException();
+
       case STOP:
         if (partitioner != null) {
           partitioner.clear();
@@ -228,25 +230,36 @@ public class PartitionSenderRootExec extends BaseRootExec {
     final List<Partitioner> subPartitioners = createClassInstances(actualPartitions);
     int startIndex = 0;
     int endIndex = 0;
-    for (int i = 0; i < actualPartitions; i++) {
-      startIndex = endIndex;
-      endIndex = (i < actualPartitions - 1 ) ? startIndex + divisor : outGoingBatchCount;
-      if ( i < longTail ) {
-        endIndex++;
-      }
-      final OperatorStats partitionStats = new OperatorStats(stats, true);
-      subPartitioners.get(i).setup(context, incoming, popConfig, partitionStats, oContext,
-        startIndex, endIndex);
-    }
 
-    synchronized(this){
-      partitioner = new PartitionerDecorator(subPartitioners, stats, context);
-      for (int index = 0; index < terminations.size(); index++) {
-        partitioner.getOutgoingBatches(terminations.buffer[index]).terminate();
+    boolean success = false;
+    try {
+      for (int i = 0; i < actualPartitions; i++) {
+        startIndex = endIndex;
+        endIndex = (i < actualPartitions - 1) ? startIndex + divisor : outGoingBatchCount;
+        if (i < longTail) {
+          endIndex++;
+        }
+        final OperatorStats partitionStats = new OperatorStats(stats, true);
+        subPartitioners.get(i).setup(context, incoming, popConfig, partitionStats, oContext,
+            startIndex, endIndex);
       }
-      terminations.clear();
-    }
 
+      synchronized (this) {
+        partitioner = new PartitionerDecorator(subPartitioners, stats, context);
+        for (int index = 0; index < terminations.size(); index++) {
+          partitioner.getOutgoingBatches(terminations.buffer[index]).terminate();
+        }
+        terminations.clear();
+      }
+
+      success = true;
+    } finally {
+      if (!success) {
+        for (Partitioner p : subPartitioners) {
+          p.clear();
+        }
+      }
+    }
   }
 
   private List<Partitioner> createClassInstances(int actualPartitions) throws SchemaChangeException {

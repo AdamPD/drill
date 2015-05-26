@@ -24,10 +24,10 @@ import java.util.List;
 import java.util.Map;
 
 import org.apache.calcite.schema.SchemaPlus;
-import org.apache.calcite.jdbc.SimpleCalciteSchema;
 
 import org.apache.drill.common.config.DrillConfig;
 import org.apache.drill.common.exceptions.ExecutionSetupException;
+import org.apache.drill.common.exceptions.UserException;
 import org.apache.drill.exec.ExecConstants;
 import org.apache.drill.exec.exception.ClassTransformationException;
 import org.apache.drill.exec.expr.ClassGenerator;
@@ -36,6 +36,7 @@ import org.apache.drill.exec.expr.fn.FunctionImplementationRegistry;
 import org.apache.drill.exec.memory.BufferAllocator;
 import org.apache.drill.exec.memory.OutOfMemoryException;
 import org.apache.drill.exec.physical.base.PhysicalOperator;
+import org.apache.drill.exec.memory.OutOfMemoryRuntimeException;
 import org.apache.drill.exec.planner.physical.PlannerSettings;
 import org.apache.drill.exec.proto.BitControl.PlanFragment;
 import org.apache.drill.exec.proto.CoordinationProtos.DrillbitEndpoint;
@@ -76,7 +77,7 @@ public class FragmentContext implements AutoCloseable, UdfUtilities {
   private final FunctionImplementationRegistry funcRegistry;
   private final BufferAllocator allocator;
   private final PlanFragment fragment;
-  private final QueryDateTimeInfo queryDateTimeInfo;
+  private final ContextInformation contextInformation;
   private IncomingBuffers buffers;
   private final OptionManager fragmentOptions;
   private final BufferManager bufferManager;
@@ -88,6 +89,14 @@ public class FragmentContext implements AutoCloseable, UdfUtilities {
     @Override
     public void accept(final RpcException e) {
       fail(e);
+    }
+
+    @Override
+    public void interrupt(final InterruptedException e) {
+      if (shouldContinue()) {
+        logger.error("Received an unexpected interrupt while waiting for the data send to complete.", e);
+        fail(e);
+      }
     }
   };
 
@@ -126,7 +135,7 @@ public class FragmentContext implements AutoCloseable, UdfUtilities {
     this.accountingUserConnection = new AccountingUserConnection(connection, sendingAccountor, statusHandler);
     this.fragment = fragment;
     this.funcRegistry = funcRegistry;
-    queryDateTimeInfo = new QueryDateTimeInfo(fragment.getQueryStartTime(), fragment.getTimeZone());
+    contextInformation = new ContextInformation(fragment.getCredentials(), fragment.getContext());
 
     logger.debug("Getting initial memory allocation of {}", fragment.getMemInitial());
     logger.debug("Fragment max allocation: {}", fragment.getMemMax());
@@ -150,6 +159,10 @@ public class FragmentContext implements AutoCloseable, UdfUtilities {
     try {
       allocator = context.getAllocator().getChildAllocator(this, fragment.getMemInitial(), fragment.getMemMax(), true);
       Preconditions.checkNotNull(allocator, "Unable to acuqire allocator");
+    } catch(final OutOfMemoryException | OutOfMemoryRuntimeException e) {
+      throw UserException.memoryError(e)
+        .addContext("Fragment", getHandle().getMajorFragmentId() + ":" + getHandle().getMinorFragmentId())
+        .build();
     } catch(final Throwable e) {
       throw new ExecutionSetupException("Failure while getting memory allocator for fragment.", e);
     }
@@ -234,8 +247,8 @@ public class FragmentContext implements AutoCloseable, UdfUtilities {
   }
 
   @Override
-  public QueryDateTimeInfo getQueryDateTimeInfo(){
-    return this.queryDateTimeInfo;
+  public ContextInformation getContextInformation() {
+    return contextInformation;
   }
 
   public DrillbitEndpoint getForemanEndpoint() {

@@ -18,6 +18,7 @@
 package org.apache.drill;
 import org.apache.drill.common.exceptions.UserException;
 import org.apache.drill.common.util.FileUtils;
+import org.apache.drill.exec.work.ExecErrorConstants;
 import org.apache.drill.exec.work.foreman.SqlUnsupportedException;
 import org.apache.drill.exec.work.foreman.UnsupportedDataTypeException;
 import org.apache.drill.exec.work.foreman.UnsupportedFunctionException;
@@ -252,18 +253,6 @@ public class TestDisabledFunctionality extends BaseTestQuery{
     }
   }
 
-  @Test(expected = UnsupportedRelOperatorException.class) // see DRILL-1325,
-  @Ignore // TODO: currently errors out in NLJ
-  public void testSubqueryWithoutCorrelatedJoinCondition() throws Exception {
-    try {
-      test("select a.lastname " +
-          "from cp.`employee.json` a " +
-          "where exists (select n_name from cp.`tpch/nation.parquet` b) AND a.position_id = 10");
-    } catch(UserException ex) {
-      throwAsUnsupportedException(ex);
-    }
-  }
-
   @Test(expected = UnsupportedRelOperatorException.class) // see DRILL-2068, DRILL-1325
   public void testExplainPlanForCartesianJoin() throws Exception {
     try {
@@ -365,5 +354,17 @@ public class TestDisabledFunctionality extends BaseTestQuery{
       throwAsUnsupportedException(ex);
       throw ex;
     }
+  }
+
+  @Test // DRILL-2848
+  public void testDisableDecimalCasts() throws Exception {
+    final String query = "select cast('1.2' as decimal(9, 2)) from cp.`employee.json` limit 1";
+    errorMsgTestHelper(query, ExecErrorConstants.DECIMAL_DISABLE_ERR_MSG);
+  }
+
+  @Test // DRILL-2848
+  public void testDisableDecimalFromParquet() throws Exception {
+    final String query = "select * from cp.`parquet/decimal_dictionary.parquet`";
+    errorMsgTestHelper(query, ExecErrorConstants.DECIMAL_DISABLE_ERR_MSG);
   }
 }

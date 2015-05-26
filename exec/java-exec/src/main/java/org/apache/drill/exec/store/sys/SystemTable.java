@@ -17,17 +17,10 @@
  */
 package org.apache.drill.exec.store.sys;
 
-import com.google.common.collect.Iterators;
-import org.apache.drill.exec.ops.FragmentContext;
-import org.apache.drill.exec.server.options.DrillConfigIterator;
-import org.apache.drill.exec.server.options.OptionManager;
-import org.apache.drill.exec.server.options.OptionValue;
-import org.apache.drill.exec.store.RecordDataType;
-import org.apache.drill.exec.store.pojo.PojoDataType;
-import org.apache.calcite.rel.type.RelDataType;
-import org.apache.calcite.rel.type.RelDataTypeFactory;
-
 import java.util.Iterator;
+
+import org.apache.drill.exec.ops.FragmentContext;
+import org.apache.drill.exec.store.sys.OptionIterator.OptionValueWrapper;
 
 /**
  * An enumeration of all tables in Drill's system ("sys") schema.
@@ -39,12 +32,17 @@ import java.util.Iterator;
  */
 public enum SystemTable {
 
-  OPTION("options", false, OptionValue.class) {
+  OPTION("options", false, OptionValueWrapper.class) {
     @Override
     public Iterator<Object> getIterator(final FragmentContext context) {
-      final DrillConfigIterator configOptions = new DrillConfigIterator(context.getConfig());
-      final OptionManager fragmentOptions = context.getOptions();
-      return (Iterator<Object>) (Object) Iterators.concat(configOptions.iterator(), fragmentOptions.iterator());
+      return new OptionIterator(context, OptionIterator.Mode.SYS_SESS);
+    }
+  },
+
+  BOOT("boot", false, OptionValueWrapper.class) {
+    @Override
+    public Iterator<Object> getIterator(final FragmentContext context) {
+      return new OptionIterator(context, OptionIterator.Mode.BOOT);
     }
   },
 
@@ -103,5 +101,6 @@ public enum SystemTable {
   public Class getPojoClass() {
     return pojoClass;
   }
+
 
 }

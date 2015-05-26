@@ -26,6 +26,7 @@ import java.util.List;
 import java.util.concurrent.TimeUnit;
 
 import org.apache.drill.common.config.DrillConfig;
+import org.apache.drill.common.exceptions.UserException;
 import org.apache.drill.common.expression.ErrorCollector;
 import org.apache.drill.common.expression.ErrorCollectorImpl;
 import org.apache.drill.common.expression.LogicalExpression;
@@ -43,6 +44,7 @@ import org.apache.drill.exec.expr.TypeHelper;
 import org.apache.drill.exec.expr.fn.FunctionGenerationHelper;
 import org.apache.drill.exec.memory.BufferAllocator;
 import org.apache.drill.exec.memory.OutOfMemoryException;
+import org.apache.drill.exec.memory.OutOfMemoryRuntimeException;
 import org.apache.drill.exec.ops.FragmentContext;
 import org.apache.drill.exec.physical.config.ExternalSort;
 import org.apache.drill.exec.physical.impl.sort.RecordBatchData;
@@ -60,6 +62,8 @@ import org.apache.drill.exec.record.VectorWrapper;
 import org.apache.drill.exec.record.WritableBatch;
 import org.apache.drill.exec.record.selection.SelectionVector2;
 import org.apache.drill.exec.record.selection.SelectionVector4;
+import org.apache.drill.exec.store.ischema.Records;
+import org.apache.drill.exec.testing.ExecutionControlsInjector;
 import org.apache.drill.exec.vector.CopyUtil;
 import org.apache.drill.exec.vector.ValueVector;
 import org.apache.drill.exec.vector.complex.AbstractContainerVector;
@@ -109,6 +113,10 @@ public class ExternalSortBatch extends AbstractRecordBatch<ExternalSort> {
   private final String fileName;
   private int firstSpillBatchCount = 0;
 
+  public static final String INTERRUPTION_AFTER_SORT = "after-sort";
+  public static final String INTERRUPTION_AFTER_SETUP = "after-setup";
+  private final static ExecutionControlsInjector injector = ExecutionControlsInjector.getInjector(ExternalSortBatch.class);
+
   public ExternalSortBatch(ExternalSort popConfig, FragmentContext context, RecordBatch incoming) throws OutOfMemoryException {
     super(popConfig, context, true);
     this.incoming = incoming;
@@ -146,28 +154,37 @@ public class ExternalSortBatch extends AbstractRecordBatch<ExternalSort> {
 
   @Override
   public void close() {
-    if (batchGroups != null) {
-      for (BatchGroup group: batchGroups) {
-        try {
-          group.cleanup();
-        } catch (IOException e) {
-          throw new RuntimeException(e);
+    try {
+      if (batchGroups != null) {
+        for (BatchGroup group: batchGroups) {
+          try {
+            group.cleanup();
+          } catch (IOException e) {
+            throw new RuntimeException(e);
+          }
         }
       }
+    } finally {
+      if (builder != null) {
+        builder.clear();
+        builder.close();
+      }
+      if (sv4 != null) {
+        sv4.clear();
+      }
+      if (copier != null) {
+        copier.cleanup();
+      }
+      copierAllocator.close();
+      super.close();
+
+      if(mSorter != null) {
+        mSorter.clear();
+      }
     }
-    if (builder != null) {
-      builder.clear();
-    }
-    if (sv4 != null) {
-      sv4.clear();
-    }
-    if (copier != null) {
-      copier.cleanup();
-    }
-    copierAllocator.close();
-    super.close();
   }
 
+  @Override
   public void buildSchema() throws SchemaChangeException {
     IterOutcome outcome = next(incoming);
     switch (outcome) {
@@ -183,12 +200,16 @@ public class ExternalSortBatch extends AbstractRecordBatch<ExternalSort> {
         }
         container.buildSchema(SelectionVectorMode.NONE);
         container.setRecordCount(0);
-        return;
+        break;
       case STOP:
+        state = BatchState.STOP;
+        break;
+      case OUT_OF_MEMORY:
+        state = BatchState.OUT_OF_MEMORY;
+        break;
       case NONE:
         state = BatchState.DONE;
-      default:
-        return;
+        break;
     }
   }
 
@@ -244,7 +265,7 @@ public class ExternalSortBatch extends AbstractRecordBatch<ExternalSort> {
           // only change in the case that the schema truly changes.  Artificial schema changes are ignored.
           if (!incoming.getSchema().equals(schema)) {
             if (schema != null) {
-              throw new UnsupportedOperationException("Sort doesn't currently support sorts with changing schemas.");
+              throw new SchemaChangeException();
             }
             this.schema = incoming.getSchema();
             this.sorter = createNewSorter(context, incoming);
@@ -270,8 +291,10 @@ public class ExternalSortBatch extends AbstractRecordBatch<ExternalSort> {
           } else {
             try {
               sv2 = newSV2();
+            } catch(InterruptedException e) {
+              return IterOutcome.STOP;
             } catch (OutOfMemoryException e) {
-              throw new RuntimeException(e);
+              throw new OutOfMemoryRuntimeException(e);
             }
           }
           int count = sv2.getCount();
@@ -282,43 +305,55 @@ public class ExternalSortBatch extends AbstractRecordBatch<ExternalSort> {
           sorter.sort(sv2);
 //          logger.debug("Took {} us to sort {} records", w.elapsed(TimeUnit.MICROSECONDS), count);
           RecordBatchData rbd = new RecordBatchData(incoming);
-          if (incoming.getSchema().getSelectionVectorMode() == SelectionVectorMode.NONE) {
-            rbd.setSv2(sv2);
-          }
-          batchGroups.add(new BatchGroup(rbd.getContainer(), rbd.getSv2()));
-          batchesSinceLastSpill++;
-          if (// We have spilled at least once and the current memory used is more than the 75% of peak memory used.
-              (spillCount > 0 && totalSizeInMemory > .75 * highWaterMark) ||
-              // If we haven't spilled so far, do we have enough memory for MSorter if this turns out to be the last incoming batch?
-              (spillCount == 0 && !hasMemoryForInMemorySort(totalCount)) ||
-              // current memory used is more than 95% of memory usage limit of this operator
-              (totalSizeInMemory > .95 * popConfig.getMaxAllocation()) ||
-              // current memory used is more than 95% of memory usage limit of this fragment
-              (totalSizeInMemory > .95 * oContext.getAllocator().getFragmentLimit()) ||
-              // Number of incoming batches (BatchGroups) exceed the limit and number of incoming batches accumulated
-              // since the last spill exceed the defined limit
-              (batchGroups.size() > SPILL_THRESHOLD && batchesSinceLastSpill >= SPILL_BATCH_GROUP_SIZE)) {
-
-            if (firstSpillBatchCount == 0) {
-              firstSpillBatchCount = batchGroups.size();
+          boolean success = false;
+          try {
+            if (incoming.getSchema().getSelectionVectorMode() == SelectionVectorMode.NONE) {
+              rbd.setSv2(sv2);
             }
+            batchGroups.add(new BatchGroup(rbd.getContainer(), rbd.getSv2()));
+            batchesSinceLastSpill++;
+            if (// We have spilled at least once and the current memory used is more than the 75% of peak memory used.
+                (spillCount > 0 && totalSizeInMemory > .75 * highWaterMark) ||
+                // If we haven't spilled so far, do we have enough memory for MSorter if this turns out to be the last incoming batch?
+                (spillCount == 0 && !hasMemoryForInMemorySort(totalCount)) ||
+                // current memory used is more than 95% of memory usage limit of this operator
+                (totalSizeInMemory > .95 * popConfig.getMaxAllocation()) ||
+                // current memory used is more than 95% of memory usage limit of this fragment
+                (totalSizeInMemory > .95 * oContext.getAllocator().getFragmentLimit()) ||
+                // Number of incoming batches (BatchGroups) exceed the limit and number of incoming batches accumulated
+                // since the last spill exceed the defined limit
+                (batchGroups.size() > SPILL_THRESHOLD && batchesSinceLastSpill >= SPILL_BATCH_GROUP_SIZE)) {
 
-            if (spilledBatchGroups.size() > firstSpillBatchCount / 2) {
-              logger.info("Merging spills");
-              spilledBatchGroups.addFirst(mergeAndSpill(spilledBatchGroups));
+              if (firstSpillBatchCount == 0) {
+                firstSpillBatchCount = batchGroups.size();
+              }
+
+              if (spilledBatchGroups.size() > firstSpillBatchCount / 2) {
+                logger.info("Merging spills");
+                spilledBatchGroups.addFirst(mergeAndSpill(spilledBatchGroups));
+              }
+              spilledBatchGroups.add(mergeAndSpill(batchGroups));
+              batchesSinceLastSpill = 0;
             }
-            spilledBatchGroups.add(mergeAndSpill(batchGroups));
-            batchesSinceLastSpill = 0;
-          }
-          long t = w.elapsed(TimeUnit.MICROSECONDS);
+            long t = w.elapsed(TimeUnit.MICROSECONDS);
 //          logger.debug("Took {} us to sort {} records", t, count);
+            success = true;
+          } finally {
+            if (!success) {
+              rbd.clear();
+            }
+          }
           break;
         case OUT_OF_MEMORY:
+          logger.debug("received OUT_OF_MEMORY, trying to spill");
           highWaterMark = totalSizeInMemory;
           if (batchesSinceLastSpill > 2) {
             spilledBatchGroups.add(mergeAndSpill(batchGroups));
+            batchesSinceLastSpill = 0;
+          } else {
+            logger.debug("not enough batches to spill, sending OUT_OF_MEMORY downstream");
+            return IterOutcome.OUT_OF_MEMORY;
           }
-          batchesSinceLastSpill = 0;
           break;
         default:
           throw new UnsupportedOperationException();
@@ -332,6 +367,10 @@ public class ExternalSortBatch extends AbstractRecordBatch<ExternalSort> {
         Stopwatch watch = new Stopwatch();
         watch.start();
 
+        if (builder != null) {
+          builder.clear();
+          builder.close();
+        }
         builder = new SortRecordBatchBuilder(oContext.getAllocator(), MAX_SORT_BYTES);
 
         for (BatchGroup group : batchGroups) {
@@ -344,12 +383,18 @@ public class ExternalSortBatch extends AbstractRecordBatch<ExternalSort> {
         sv4 = builder.getSv4();
         mSorter = createNewMSorter();
         mSorter.setup(context, oContext.getAllocator(), getSelectionVector4(), this.container);
+
+        // For testing memory-leak purpose, inject exception after mSorter finishes setup
+        injector.injectUnchecked(context.getExecutionControls(), INTERRUPTION_AFTER_SETUP);
         mSorter.sort(this.container);
 
         // sort may have prematurely exited due to should continue returning false.
         if (!context.shouldContinue()) {
           return IterOutcome.STOP;
         }
+
+        // For testing memory-leak purpose, inject exception after mSorter finishes sorting
+        injector.injectUnchecked(context.getExecutionControls(), INTERRUPTION_AFTER_SORT);
         sv4 = mSorter.getSV4();
 
         long t = watch.elapsed(TimeUnit.MICROSECONDS);
@@ -378,9 +423,13 @@ public class ExternalSortBatch extends AbstractRecordBatch<ExternalSort> {
 
       return IterOutcome.OK_NEW_SCHEMA;
 
-    } catch(SchemaChangeException | ClassTransformationException | IOException ex) {
+    } catch (SchemaChangeException ex) {
       kill(false);
-      logger.error("Failure during query", ex);
+      context.fail(UserException.unsupportedError(ex)
+        .message("Sort doesn't currently support sorts with changing schemas").build());
+      return IterOutcome.STOP;
+    } catch(ClassTransformationException | IOException ex) {
+      kill(false);
       context.fail(ex);
       return IterOutcome.STOP;
     } catch (UnsupportedOperationException e) {
@@ -481,7 +530,7 @@ public class ExternalSortBatch extends AbstractRecordBatch<ExternalSort> {
     return size;
   }
 
-  private SelectionVector2 newSV2() throws OutOfMemoryException {
+  private SelectionVector2 newSV2() throws OutOfMemoryException, InterruptedException {
     SelectionVector2 sv2 = new SelectionVector2(oContext.getAllocator());
     if (!sv2.allocateNew(incoming.getRecordCount())) {
       try {
@@ -494,8 +543,10 @@ public class ExternalSortBatch extends AbstractRecordBatch<ExternalSort> {
       while (true) {
         try {
           Thread.sleep(waitTime * 1000);
-        } catch (InterruptedException e) {
-          throw new OutOfMemoryException(e);
+        } catch(final InterruptedException e) {
+          if (!context.shouldContinue()) {
+            throw e;
+          }
         }
         waitTime *= 2;
         if (sv2.allocateNew(incoming.getRecordCount())) {

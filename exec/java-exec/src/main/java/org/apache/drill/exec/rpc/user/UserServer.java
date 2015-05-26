@@ -17,12 +17,11 @@
  */
 package org.apache.drill.exec.rpc.user;
 
-import com.google.common.io.Closeables;
 import io.netty.buffer.ByteBuf;
 import io.netty.buffer.ByteBufInputStream;
-import io.netty.channel.Channel;
 import io.netty.channel.ChannelHandlerContext;
 import io.netty.channel.EventLoopGroup;
+import io.netty.channel.socket.SocketChannel;
 
 import java.io.IOException;
 import java.util.UUID;
@@ -56,6 +55,7 @@ import org.apache.drill.exec.rpc.user.security.UserAuthenticator;
 import org.apache.drill.exec.rpc.user.security.UserAuthenticatorFactory;
 import org.apache.drill.exec.work.user.UserWorker;
 
+import com.google.common.io.Closeables;
 import com.google.protobuf.InvalidProtocolBufferException;
 import com.google.protobuf.MessageLite;
 
@@ -68,7 +68,7 @@ public class UserServer extends BasicServer<RpcType, UserServer.UserClientConnec
 
   public UserServer(DrillConfig config, BufferAllocator alloc, EventLoopGroup eventLoopGroup,
       UserWorker worker) throws DrillbitStartupException {
-    super(UserRpcConfig.MAPPING, alloc.getUnderlyingAllocator(), eventLoopGroup);
+    super(UserRpcConfig.getMapping(config), alloc.getUnderlyingAllocator(), eventLoopGroup);
     this.worker = worker;
     this.alloc = alloc;
     if (config.getBoolean(ExecConstants.USER_AUTHENTICATION_ENABLED)) {
@@ -113,6 +113,15 @@ public class UserServer extends BasicServer<RpcType, UserServer.UserClientConnec
         throw new RpcException("Failure while decoding QueryId body.", e);
       }
 
+    case RpcType.RESUME_PAUSED_QUERY_VALUE:
+      try {
+        final QueryId queryId = QueryId.PARSER.parseFrom(new ByteBufInputStream(pBody));
+        final Ack ack = worker.resumeQuery(queryId);
+        return new Response(RpcType.ACK, ack);
+      } catch (final InvalidProtocolBufferException e) {
+        throw new RpcException("Failure while decoding QueryId body.", e);
+      }
+
     default:
       throw new UnsupportedOperationException(String.format("UserServer received rpc of unknown type.  Type was %d.", rpcType));
     }
@@ -123,8 +132,12 @@ public class UserServer extends BasicServer<RpcType, UserServer.UserClientConnec
 
     private UserSession session;
 
-    public UserClientConnection(Channel channel) {
-      super(channel);
+    public UserClientConnection(SocketChannel channel) {
+      super(channel, "user client");
+    }
+
+    void disableReadTimeout() {
+      getChannel().pipeline().remove(BasicServer.TIMEOUT_HANDLER);
     }
 
     void setUser(UserToBitHandshake inbound) throws IOException {
@@ -161,7 +174,8 @@ public class UserServer extends BasicServer<RpcType, UserServer.UserClientConnec
   }
 
   @Override
-  public UserClientConnection initRemoteConnection(Channel channel) {
+  public UserClientConnection initRemoteConnection(SocketChannel channel) {
+    super.initRemoteConnection(channel);
     return new UserClientConnection(channel);
   }
 
@@ -185,6 +199,13 @@ public class UserServer extends BasicServer<RpcType, UserServer.UserClientConnec
       @Override
       public BitToUserHandshake getHandshakeResponse(UserToBitHandshake inbound) throws Exception {
         logger.trace("Handling handshake from user to bit. {}", inbound);
+
+
+        // if timeout is unsupported or is set to false, disable timeout.
+        if (!inbound.hasSupportTimeout() || !inbound.getSupportTimeout()) {
+          connection.disableReadTimeout();
+          logger.warn("Timeout Disabled as client doesn't support it.", connection.getName());
+        }
 
         BitToUserHandshake.Builder respBuilder = BitToUserHandshake.newBuilder()
             .setRpcVersion(UserRpcConfig.RPC_VERSION);

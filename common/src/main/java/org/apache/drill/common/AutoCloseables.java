@@ -39,7 +39,25 @@ public class AutoCloseables {
     try {
       ac.close();
     } catch(Exception e) {
-      logger.info("Failure on close(): " + e);
+      logger.warn("Failure on close(): " + e);
+    }
+  }
+
+  public static void close(AutoCloseable[] ac) throws Exception {
+    Exception topLevelException = null;
+    for (AutoCloseable closeable : ac) {
+      try {
+        closeable.close();
+      } catch (Exception e) {
+        if (topLevelException == null) {
+          topLevelException = e;
+        } else {
+          topLevelException.addSuppressed(e);
+        }
+      }
+    }
+    if (topLevelException != null) {
+      throw topLevelException;
     }
   }
 }

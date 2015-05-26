@@ -49,9 +49,12 @@ import org.apache.drill.exec.record.selection.SelectionVector2;
 import org.apache.drill.exec.record.selection.SelectionVector4;
 import org.apache.drill.exec.rpc.RpcException;
 import org.apache.drill.exec.rpc.RpcOutcomeListener;
+import org.apache.drill.exec.testing.ExecutionControlsInjector;
 
 public class UnorderedReceiverBatch implements CloseableRecordBatch {
-  static final org.slf4j.Logger logger = org.slf4j.LoggerFactory.getLogger(UnorderedReceiverBatch.class);
+  private static final org.slf4j.Logger logger = org.slf4j.LoggerFactory.getLogger(UnorderedReceiverBatch.class);
+  private final static ExecutionControlsInjector injector =
+      ExecutionControlsInjector.getInjector(UnorderedReceiverBatch.class);
 
   private final RecordBatchLoader batchLoader;
   private final RawFragmentBatchProvider fragProvider;
@@ -80,7 +83,7 @@ public class UnorderedReceiverBatch implements CloseableRecordBatch {
     oContext = context.newOperatorContext(config, false);
     this.batchLoader = new RecordBatchLoader(oContext.getAllocator());
 
-    this.stats = context.getStats().getOperatorStats(new OpProfileDef(config.getOperatorId(), config.getOperatorType(), 1), null);
+    this.stats = oContext.getStats();
     this.stats.setLongStat(Metric.NUM_SENDERS, config.getNumSenders());
     this.config = config;
   }
@@ -133,6 +136,19 @@ public class UnorderedReceiverBatch implements CloseableRecordBatch {
     return batchLoader.getValueAccessorById(clazz, ids);
   }
 
+  private RawFragmentBatch getNextBatch() throws IOException {
+    try {
+      injector.injectInterruptiblePause(context.getExecutionControls(), "waiting-for-data", logger);
+      return fragProvider.getNext();
+    } catch(final InterruptedException e) {
+      // Preserve evidence that the interruption occurred so that code higher up on the call stack can learn of the
+      // interruption and respond to it if it wants to.
+      Thread.currentThread().interrupt();
+
+      return null;
+    }
+  }
+
   @Override
   public IterOutcome next() {
     stats.startProcessing();
@@ -140,11 +156,11 @@ public class UnorderedReceiverBatch implements CloseableRecordBatch {
       RawFragmentBatch batch;
       try {
         stats.startWait();
-        batch = fragProvider.getNext();
+        batch = getNextBatch();
 
         // skip over empty batches. we do this since these are basically control messages.
         while (batch != null && !batch.getHeader().getIsOutOfMemory() && batch.getHeader().getDef().getRecordCount() == 0 && (!first || batch.getHeader().getDef().getFieldCount() == 0)) {
-          batch = fragProvider.getNext();
+          batch = getNextBatch();
         }
       } finally {
         stats.stopWait();
@@ -169,6 +185,8 @@ public class UnorderedReceiverBatch implements CloseableRecordBatch {
 
       final RecordBatchDef rbd = batch.getHeader().getDef();
       final boolean schemaChanged = batchLoader.load(rbd, batch.getBody());
+      // TODO:  Clean:  DRILL-2933:  That load(...) no longer throws
+      // SchemaChangeException, so check/clean catch clause below.
       stats.addLongStat(Metric.BYTES_RECEIVED, batch.getByteCount());
 
       batch.release();
@@ -196,7 +214,6 @@ public class UnorderedReceiverBatch implements CloseableRecordBatch {
   @Override
   public void close() {
     batchLoader.clear();
-    fragProvider.cleanup();
   }
 
   @Override
@@ -222,6 +239,7 @@ public class UnorderedReceiverBatch implements CloseableRecordBatch {
     }
   }
 
+  // TODO: Code duplication. MergingRecordBatch has the same implementation.
   private class OutcomeListener implements RpcOutcomeListener<Ack> {
 
     @Override
@@ -232,6 +250,15 @@ public class UnorderedReceiverBatch implements CloseableRecordBatch {
     @Override
     public void success(final Ack value, final ByteBuf buffer) {
       // Do nothing
+    }
+
+    @Override
+    public void interrupted(final InterruptedException e) {
+      if (context.shouldContinue()) {
+        final String errMsg = "Received an interrupt RPC outcome while sending ReceiverFinished message";
+        logger.error(errMsg, e);
+        context.fail(new RpcException(errMsg, e));
+      }
     }
   }
 

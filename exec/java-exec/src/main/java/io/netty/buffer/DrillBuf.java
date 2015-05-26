@@ -38,7 +38,7 @@ import org.apache.drill.exec.util.AssertionUtil;
 
 import com.google.common.base.Preconditions;
 
-public final class DrillBuf extends AbstractByteBuf {
+public final class DrillBuf extends AbstractByteBuf implements AutoCloseable {
   static final org.slf4j.Logger logger = org.slf4j.LoggerFactory.getLogger(DrillBuf.class);
 
   private static final boolean BOUNDS_CHECKING_ENABLED = AssertionUtil.BOUNDS_CHECKING_ENABLED;
@@ -614,6 +614,16 @@ public final class DrillBuf extends AbstractByteBuf {
     return this;
   }
 
+  public void setByte(int index, byte b){
+    chk(index, 1);
+    PlatformDependent.putByte(addr(index), b);
+  }
+
+  public void writeByteUnsafe(byte b){
+    PlatformDependent.putByte(addr(readerIndex), b);
+    readerIndex++;
+  }
+
   @Override
   protected byte _getByte(int index) {
     return getByte(index);
@@ -743,6 +753,11 @@ public final class DrillBuf extends AbstractByteBuf {
 
   public boolean isRootBuffer() {
     return rootBuffer;
+  }
+
+  @Override
+  public void close() {
+    release();
   }
 
 }
