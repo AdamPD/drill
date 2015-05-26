@@ -37,6 +37,7 @@ import org.apache.drill.exec.planner.cost.DrillCostBase;
 import org.apache.drill.exec.planner.logical.DrillConstExecutor;
 import org.apache.drill.exec.planner.logical.DrillRuleSets;
 import org.apache.drill.exec.planner.physical.DrillDistributionTraitDef;
+import org.apache.drill.exec.planner.physical.PlannerSettings;
 import org.apache.drill.exec.planner.sql.handlers.AbstractSqlHandler;
 import org.apache.drill.exec.planner.sql.handlers.DefaultSqlHandler;
 import org.apache.drill.exec.planner.sql.handlers.ExplainHandler;
@@ -45,12 +46,10 @@ import org.apache.drill.exec.planner.sql.handlers.SqlHandlerConfig;
 import org.apache.drill.exec.planner.sql.parser.DrillSqlCall;
 import org.apache.drill.exec.planner.sql.parser.SqlCreateTable;
 import org.apache.drill.exec.planner.sql.parser.impl.DrillParserWithCompoundIdConverter;
-import org.apache.drill.exec.proto.UserBitShared.DrillPBError.ErrorType;
 import org.apache.drill.exec.planner.types.DrillRelDataTypeSystem;
 import org.apache.drill.exec.store.StoragePluginRegistry;
 import org.apache.drill.exec.testing.ExecutionControlsInjector;
 import org.apache.drill.exec.util.Pointer;
-import org.apache.drill.exec.work.foreman.ForemanException;
 import org.apache.drill.exec.work.foreman.ForemanSetupException;
 import org.apache.calcite.rel.RelCollationTraitDef;
 import org.apache.calcite.rel.rules.ReduceExpressionsRule;
@@ -60,10 +59,9 @@ import org.apache.calcite.plan.RelTraitDef;
 import org.apache.calcite.plan.hep.HepPlanner;
 import org.apache.calcite.plan.hep.HepProgramBuilder;
 import org.apache.calcite.sql.SqlNode;
-import org.apache.calcite.sql.parser.SqlAbstractParserImpl;
 import org.apache.calcite.sql.parser.SqlParseException;
 import org.apache.calcite.sql.parser.SqlParser;
-import org.apache.calcite.sql.parser.SqlParserImplFactory;
+import org.apache.drill.exec.work.foreman.SqlUnsupportedException;
 import org.apache.hadoop.security.AccessControlException;
 
 public class DrillSqlWorker {
@@ -74,6 +72,8 @@ public class DrillSqlWorker {
   private final HepPlanner hepPlanner;
   public final static int LOGICAL_RULES = 0;
   public final static int PHYSICAL_MEM_RULES = 1;
+  public final static int LOGICAL_CONVERT_RULES = 2;
+
   private final QueryContext context;
 
   public DrillSqlWorker(QueryContext context) {
@@ -100,7 +100,7 @@ public class DrillSqlWorker {
         .context(context.getPlannerSettings()) //
         .ruleSets(getRules(context)) //
         .costFactory(costFactory) //
-        .executor(new DrillConstExecutor(context.getFunctionRegistry(), context))
+        .executor(new DrillConstExecutor(context.getFunctionRegistry(), context, context.getPlannerSettings()))
         .typeSystem(DrillRelDataTypeSystem.DRILL_REL_DATATYPE_SYSTEM) //
         .build();
     this.planner = Frameworks.getPlanner(config);
@@ -116,11 +116,19 @@ public class DrillSqlWorker {
     StoragePluginRegistry storagePluginRegistry = context.getStorage();
     RuleSet drillLogicalRules = DrillRuleSets.mergedRuleSets(
         DrillRuleSets.getDrillBasicRules(context),
+        DrillRuleSets.getJoinPermRules(context),
         DrillRuleSets.getDrillUserConfigurableLogicalRules(context));
     RuleSet drillPhysicalMem = DrillRuleSets.mergedRuleSets(
         DrillRuleSets.getPhysicalRules(context),
         storagePluginRegistry.getStoragePluginRuleSet(context));
-    RuleSet[] allRules = new RuleSet[] {drillLogicalRules, drillPhysicalMem};
+
+    // Following is used in LOPT join OPT.
+    RuleSet logicalConvertRules = DrillRuleSets.mergedRuleSets(
+        DrillRuleSets.getDrillBasicRules(context),
+        DrillRuleSets.getDrillUserConfigurableLogicalRules(context));
+
+    RuleSet[] allRules = new RuleSet[] {drillLogicalRules, drillPhysicalMem, logicalConvertRules};
+
     return allRules;
   }
 
@@ -129,12 +137,14 @@ public class DrillSqlWorker {
   }
 
   public PhysicalPlan getPlan(String sql, Pointer<String> textPlan) throws ForemanSetupException {
+    final PlannerSettings ps = this.context.getPlannerSettings();
+
     SqlNode sqlNode;
     try {
       injector.injectChecked(context.getExecutionControls(), "sql-parsing", ForemanSetupException.class);
       sqlNode = planner.parse(sql);
     } catch (SqlParseException e) {
-      throw new QueryInputException("Failure parsing SQL. " + e.getMessage(), e);
+      throw UserException.parseError(e).build();
     }
 
     AbstractSqlHandler handler;
@@ -170,6 +180,9 @@ public class DrillSqlWorker {
       throw UserException.parseError(e).message(errorMessage).build();
     } catch (AccessControlException e) {
       throw UserException.permissionError(e).build();
+    } catch(SqlUnsupportedException e) {
+      throw UserException.unsupportedError(e)
+          .build();
     } catch (IOException | RelConversionException e) {
       throw new QueryInputException("Failure handling SQL.", e);
     }

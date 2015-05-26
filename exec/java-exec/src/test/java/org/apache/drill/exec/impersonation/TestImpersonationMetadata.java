@@ -20,6 +20,7 @@ package org.apache.drill.exec.impersonation;
 import com.google.common.base.Joiner;
 import com.google.common.collect.ImmutableMap;
 import com.google.common.collect.Maps;
+import org.apache.drill.common.exceptions.UserException;
 import org.apache.drill.common.exceptions.UserRemoteException;
 import org.apache.drill.exec.rpc.RpcException;
 import org.apache.drill.exec.store.StoragePluginRegistry;
@@ -101,6 +102,20 @@ public class TestImpersonationMetadata extends BaseTestImpersonation {
 
     // Create /drillTestGrp1_700 directory with permissions 700 (owned by user1)
     createAndAddWorkspace(fs, "drillTestGrp1_700", "/drillTestGrp1_700", (short)0700, user1, group1, workspaces);
+  }
+
+  @Test // DRILL-3037
+  public void testImpersonatingProcessUser() throws Exception {
+    updateClient(processUser);
+
+    // Process user start the mini dfs, he has read/write permissions by default
+    final String viewName = String.format("%s.drillTestGrp0_700.testView", MINIDFS_STORAGE_PLUGIN_NAME);
+    try {
+      test("CREATE VIEW " + viewName + " AS SELECT * FROM cp.`region.json`");
+      test("SELECT * FROM " + viewName + " LIMIT 2");
+    } finally {
+      test("DROP VIEW " + viewName);
+    }
   }
 
   @Test
@@ -207,8 +222,11 @@ public class TestImpersonationMetadata extends BaseTestImpersonation {
 
     test("USE " + viewSchema);
 
-    test("CREATE VIEW " + viewName + " AS SELECT " +
-        "c_custkey, c_nationkey FROM cp.`tpch/customer.parquet` ORDER BY c_custkey;");
+    final String query = "CREATE VIEW " + viewName + " AS SELECT " +
+        "c_custkey, c_nationkey FROM cp.`tpch/customer.parquet` ORDER BY c_custkey;";
+    final String expErrorMsg = "PERMISSION ERROR: Permission denied: user=drillTestUser2, access=WRITE, " +
+        "inode=\"/drillTestGrp0_755\"";
+    errorMsgTestHelper(query, expErrorMsg);
 
     // SHOW TABLES is expected to return no records as view creation fails above.
     testBuilder()

@@ -26,6 +26,7 @@ import org.apache.drill.exec.server.options.TypeValidators.LongValidator;
 import org.apache.drill.exec.server.options.TypeValidators.PositiveLongValidator;
 import org.apache.drill.exec.server.options.TypeValidators.PowerOfTwoLongValidator;
 import org.apache.drill.exec.server.options.TypeValidators.RangeLongValidator;
+import org.apache.drill.exec.server.options.TypeValidators.RangeDoubleValidator;
 import org.apache.drill.exec.server.options.TypeValidators.StringValidator;
 import org.apache.drill.exec.testing.ExecutionControls;
 
@@ -42,7 +43,9 @@ public interface ExecConstants {
   public static final String STORAGE_ENGINE_SCAN_PACKAGES = "drill.exec.storage.packages";
   public static final String SERVICE_NAME = "drill.exec.cluster-id";
   public static final String INITIAL_BIT_PORT = "drill.exec.rpc.bit.server.port";
+  public static final String BIT_RPC_TIMEOUT = "drill.exec.rpc.bit.timeout";
   public static final String INITIAL_USER_PORT = "drill.exec.rpc.user.server.port";
+  public static final String USER_RPC_TIMEOUT = "drill.exec.rpc.user.timeout";
   public static final String METRICS_CONTEXT_NAME = "drill.exec.metrics.context";
   public static final String FUNCTION_PACKAGES = "drill.exec.functions";
   public static final String USE_IP_ADDRESS = "drill.exec.rpc.use.ip";
@@ -83,10 +86,20 @@ public interface ExecConstants {
   public static final String USER_AUTHENTICATOR_IMPL = "drill.exec.security.user.auth.impl";
   public static final String PAM_AUTHENTICATOR_PROFILES = "drill.exec.security.user.auth.pam_profiles";
   public static final String ERROR_ON_MEMORY_LEAK = "drill.exec.debug.error_on_leak";
+
+  /**
+   * Currently if a query is cancelled, but one of the fragments reports the status as FAILED instead of CANCELLED or
+   * FINISHED we report the query result as CANCELLED by swallowing the failures occurred in fragments. This BOOT
+   * setting allows the user to see the query status as failure. Useful for developers/testers.
+   */
+  public static final String RETURN_ERROR_FOR_FAILURE_IN_CANCELLED_FRAGMENTS =
+      "drill.exec.debug.return_error_for_failure_in_cancelled_fragments";
+
   /** Fragment memory planning */
   public static final String ENABLE_FRAGMENT_MEMORY_LIMIT = "drill.exec.memory.enable_frag_limit";
   public static final String FRAGMENT_MEM_OVERCOMMIT_FACTOR = "drill.exec.memory.frag_mem_overcommit_factor";
 
+  public static final String USE_LINUX_EPOLL = "drill.exec.enable-epoll";
 
   public static final String CLIENT_SUPPORT_COMPLEX_TYPES = "drill.client.supports-complex-types";
 
@@ -114,7 +127,9 @@ public interface ExecConstants {
 
   public static String JSON_ALL_TEXT_MODE = "store.json.all_text_mode";
   public static BooleanValidator JSON_READER_ALL_TEXT_MODE_VALIDATOR = new BooleanValidator(JSON_ALL_TEXT_MODE, false);
-  public static final BooleanValidator JSON_EXTENDED_TYPES = new BooleanValidator("store.json.extended_types", true);
+  public static final BooleanValidator JSON_EXTENDED_TYPES = new BooleanValidator("store.json.extended_types", false);
+  public static final DoubleValidator TEXT_ESTIMATED_ROW_SIZE = new RangeDoubleValidator(
+      "store.text.estimated_row_size_bytes", 1, Long.MAX_VALUE, 100.0);
 
   /**
    * The column label (for directory levels) in results when querying files in a directory
@@ -126,8 +141,13 @@ public interface ExecConstants {
   public static final String FILESYSTEM_PARTITION_COLUMN_LABEL = "drill.exec.storage.file.partition.column.label";
   public static final OptionValidator FILESYSTEM_PARTITION_COLUMN_LABEL_VALIDATOR = new StringValidator(FILESYSTEM_PARTITION_COLUMN_LABEL, "dir");
 
+  public static String JSON_READ_NUMBERS_AS_DOUBLE = "store.json.read_numbers_as_double";
+  public static OptionValidator JSON_READ_NUMBERS_AS_DOUBLE_VALIDATOR = new BooleanValidator(JSON_READ_NUMBERS_AS_DOUBLE, false);
+
   public static String MONGO_ALL_TEXT_MODE = "store.mongo.all_text_mode";
   public static OptionValidator MONGO_READER_ALL_TEXT_MODE_VALIDATOR = new BooleanValidator(MONGO_ALL_TEXT_MODE, false);
+  public static String MONGO_READER_READ_NUMBERS_AS_DOUBLE = "store.mongo.read_numbers_as_double";
+  public static OptionValidator MONGO_READER_READ_NUMBERS_AS_DOUBLE_VALIDATOR = new BooleanValidator(MONGO_READER_READ_NUMBERS_AS_DOUBLE, false);
 
   public static final String SLICE_TARGET = "planner.slice_target";
   public static final long SLICE_TARGET_DEFAULT = 100000l;
@@ -196,23 +216,19 @@ public interface ExecConstants {
   public static final String AVERAGE_FIELD_WIDTH_KEY = "planner.memory.average_field_width";
   public static final OptionValidator AVERAGE_FIELD_WIDTH = new PositiveLongValidator(AVERAGE_FIELD_WIDTH_KEY, Long.MAX_VALUE, 8);
 
-  public static final String ENABLE_QUEUE_KEY = "exec.queue.enable";
-  public static final OptionValidator ENABLE_QUEUE = new BooleanValidator(ENABLE_QUEUE_KEY, false);
-
-  public static final String LARGE_QUEUE_KEY = "exec.queue.large";
-  public static final OptionValidator LARGE_QUEUE_SIZE = new PositiveLongValidator(LARGE_QUEUE_KEY, 1000, 10);
-
-  public static final String SMALL_QUEUE_KEY = "exec.queue.small";
-  public static final OptionValidator SMALL_QUEUE_SIZE = new PositiveLongValidator(SMALL_QUEUE_KEY, 100000, 100);
-
-  public static final String QUEUE_THRESHOLD_KEY = "exec.queue.threshold";
-  public static final OptionValidator QUEUE_THRESHOLD_SIZE = new PositiveLongValidator(QUEUE_THRESHOLD_KEY, Long.MAX_VALUE, 30000000);
-
-  public static final String QUEUE_TIMEOUT_KEY = "exec.queue.timeout_millis";
-  public static final OptionValidator QUEUE_TIMEOUT = new PositiveLongValidator(QUEUE_TIMEOUT_KEY, Long.MAX_VALUE, 60*1000*5);
+  public static final BooleanValidator ENABLE_QUEUE = new BooleanValidator("exec.queue.enable", false);
+  public static final LongValidator LARGE_QUEUE_SIZE = new PositiveLongValidator("exec.queue.large", 1000, 10);
+  public static final LongValidator SMALL_QUEUE_SIZE = new PositiveLongValidator("exec.queue.small", 100000, 100);
+  public static final LongValidator QUEUE_THRESHOLD_SIZE = new PositiveLongValidator("exec.queue.threshold",
+      Long.MAX_VALUE, 30000000);
+  public static final LongValidator QUEUE_TIMEOUT = new PositiveLongValidator("exec.queue.timeout_millis",
+      Long.MAX_VALUE, 60 * 1000 * 5);
 
   public static final String ENABLE_VERBOSE_ERRORS_KEY = "exec.errors.verbose";
   public static final OptionValidator ENABLE_VERBOSE_ERRORS = new BooleanValidator(ENABLE_VERBOSE_ERRORS_KEY, false);
+
+  public static final String ENABLE_NEW_TEXT_READER_KEY = "exec.storage.enable_new_text_reader";
+  public static final OptionValidator ENABLE_NEW_TEXT_READER = new BooleanValidator(ENABLE_NEW_TEXT_READER_KEY, true);
 
   public static final String BOOTSTRAP_STORAGE_PLUGINS_FILE = "bootstrap-storage-plugins.json";
   public static final String MAX_LOADING_CACHE_SIZE_CONFIG = "drill.exec.compile.cache_max_size";

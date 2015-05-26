@@ -131,7 +131,7 @@ public class DrillTextRecordReader extends AbstractRecordReader {
   }
 
   @Override
-  public void setup(OutputMutator output) throws ExecutionSetupException {
+  public void setup(OperatorContext context, OutputMutator output) throws ExecutionSetupException {
     MaterializedField field = MaterializedField.create(ref, Types.repeated(TypeProtos.MinorType.VARCHAR));
     try {
       vector = output.addField(field, RepeatedVarCharVector.class);
@@ -162,7 +162,7 @@ public class DrillTextRecordReader extends AbstractRecordReader {
         // index of the scanned field
         int p = 0;
         int i = 0;
-        vector.getMutator().startNewGroup(recordCount);
+        vector.getMutator().startNewValue(recordCount);
         // Process each field in this line
         while (end < value.getLength() - 1) {
           if(numCols > 0 && p >= numCols) {
@@ -192,7 +192,7 @@ public class DrillTextRecordReader extends AbstractRecordReader {
         v.getMutator().setValueCount(recordCount);
       }
       vector.getMutator().setValueCount(recordCount);
-      logger.debug("text scan batch size {}", batchSize);
+//      logger.debug("text scan batch size {}", batchSize);
       return recordCount;
     } catch(Exception e) {
       cleanup();
@@ -231,7 +231,10 @@ public class DrillTextRecordReader extends AbstractRecordReader {
   @Override
   public void cleanup() {
     try {
-      reader.close();
+      if (reader != null) {
+        reader.close();
+        reader = null;
+      }
     } catch (IOException e) {
       logger.warn("Exception closing reader: {}", e);
     }

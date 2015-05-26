@@ -171,6 +171,17 @@ public class HashJoinBatch extends AbstractRecordBatch<HashJoinPOP> {
   protected void buildSchema() throws SchemaChangeException {
     leftUpstream = next(left);
     rightUpstream = next(right);
+
+    if (leftUpstream == IterOutcome.STOP || rightUpstream == IterOutcome.STOP) {
+      state = BatchState.STOP;
+      return;
+    }
+
+    if (leftUpstream == IterOutcome.OUT_OF_MEMORY || rightUpstream == IterOutcome.OUT_OF_MEMORY) {
+      state = BatchState.OUT_OF_MEMORY;
+      return;
+    }
+
     // Initialize the hash join helper context
     hjHelper = new HashJoinHelper(context, oContext.getAllocator());
     try {
@@ -328,6 +339,7 @@ public class HashJoinBatch extends AbstractRecordBatch<HashJoinPOP> {
 
       switch (rightUpstream) {
 
+      case OUT_OF_MEMORY:
       case NONE:
       case NOT_YET:
       case STOP:
@@ -377,14 +389,22 @@ public class HashJoinBatch extends AbstractRecordBatch<HashJoinPOP> {
                      * records that have matching keys on the probe side.
                      */
         RecordBatchData nextBatch = new RecordBatchData(right);
-        if (hyperContainer == null) {
-          hyperContainer = new ExpandableHyperContainer(nextBatch.getContainer());
-        } else {
-          hyperContainer.addBatch(nextBatch.getContainer());
-        }
+        boolean success = false;
+        try {
+          if (hyperContainer == null) {
+            hyperContainer = new ExpandableHyperContainer(nextBatch.getContainer());
+          } else {
+            hyperContainer.addBatch(nextBatch.getContainer());
+          }
 
-        // completed processing a batch, increment batch index
-        buildBatchIndex++;
+          // completed processing a batch, increment batch index
+          buildBatchIndex++;
+          success = true;
+        } finally {
+          if (!success) {
+            nextBatch.clear();
+          }
+        }
         break;
       }
       // Get the next record batch

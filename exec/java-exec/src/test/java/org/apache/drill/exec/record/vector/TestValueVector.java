@@ -19,6 +19,7 @@ package org.apache.drill.exec.record.vector;
 
 import static org.junit.Assert.assertArrayEquals;
 import static org.junit.Assert.assertEquals;
+import static org.junit.Assert.assertTrue;
 
 import java.nio.charset.Charset;
 
@@ -32,24 +33,17 @@ import org.apache.drill.exec.expr.holders.NullableUInt4Holder;
 import org.apache.drill.exec.expr.holders.NullableVar16CharHolder;
 import org.apache.drill.exec.expr.holders.NullableVarCharHolder;
 import org.apache.drill.exec.expr.holders.RepeatedFloat4Holder;
-import org.apache.drill.exec.expr.holders.RepeatedMapHolder;
 import org.apache.drill.exec.expr.holders.RepeatedVarBinaryHolder;
 import org.apache.drill.exec.expr.holders.UInt4Holder;
 import org.apache.drill.exec.expr.holders.VarCharHolder;
 import org.apache.drill.exec.memory.TopLevelAllocator;
 import org.apache.drill.exec.record.MaterializedField;
 import org.apache.drill.exec.vector.BitVector;
-import org.apache.drill.exec.vector.FixedWidthVector;
 import org.apache.drill.exec.vector.NullableFloat4Vector;
 import org.apache.drill.exec.vector.NullableUInt4Vector;
 import org.apache.drill.exec.vector.NullableVarCharVector;
-import org.apache.drill.exec.vector.NullableVector;
-import org.apache.drill.exec.vector.RepeatedFixedWidthVector;
-import org.apache.drill.exec.vector.RepeatedVariableWidthVector;
 import org.apache.drill.exec.vector.UInt4Vector;
 import org.apache.drill.exec.vector.ValueVector;
-import org.apache.drill.exec.vector.VariableWidthVector;
-import org.apache.drill.exec.vector.VariableWidthVector.VariableWidthAccessor;
 import org.apache.drill.exec.vector.complex.MapVector;
 import org.apache.drill.exec.vector.complex.RepeatedListVector;
 import org.apache.drill.exec.vector.complex.RepeatedMapVector;
@@ -109,12 +103,10 @@ public class TestValueVector extends ExecTest {
     boolean b = false;
     try {
       v.getAccessor().get(3);
-    } catch(AssertionError e) {
+    } catch(IllegalStateException e) {
       b = true;
     }finally{
-      if(!b){
-        assert false;
-      }
+      assertTrue(b);
     }
 
   }
@@ -146,12 +138,10 @@ public class TestValueVector extends ExecTest {
       boolean b = false;
       try {
         v.getAccessor().get(3);
-      } catch(AssertionError e) {
+      } catch(IllegalStateException e) {
         b = true;
       }finally{
-        if(!b){
-          assert false;
-        }
+        assertTrue(b);
       }
     }
 
@@ -161,12 +151,10 @@ public class TestValueVector extends ExecTest {
       boolean b = false;
       try {
         v.getAccessor().get(0);
-      } catch(AssertionError e) {
+      } catch(IllegalStateException e) {
         b = true;
       }finally{
-        if(!b){
-          assert false;
-        }
+        assertTrue(b);
       }
     }
 
@@ -187,12 +175,10 @@ public class TestValueVector extends ExecTest {
       boolean b = false;
       try {
         v.getAccessor().get(3);
-      } catch(AssertionError e) {
+      } catch(IllegalStateException e) {
         b = true;
       }finally{
-        if(!b){
-          assert false;
-        }
+        assertTrue(b);
       }
     }
 
@@ -224,12 +210,10 @@ public class TestValueVector extends ExecTest {
       boolean b = false;
       try {
         v.getAccessor().get(3);
-      } catch(AssertionError e) {
+      } catch(IllegalStateException e) {
         b = true;
       }finally{
-        if(!b){
-          assert false;
-        }
+        assertTrue(b);
       }
     }
 
@@ -238,12 +222,10 @@ public class TestValueVector extends ExecTest {
       boolean b = false;
       try {
         v.getAccessor().get(0);
-      } catch(AssertionError e) {
+      } catch(IllegalStateException e) {
         b = true;
       }finally{
-        if(!b){
-          assert false;
-        }
+        assertTrue(b);
       }
     }
   }

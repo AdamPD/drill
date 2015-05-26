@@ -21,10 +21,8 @@ import java.io.IOException;
 import java.io.InputStream;
 import java.util.List;
 
-import com.google.common.collect.ImmutableList;
-
-import org.apache.drill.common.exceptions.UserException;
 import org.apache.drill.common.exceptions.ExecutionSetupException;
+import org.apache.drill.common.exceptions.UserException;
 import org.apache.drill.common.expression.SchemaPath;
 import org.apache.drill.exec.ExecConstants;
 import org.apache.drill.exec.memory.OutOfMemoryException;
@@ -38,10 +36,7 @@ import org.apache.drill.exec.store.easy.json.reader.CountingJsonReader;
 import org.apache.drill.exec.vector.BaseValueVector;
 import org.apache.drill.exec.vector.complex.fn.JsonReader;
 import org.apache.drill.exec.vector.complex.impl.VectorContainerWriter;
-import org.apache.hadoop.conf.Configuration;
 import org.apache.hadoop.fs.Path;
-import org.apache.hadoop.io.compress.CompressionCodec;
-import org.apache.hadoop.io.compress.CompressionCodecFactory;
 
 import com.fasterxml.jackson.core.JsonParseException;
 import com.fasterxml.jackson.databind.JsonNode;
@@ -60,9 +55,11 @@ public class JSONRecordReader extends AbstractRecordReader {
   private final DrillFileSystem fileSystem;
   private JsonProcessor jsonReader;
   private int recordCount;
+  private long runningRecordCount = 0;
   private final FragmentContext fragmentContext;
   private OperatorContext operatorContext;
   private final boolean enableAllTextMode;
+  private final boolean readNumbersAsDouble;
 
   /**
    * Create a JSON Record Reader that uses a file based input stream.
@@ -80,7 +77,7 @@ public class JSONRecordReader extends AbstractRecordReader {
   /**
    * Create a new JSON Record Reader that uses a in memory materialized JSON stream.
    * @param fragmentContext
-   * @param inputPath
+   * @param embeddedContent
    * @param fileSystem
    * @param columns
    * @throws OutOfMemoryException
@@ -110,34 +107,27 @@ public class JSONRecordReader extends AbstractRecordReader {
 
     // only enable all text mode if we aren't using embedded content mode.
     this.enableAllTextMode = embeddedContent == null && fragmentContext.getOptions().getOption(ExecConstants.JSON_READER_ALL_TEXT_MODE_VALIDATOR);
+    this.readNumbersAsDouble = fragmentContext.getOptions().getOption(ExecConstants.JSON_READ_NUMBERS_AS_DOUBLE).bool_val;
     setColumns(columns);
   }
 
   @Override
-  public void setup(final OutputMutator output) throws ExecutionSetupException {
+  public void setup(final OperatorContext context, final OutputMutator output) throws ExecutionSetupException {
+    this.operatorContext = context;
     try{
-      setupData();
+      if (hadoopPath != null) {
+        this.stream = fileSystem.openPossiblyCompressedStream(hadoopPath);
+      }
+
       this.writer = new VectorContainerWriter(output);
       if (isSkipQuery()) {
         this.jsonReader = new CountingJsonReader(fragmentContext.getManagedBuffer());
       } else {
-        this.jsonReader = new JsonReader(fragmentContext.getManagedBuffer(), ImmutableList.copyOf(getColumns()), enableAllTextMode, true);
+        this.jsonReader = new JsonReader(fragmentContext.getManagedBuffer(), ImmutableList.copyOf(getColumns()), enableAllTextMode, true, readNumbersAsDouble);
       }
       setupParser();
     }catch(final Exception e){
       handleAndRaise("Failure reading JSON file", e);
-    }
-  }
-
-  private void setupData() throws IOException{
-    if(hadoopPath != null){
-      final CompressionCodecFactory factory = new CompressionCodecFactory(new Configuration());
-      final CompressionCodec codec = factory.getCodec(hadoopPath); // infers from file ext.
-      if (codec != null) {
-        this.stream = codec.createInputStream(fileSystem.open(hadoopPath));
-      } else {
-        this.stream = fileSystem.open(hadoopPath);
-      }
     }
   }
 
@@ -165,19 +155,14 @@ public class JSONRecordReader extends AbstractRecordReader {
     if (columnNr > 0) {
       exceptionBuilder.pushContext("Column ", columnNr);
     }
-    exceptionBuilder.pushContext("Record ", recordCount + 1)
+    exceptionBuilder.pushContext("Record ", currentRecordNumberInFile())
             .pushContext("File ", hadoopPath.toUri().getPath());
 
     throw exceptionBuilder.build();
   }
 
-
-  public OperatorContext getOperatorContext() {
-    return operatorContext;
-  }
-
-  public void setOperatorContext(final OperatorContext operatorContext) {
-    this.operatorContext = operatorContext;
+  private long currentRecordNumberInFile() {
+    return runningRecordCount + recordCount + 1;
   }
 
   @Override
@@ -209,6 +194,7 @@ public class JSONRecordReader extends AbstractRecordReader {
 //      p.stop();
 //      System.out.println(String.format("Wrote %d records in %dms.", recordCount, p.elapsed(TimeUnit.MILLISECONDS)));
 
+      updateRunningCount();
 
       return recordCount;
 
@@ -217,6 +203,10 @@ public class JSONRecordReader extends AbstractRecordReader {
     }
     // this is never reached
     return 0;
+  }
+
+  private void updateRunningCount() {
+    runningRecordCount += recordCount;
   }
 
   @Override

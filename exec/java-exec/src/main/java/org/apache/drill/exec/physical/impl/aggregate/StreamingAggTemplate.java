@@ -95,8 +95,12 @@ public abstract class StreamingAggTemplate implements StreamingAggregator {
               if (incoming.getRecordCount() == 0) {
                 continue;
               } else {
+                currentIndex = this.getVectorIndex(underlyingIndex);
                 break outer;
               }
+            case OUT_OF_MEMORY:
+              outcome = out;
+              return AggOutcome.RETURN_OUTCOME;
             case NONE:
               out = IterOutcome.OK_NEW_SCHEMA;
             case STOP:

@@ -59,8 +59,14 @@ import com.google.common.base.Charsets;
 import com.google.common.base.Preconditions;
 import com.google.common.io.Resources;
 
+import static org.hamcrest.core.StringContains.containsString;
+import static org.junit.Assert.assertNotNull;
+import static org.junit.Assert.assertThat;
+
 public class BaseTestQuery extends ExecTest {
   private static final org.slf4j.Logger logger = org.slf4j.LoggerFactory.getLogger(BaseTestQuery.class);
+
+  protected static final String TEMP_SCHEMA = "dfs_test.tmp";
 
   private static final String ENABLE_FULL_CACHE = "drill.exec.test.use-full-cache";
   private static final int MAX_WIDTH_PER_NODE = 2;
@@ -166,15 +172,17 @@ public class BaseTestQuery extends ExecTest {
       serviceSet = RemoteServiceSet.getLocalServiceSet();
     }
 
+    dfsTestTmpSchemaLocation = TestUtilities.createTempDir();
+
     bits = new Drillbit[drillbitCount];
     for(int i = 0; i < drillbitCount; i++) {
       bits[i] = new Drillbit(config, serviceSet);
       bits[i].run();
-    }
 
-    final StoragePluginRegistry pluginRegistry = getDrillbitContext().getStorage();
-    dfsTestTmpSchemaLocation = TestUtilities.updateDfsTestTmpSchemaLocation(pluginRegistry);
-    TestUtilities.makeDfsTmpSchemaImmutable(pluginRegistry);
+      final StoragePluginRegistry pluginRegistry = bits[i].getContext().getStorage();
+      TestUtilities.updateDfsTestTmpSchemaLocation(pluginRegistry, dfsTestTmpSchemaLocation);
+      TestUtilities.makeDfsTmpSchemaImmutable(pluginRegistry);
+    }
 
     client = QueryTestUtil.createClient(config,  serviceSet, MAX_WIDTH_PER_NODE, null);
   }
@@ -240,40 +248,6 @@ public class BaseTestQuery extends ExecTest {
     }
   }
 
-  private Object wrapStringInHadoopTextObject(Object o) {
-    if (o instanceof String) {
-      o = new Text((String)o);
-    }
-    return o;
-  }
-
-  // convenience method for making a list
-  protected JsonStringArrayList list(Object... values) {
-    JsonStringArrayList ret = new JsonStringArrayList<>();
-    for (int i = 0; i < values.length; i++) {
-      values[i] = wrapStringInHadoopTextObject(values[i]);
-    }
-    ret.addAll(Arrays.asList(values));
-    return ret;
-  }
-
-  protected JsonStringHashMap map(Object... keysAndValues) {
-    JsonStringHashMap ret = new JsonStringHashMap();
-    final String errorMsg = "Must provide a list of keys and values to construct a map, expects" +
-          "an even number or arguments, alternating strings for key names and objects for values.";
-    if (keysAndValues.length % 2 != 0) {
-      throw new RuntimeException(errorMsg);
-    }
-    for (int i = 0; i < keysAndValues.length - 1; i += 2) {
-      if ( ! (keysAndValues[i] instanceof String) )  {
-        throw new RuntimeException(errorMsg);
-      }
-      keysAndValues[i + 1] = wrapStringInHadoopTextObject(keysAndValues[i + 1]);
-      ret.put(keysAndValues[i], keysAndValues[i + 1]);
-    }
-    return ret;
-  }
-
   @AfterClass
   public static void resetDrillbitCount() {
     // some test classes assume this value to be 1 and will fail if run along other tests that increase it
@@ -317,7 +291,7 @@ public class BaseTestQuery extends ExecTest {
 
   protected static void testNoResult(int interation, String query, Object... args) throws Exception {
     query = String.format(query, args);
-    logger.debug("Running query:\n--------------\n"+query);
+    logger.debug("Running query:\n--------------\n" + query);
     for (int i = 0; i < interation; i++) {
       List<QueryDataBatch> results = client.runQuery(QueryType.SQL, query);
       for (QueryDataBatch queryDataBatch : results) {
@@ -360,6 +334,24 @@ public class BaseTestQuery extends ExecTest {
 
   protected static void testSqlFromFile(String file) throws Exception{
     test(getFile(file));
+  }
+
+  /**
+   * Utility method which tests given query produces a {@link UserException} and the exception message contains
+   * the given message.
+   * @param testSqlQuery Test query
+   * @param expectedErrorMsg Expected error message.
+   */
+  protected static void errorMsgTestHelper(final String testSqlQuery, final String expectedErrorMsg) throws Exception {
+    UserException expException = null;
+    try {
+      test(testSqlQuery);
+    } catch (final UserException ex) {
+      expException = ex;
+    }
+
+    assertNotNull("Expected a UserException", expException);
+    assertThat(expException.getMessage(), containsString(expectedErrorMsg));
   }
 
   public static String getFile(String resource) throws IOException{
@@ -423,6 +415,8 @@ public class BaseTestQuery extends ExecTest {
     for(QueryDataBatch result : results) {
       rowCount += result.getHeader().getRowCount();
       loader.load(result.getHeader().getDef(), result.getData());
+      // TODO:  Clean:  DRILL-2933:  That load(...) no longer throws
+      // SchemaChangeException, so check/clean throw clause above.
       if (loader.getRecordCount() <= 0) {
         continue;
       }

@@ -27,7 +27,7 @@ import org.apache.calcite.plan.RelOptUtil;
 import org.apache.calcite.plan.volcano.RelSubset;
 import org.apache.drill.exec.planner.logical.DrillAggregateRel;
 import org.apache.drill.exec.planner.logical.DrillFilterRel;
-
+import org.apache.drill.exec.planner.logical.DrillProjectRel;
 import org.apache.drill.common.exceptions.DrillRuntimeException;
 import org.apache.drill.common.expression.ErrorCollector;
 import org.apache.drill.common.expression.ErrorCollectorImpl;
@@ -41,6 +41,7 @@ import org.apache.drill.exec.resolver.TypeCastRules;
 
 import java.util.LinkedList;
 import java.util.List;
+
 import com.google.common.collect.Lists;
 
 public class JoinUtils {
@@ -137,6 +138,12 @@ public class JoinUtils {
       return true;
     }
 
+    // allow implicit cast if input types are date/ timestamp
+    if ((input1 == TypeProtos.MinorType.DATE || input1 == TypeProtos.MinorType.TIMESTAMP) &&
+        (input2 == TypeProtos.MinorType.DATE || input2 == TypeProtos.MinorType.TIMESTAMP)) {
+      return true;
+    }
+
     // allow implicit cast if both the input types are varbinary/ varchar
     if ((input1 == TypeProtos.MinorType.VARCHAR || input1 == TypeProtos.MinorType.VARBINARY) &&
         (input2 == TypeProtos.MinorType.VARCHAR || input2 == TypeProtos.MinorType.VARBINARY)) {
@@ -171,7 +178,7 @@ public class JoinUtils {
         // currently we only support implicit casts if the input types are numeric or varchar/varbinary
         if (!allowImplicitCast(rightType, leftType)) {
           throw new DrillRuntimeException(String.format("Join only supports implicit casts between " +
-              "1. Numeric data\n 2. Varchar, Varbinary data " +
+              "1. Numeric data\n 2. Varchar, Varbinary data 3. Date, Timestamp data " +
               "Left type: %s, Right type: %s. Add explicit casts to avoid this error", leftType, rightType));
         }
 
@@ -205,16 +212,25 @@ public class JoinUtils {
     }
   }
 
-  public static boolean isScalarSubquery(RelNode childrel) {
+  /**
+   * Utility method to check if a subquery (represented by its root RelNode) is provably scalar. Currently
+   * only aggregates with no group-by are considered scalar. In the future, this method should be generalized
+   * to include more cases and reconciled with Calcite's notion of scalar.
+   * @param root The root RelNode to be examined
+   * @return True if the root rel or its descendant is scalar, False otherwise
+   */
+  public static boolean isScalarSubquery(RelNode root) {
     DrillAggregateRel agg = null;
-    RelNode currentrel = childrel;
+    RelNode currentrel = root;
     while (agg == null && currentrel != null) {
       if (currentrel instanceof DrillAggregateRel) {
         agg = (DrillAggregateRel)currentrel;
-      } else if (currentrel instanceof DrillFilterRel) {
-        currentrel = currentrel.getInput(0);
       } else if (currentrel instanceof RelSubset) {
         currentrel = ((RelSubset)currentrel).getBest() ;
+      } else if (currentrel.getInputs().size() == 1) {
+        // If the rel is not an aggregate or RelSubset, but is a single-input rel (could be Project,
+        // Filter, Sort etc.), check its input
+        currentrel = currentrel.getInput(0);
       } else {
         break;
       }

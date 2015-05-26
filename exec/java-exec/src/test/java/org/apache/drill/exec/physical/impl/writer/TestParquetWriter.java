@@ -17,17 +17,19 @@
  */
 package org.apache.drill.exec.physical.impl.writer;
 
-import java.io.File;
 import java.math.BigDecimal;
 import java.sql.Date;
 
 import org.apache.drill.BaseTestQuery;
 import org.apache.drill.exec.ExecConstants;
 import org.apache.drill.exec.fn.interp.TestConstantFolding;
+import org.apache.drill.exec.planner.physical.PlannerSettings;
 import org.apache.hadoop.conf.Configuration;
 import org.apache.hadoop.fs.FileSystem;
 import org.apache.hadoop.fs.Path;
 import org.joda.time.DateTime;
+import org.joda.time.Period;
+import org.junit.AfterClass;
 import org.junit.Assert;
 import org.junit.BeforeClass;
 import org.junit.Ignore;
@@ -48,7 +50,14 @@ public class TestParquetWriter extends BaseTestQuery {
     conf.set(FileSystem.FS_DEFAULT_NAME_KEY, "local");
 
     fs = FileSystem.get(conf);
+    test(String.format("alter session set `%s` = true", PlannerSettings.ENABLE_DECIMAL_DATA_TYPE_KEY));
   }
+
+  @AfterClass
+  public static void disableDecimalDataType() throws Exception {
+    test(String.format("alter session set `%s` = false", PlannerSettings.ENABLE_DECIMAL_DATA_TYPE_KEY));
+  }
+
 
   @Test
   public void testSimple() throws Exception {
@@ -445,22 +454,6 @@ public class TestParquetWriter extends BaseTestQuery {
     }
   }
 
-
-  @Test // see DRILL-2408
-  public void testWriteEmptyFile() throws Exception {
-    String outputFile = "testparquetwriter_test_write_empty_file";
-
-    try {
-      Path path = new Path(getDfsTestTmpSchemaLocation(), outputFile);
-      //    test("ALTER SESSION SET `planner.add_producer_consumer` = false");
-      test("CREATE TABLE dfs_test.tmp.%s AS SELECT * FROM cp.`employee.json` WHERE 1=0", outputFile);
-
-      Assert.assertEquals(fs.listStatus(path).length, 0);
-    } finally {
-      deleteTableIfExists(outputFile);
-    }
-  }
-
   @Test // DRILL-2341
   public void tableSchemaWhenSelectFieldsInDef_SelectFieldsInView() throws Exception {
     final String newTblName = "testTableOutputSchema";
@@ -485,75 +478,95 @@ public class TestParquetWriter extends BaseTestQuery {
     }
   }
 
-  @Test // DRILL-2422
-  public void createTableWhenATableWithSameNameAlreadyExists() throws Exception{
-    final String newTblName = "createTableWhenTableAlreadyExists";
+  /*
+ * Method tests CTAS with interval data type. We also verify reading back the data to ensure we
+ * have written the correct type. For every CTAS operation we use both the readers to verify results.
+ */
+  @Test
+  public void testCTASWithIntervalTypes() throws Exception {
+    test("use dfs_test.tmp");
 
-    try {
-      test("USE dfs_test.tmp");
-      final String ctas = String.format("CREATE TABLE %s AS SELECT * from cp.`region.json`", newTblName);
+    String tableName = "drill_1980_t1";
+    // test required interval day type
+    test(String.format("create table %s as " +
+        "select " +
+        "interval '10 20:30:40.123' day to second col1, " +
+        "interval '-1000000000 20:12:23.999' day(10) to second col2 " +
+        "from cp.`employee.json` limit 2", tableName));
 
-      test(ctas);
+    Period row1Col1 = new Period(0, 0, 0, 10, 0, 0, 0, 73840123);
+    Period row1Col2 = new Period(0, 0, 0, -1000000000, 0, 0, 0, -72743999);
+    testParquetReaderHelper(tableName, row1Col1, row1Col2, row1Col1, row1Col2);
 
-      testBuilder()
-          .unOrdered()
-          .sqlQuery(ctas)
-          .baselineColumns("ok", "summary")
-          .baselineValues(false,
-              String.format("Error: A table or view with given name [%s] already exists in schema [%s]",
-                  newTblName, "dfs_test.tmp"))
-          .go();
-    } finally {
-      deleteTableIfExists(newTblName);
-    }
+    tableName = "drill_1980_2";
+
+    // test required interval year type
+    test(String.format("create table %s as " +
+        "select " +
+        "interval '10-2' year to month col1, " +
+        "interval '-100-8' year(3) to month col2 " +
+        "from cp.`employee.json` limit 2", tableName));
+
+    row1Col1 = new Period(0, 122, 0, 0, 0, 0, 0, 0);
+    row1Col2 = new Period(0, -1208, 0, 0, 0, 0, 0, 0);
+
+    testParquetReaderHelper(tableName, row1Col1, row1Col2, row1Col1, row1Col2);
+    // test nullable interval year type
+    tableName = "drill_1980_t3";
+    test(String.format("create table %s as " +
+        "select " +
+        "cast (intervalyear_col as interval year) col1," +
+        "cast(intervalyear_col as interval year) + interval '2' year col2 " +
+        "from cp.`parquet/alltypes.json` where tinyint_col = 1 or tinyint_col = 2", tableName));
+
+    row1Col1 = new Period(0, 12, 0, 0, 0, 0, 0, 0);
+    row1Col2 = new Period(0, 36, 0, 0, 0, 0, 0, 0);
+    Period row2Col1 = new Period(0, 24, 0, 0, 0, 0, 0, 0);
+    Period row2Col2 = new Period(0, 48, 0, 0, 0, 0, 0, 0);
+
+    testParquetReaderHelper(tableName, row1Col1, row1Col2, row2Col1, row2Col2);
+
+    // test nullable interval day type
+    tableName = "drill_1980_t4";
+    test(String.format("create table %s as " +
+        "select " +
+        "cast(intervalday_col as interval day) col1, " +
+        "cast(intervalday_col as interval day) + interval '1' day col2 " +
+        "from cp.`parquet/alltypes.json` where tinyint_col = 1 or tinyint_col = 2", tableName));
+
+    row1Col1 = new Period(0, 0, 0, 1, 0, 0, 0, 0);
+    row1Col2 = new Period(0, 0, 0, 2, 0, 0, 0, 0);
+    row2Col1 = new Period(0, 0, 0, 2, 0, 0, 0, 0);
+    row2Col2 = new Period(0, 0, 0, 3, 0, 0, 0, 0);
+
+    testParquetReaderHelper(tableName, row1Col1, row1Col2, row2Col1, row2Col2);
   }
 
-  @Test // DRILL-2422
-  public void createTableWhenAViewWithSameNameAlreadyExists() throws Exception{
-    final String newTblName = "createTableWhenAViewWithSameNameAlreadyExists";
+  private void testParquetReaderHelper(String tableName, Period row1Col1, Period row1Col2,
+                                       Period row2Col1, Period row2Col2) throws Exception {
 
-    try {
-      test("USE dfs_test.tmp");
-      final String createView = String.format("CREATE VIEW %s AS SELECT * from cp.`region.json`", newTblName);
+    final String switchReader = "alter session set `store.parquet.use_new_reader` = %s; ";
+    final String enableVectorizedReader = String.format(switchReader, true);
+    final String disableVectorizedReader = String.format(switchReader, false);
+    String query = String.format("select * from %s", tableName);
 
-      test(createView);
-
-      testBuilder()
-          .unOrdered()
-          .sqlQuery(String.format("CREATE TABLE %s AS SELECT * FROM cp.`employee.json`", newTblName))
-          .baselineColumns("ok", "summary")
-          .baselineValues(false,
-              String.format("Error: A table or view with given name [%s] already exists in schema [%s]",
-                  newTblName, "dfs_test.tmp"))
-          .go();
-    } finally {
-      test("DROP VIEW " + newTblName);
-    }
-  }
-
-  @Test // see DRILL-2408
-  public void testWriteEmptyFileAfterFlush() throws Exception {
-    String outputFile = "testparquetwriter_test_write_empty_file_after_flush";
-
-    try {
-      // this specific value will force a flush just after the final row is written
-      // this will cause the creation of a new "empty" parquet file
-      test("ALTER SESSION SET `store.parquet.block-size` = 19926");
-
-      String query = "SELECT * FROM cp.`employee.json` LIMIT 100";
-      test("CREATE TABLE dfs_test.tmp.%s AS %s", outputFile, query);
-
-      // this query will fail if the "empty" file wasn't deleted
-      testBuilder()
+    testBuilder()
+        .sqlQuery(query)
         .unOrdered()
-        .sqlQuery("SELECT * FROM dfs_test.tmp.%s", outputFile)
-        .sqlBaselineQuery(query)
+        .optionSettingQueriesForTestQuery(enableVectorizedReader)
+        .baselineColumns("col1", "col2")
+        .baselineValues(row1Col1, row1Col2)
+        .baselineValues(row2Col1, row2Col2)
         .go();
-    } finally {
-      // restore the session option
-      test("ALTER SESSION SET `store.parquet.block-size` = %d", ExecConstants.PARQUET_BLOCK_SIZE_VALIDATOR.getDefault().num_val);
-      deleteTableIfExists(outputFile);
-    }
+
+    testBuilder()
+        .sqlQuery(query)
+        .unOrdered()
+        .optionSettingQueriesForTestQuery(disableVectorizedReader)
+        .baselineColumns("col1", "col2")
+        .baselineValues(row1Col1, row1Col2)
+        .baselineValues(row2Col1, row2Col2)
+        .go();
   }
 
   private static void deleteTableIfExists(String tableName) {

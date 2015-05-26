@@ -22,19 +22,55 @@ import java.util.ArrayList;
 import java.util.Collection;
 import java.util.List;
 
+import org.apache.calcite.plan.RelOptPlanner;
+import org.apache.calcite.plan.RelOptUtil;
+import org.apache.calcite.plan.RelTraitSet;
+import org.apache.calcite.plan.hep.HepPlanner;
+import org.apache.calcite.rel.RelNode;
+import com.google.common.collect.ImmutableList;
+import org.apache.calcite.plan.RelOptRule;
+import org.apache.calcite.plan.hep.HepMatchOrder;
+import org.apache.calcite.plan.hep.HepProgram;
+import org.apache.calcite.plan.hep.HepProgramBuilder;
+import org.apache.calcite.rel.RelShuttleImpl;
+import org.apache.calcite.rel.core.Filter;
+import org.apache.calcite.rel.core.Join;
 import org.apache.calcite.rel.core.Project;
+import org.apache.calcite.rel.core.RelFactories;
+import org.apache.calcite.rel.core.TableFunctionScan;
+import org.apache.calcite.rel.core.TableScan;
+import org.apache.calcite.rel.logical.LogicalJoin;
 import org.apache.calcite.rel.logical.LogicalProject;
+import org.apache.calcite.rel.logical.LogicalValues;
+import org.apache.calcite.rel.metadata.CachingRelMetadataProvider;
+import org.apache.calcite.rel.metadata.ChainedRelMetadataProvider;
+import org.apache.calcite.rel.metadata.DefaultRelMetadataProvider;
+import org.apache.calcite.rel.metadata.RelMetadataProvider;
+import org.apache.calcite.rel.rules.FilterAggregateTransposeRule;
+import org.apache.calcite.rel.rules.FilterJoinRule;
+import org.apache.calcite.rel.rules.FilterMergeRule;
+import org.apache.calcite.rel.rules.FilterProjectTransposeRule;
+import org.apache.calcite.rel.rules.JoinPushThroughJoinRule;
+import org.apache.calcite.rel.rules.JoinPushTransitivePredicatesRule;
+import org.apache.calcite.rel.rules.JoinToMultiJoinRule;
+import org.apache.calcite.rel.rules.LoptOptimizeJoinRule;
+import org.apache.calcite.rel.rules.ProjectMergeRule;
 import org.apache.calcite.rel.rules.ProjectRemoveRule;
+import org.apache.calcite.rel.rules.SemiJoinFilterTransposeRule;
+import org.apache.calcite.rel.rules.SemiJoinJoinTransposeRule;
+import org.apache.calcite.rel.rules.SemiJoinProjectTransposeRule;
 import org.apache.calcite.rel.type.RelDataType;
 import org.apache.calcite.rex.RexBuilder;
 import org.apache.calcite.rex.RexNode;
 import org.apache.calcite.rex.RexUtil;
+import org.apache.calcite.sql.SqlExplainLevel;
+import org.apache.calcite.sql.SqlNode;
 import org.apache.calcite.sql.TypedSqlNode;
 import org.apache.calcite.sql.validate.SqlValidatorUtil;
+import org.apache.calcite.sql2rel.RelFieldTrimmer;
 import org.apache.calcite.tools.Planner;
 import org.apache.calcite.tools.RelConversionException;
 import org.apache.calcite.tools.ValidationException;
-
 import org.apache.drill.common.JSONOptions;
 import org.apache.drill.common.logical.PlanProperties;
 import org.apache.drill.common.logical.PlanProperties.Generator.ResultMode;
@@ -46,8 +82,15 @@ import org.apache.drill.exec.physical.PhysicalPlan;
 import org.apache.drill.exec.physical.base.AbstractPhysicalVisitor;
 import org.apache.drill.exec.physical.base.PhysicalOperator;
 import org.apache.drill.exec.physical.impl.join.JoinUtils;
+import org.apache.drill.exec.planner.cost.DrillDefaultRelMetadataProvider;
+import org.apache.drill.exec.planner.logical.DrillFilterJoinRules;
+import org.apache.drill.exec.planner.logical.DrillJoinRel;
+import org.apache.drill.exec.planner.logical.DrillMergeProjectRule;
 import org.apache.drill.exec.planner.logical.DrillProjectRel;
+import org.apache.drill.exec.planner.logical.DrillPushFilterPastProjectRule;
+import org.apache.drill.exec.planner.logical.DrillPushProjectPastFilterRule;
 import org.apache.drill.exec.planner.logical.DrillRel;
+import org.apache.drill.exec.planner.logical.DrillRelFactories;
 import org.apache.drill.exec.planner.logical.DrillScreenRel;
 import org.apache.drill.exec.planner.logical.DrillStoreRel;
 import org.apache.drill.exec.planner.logical.PreProcessLogicalRel;
@@ -55,7 +98,6 @@ import org.apache.drill.exec.planner.physical.DrillDistributionTrait;
 import org.apache.drill.exec.planner.physical.PhysicalPlanCreator;
 import org.apache.drill.exec.planner.physical.PlannerSettings;
 import org.apache.drill.exec.planner.physical.Prel;
-import org.apache.drill.exec.planner.physical.ProjectPrel;
 import org.apache.drill.exec.planner.physical.explain.PrelSequencer;
 import org.apache.drill.exec.planner.physical.visitor.ComplexToJsonPrelVisitor;
 import org.apache.drill.exec.planner.physical.visitor.ExcessiveExchangeIdentifier;
@@ -77,13 +119,6 @@ import org.apache.drill.exec.util.Pointer;
 import org.apache.drill.exec.work.foreman.ForemanSetupException;
 import org.apache.drill.exec.work.foreman.SqlUnsupportedException;
 import org.apache.drill.exec.work.foreman.UnsupportedRelOperatorException;
-import org.apache.calcite.rel.RelNode;
-import org.apache.calcite.plan.RelOptPlanner;
-import org.apache.calcite.plan.RelOptUtil;
-import org.apache.calcite.plan.RelTraitSet;
-import org.apache.calcite.plan.hep.HepPlanner;
-import org.apache.calcite.sql.SqlExplainLevel;
-import org.apache.calcite.sql.SqlNode;
 
 import com.fasterxml.jackson.core.JsonProcessingException;
 import com.google.common.base.Preconditions;
@@ -215,37 +250,50 @@ public class DefaultSqlHandler extends AbstractSqlHandler {
     return rel;
   }
 
-  protected RelNode preprocessNode(RelNode rel) throws SqlUnsupportedException{
-     /* Traverse the tree to do the following pre-processing tasks:
-     * 1. replace the convert_from, convert_to function to actual implementations
-     * Eg: convert_from(EXPR, 'JSON') be converted to convert_fromjson(EXPR);
-     * TODO: Ideally all function rewrites would move here instead of DrillOptiq
+  protected RelNode preprocessNode(RelNode rel) throws SqlUnsupportedException {
+    /*
+     * Traverse the tree to do the following pre-processing tasks: 1. replace the convert_from, convert_to function to
+     * actual implementations Eg: convert_from(EXPR, 'JSON') be converted to convert_fromjson(EXPR); TODO: Ideally all
+     * function rewrites would move here instead of DrillOptiq.
      *
-     * 2. see where the tree contains unsupported functions;
-     * throw SqlUnsupportedException if there is
+     * 2. see where the tree contains unsupported functions; throw SqlUnsupportedException if there is any.
      */
 
-     PreProcessLogicalRel visitor = PreProcessLogicalRel.createVisitor(planner.getTypeFactory(), context.getDrillOperatorTable());
-     try {
-        rel = rel.accept(visitor);
-     } catch(UnsupportedOperationException ex) {
-        visitor.convertException();
-       throw ex;
-     }
+    PreProcessLogicalRel visitor = PreProcessLogicalRel.createVisitor(planner.getTypeFactory(),
+        context.getDrillOperatorTable());
+    try {
+      rel = rel.accept(visitor);
+    } catch (UnsupportedOperationException ex) {
+      visitor.convertException();
+      throw ex;
+    }
 
     return rel;
   }
 
   protected DrillRel convertToDrel(RelNode relNode, RelDataType validatedRowType) throws RelConversionException, SqlUnsupportedException {
     try {
-      RelNode convertedRelNode = planner.transform(DrillSqlWorker.LOGICAL_RULES,
-          relNode.getTraitSet().plus(DrillRel.DRILL_LOGICAL), relNode);
+      RelNode convertedRelNode;
+
+      if (! context.getPlannerSettings().isHepJoinOptEnabled()) {
+        convertedRelNode = logicalPlanningVolcano(relNode);
+      } else {
+        convertedRelNode = logicalPlanningVolcanoAndLopt(relNode);
+      }
+
       if (convertedRelNode instanceof DrillStoreRel) {
         throw new UnsupportedOperationException();
       } else {
+
+        // If the query contains a limit 0 clause, disable distributed mode since it is overkill for determining schema.
+        if (FindLimit0Visitor.containsLimit0(convertedRelNode)) {
+          context.getPlannerSettings().forceSingleMode();
+        }
+
         // Put a non-trivial topProject to ensure the final output field name is preserved, when necessary.
-        DrillRel topPreservedNameProj = addRenamedProject((DrillRel)convertedRelNode, validatedRowType);
-        return new DrillScreenRel(topPreservedNameProj.getCluster(), topPreservedNameProj.getTraitSet(), topPreservedNameProj);
+        DrillRel topPreservedNameProj = addRenamedProject((DrillRel) convertedRelNode, validatedRowType);
+        return new DrillScreenRel(topPreservedNameProj.getCluster(), topPreservedNameProj.getTraitSet(),
+            topPreservedNameProj);
       }
     } catch (RelOptPlanner.CannotPlanException ex) {
       logger.error(ex.getMessage());
@@ -258,10 +306,23 @@ public class DefaultSqlHandler extends AbstractSqlHandler {
     }
   }
 
-  protected Prel convertToPrel(RelNode drel) throws RelConversionException {
+
+  protected Prel convertToPrel(RelNode drel) throws RelConversionException, SqlUnsupportedException {
     Preconditions.checkArgument(drel.getConvention() == DrillRel.DRILL_LOGICAL);
     RelTraitSet traits = drel.getTraitSet().plus(Prel.DRILL_PHYSICAL).plus(DrillDistributionTrait.SINGLETON);
-    Prel phyRelNode = (Prel) planner.transform(DrillSqlWorker.PHYSICAL_MEM_RULES, traits, drel);
+    Prel phyRelNode;
+    try {
+      phyRelNode = (Prel) planner.transform(DrillSqlWorker.PHYSICAL_MEM_RULES, traits, drel);
+    } catch (RelOptPlanner.CannotPlanException ex) {
+      logger.error(ex.getMessage());
+
+      if(JoinUtils.checkCartesianJoin(drel, new ArrayList<Integer>(), new ArrayList<Integer>())) {
+        throw new UnsupportedRelOperatorException("This query cannot be planned possibly due to either a cartesian join or an inequality join");
+      } else {
+        throw ex;
+      }
+    }
+
     OptionManager queryOptions = context.getOptions();
 
     if (context.getPlannerSettings().isMemoryEstimationEnabled()
@@ -272,7 +333,17 @@ public class DefaultSqlHandler extends AbstractSqlHandler {
       queryOptions.setOption(OptionValue.createBoolean(OptionValue.OptionType.QUERY, PlannerSettings.HASHJOIN.getOptionName(), false));
       queryOptions.setOption(OptionValue.createBoolean(OptionValue.OptionType.QUERY, PlannerSettings.HASHAGG.getOptionName(), false));
 
-      phyRelNode = (Prel) planner.transform(DrillSqlWorker.PHYSICAL_MEM_RULES, traits, drel);
+      try {
+        phyRelNode = (Prel) planner.transform(DrillSqlWorker.PHYSICAL_MEM_RULES, traits, drel);
+      } catch (RelOptPlanner.CannotPlanException ex) {
+        logger.error(ex.getMessage());
+
+        if(JoinUtils.checkCartesianJoin(drel, new ArrayList<Integer>(), new ArrayList<Integer>())) {
+          throw new UnsupportedRelOperatorException("This query cannot be planned possibly due to either a cartesian join or an inequality join");
+        } else {
+          throw ex;
+        }
+      }
     }
 
     /*  The order of the following transformation is important */
@@ -418,5 +489,104 @@ public class DefaultSqlHandler extends AbstractSqlHandler {
    */
   public SqlNode rewrite(SqlNode node) throws RelConversionException, ForemanSetupException {
     return node;
+  }
+
+  private RelNode logicalPlanningVolcano(RelNode relNode) throws RelConversionException, SqlUnsupportedException {
+    return planner.transform(DrillSqlWorker.LOGICAL_RULES, relNode.getTraitSet().plus(DrillRel.DRILL_LOGICAL), relNode);
+  }
+
+  /**
+   * Do logical planning using both VolcanoPlanner and LOPT HepPlanner.
+   * @param relNode
+   * @return
+   * @throws RelConversionException
+   * @throws SqlUnsupportedException
+   */
+  private RelNode logicalPlanningVolcanoAndLopt(RelNode relNode) throws RelConversionException, SqlUnsupportedException {
+
+    final RelNode convertedRelNode = planner.transform(DrillSqlWorker.LOGICAL_CONVERT_RULES, relNode.getTraitSet().plus(DrillRel.DRILL_LOGICAL), relNode);
+    log("VolCalciteRel", convertedRelNode);
+
+    final RelNode loptNode = getLoptJoinOrderTree(
+        convertedRelNode,
+        DrillJoinRel.class,
+        DrillRelFactories.DRILL_LOGICAL_JOIN_FACTORY,
+        DrillRelFactories.DRILL_LOGICAL_FILTER_FACTORY,
+        DrillRelFactories.DRILL_LOGICAL_PROJECT_FACTORY);
+
+    log("HepCalciteRel", loptNode);
+
+    return loptNode;
+  }
+
+
+  /**
+   * Appy Join Order Optimizations using Hep Planner.
+   */
+  public RelNode getLoptJoinOrderTree(RelNode root,
+                                      Class<? extends Join> joinClass,
+                                             RelFactories.JoinFactory joinFactory,
+                                             RelFactories.FilterFactory filterFactory,
+                                             RelFactories.ProjectFactory projectFactory) {
+    final HepProgramBuilder hepPgmBldr = new HepProgramBuilder()
+        .addMatchOrder(HepMatchOrder.BOTTOM_UP)
+        .addRuleInstance(new JoinToMultiJoinRule(joinClass))
+        .addRuleInstance(new LoptOptimizeJoinRule(joinFactory, projectFactory, filterFactory))
+        .addRuleInstance(ProjectRemoveRule.INSTANCE);
+        // .addRuleInstance(new ProjectMergeRule(true, projectFactory));
+
+        // .addRuleInstance(DrillMergeProjectRule.getInstance(true, projectFactory, this.context.getFunctionRegistry()));
+
+
+    final HepProgram hepPgm = hepPgmBldr.build();
+    final HepPlanner hepPlanner = new HepPlanner(hepPgm);
+
+    final List<RelMetadataProvider> list = Lists.newArrayList();
+    list.add(DrillDefaultRelMetadataProvider.INSTANCE);
+    hepPlanner.registerMetadataProviders(list);
+    final RelMetadataProvider cachingMetaDataProvider = new CachingRelMetadataProvider(ChainedRelMetadataProvider.of(list), hepPlanner);
+
+    // Modify RelMetaProvider for every RelNode in the SQL operator Rel tree.
+    root.accept(new MetaDataProviderModifier(cachingMetaDataProvider));
+
+    hepPlanner.setRoot(root);
+
+    RelNode calciteOptimizedPlan = hepPlanner.findBestExp();
+
+    return calciteOptimizedPlan;
+  }
+
+
+  public static class MetaDataProviderModifier extends RelShuttleImpl {
+    private final RelMetadataProvider metadataProvider;
+
+    public MetaDataProviderModifier(RelMetadataProvider metadataProvider) {
+      this.metadataProvider = metadataProvider;
+    }
+
+    @Override
+    public RelNode visit(TableScan scan) {
+      scan.getCluster().setMetadataProvider(metadataProvider);
+      return super.visit(scan);
+    }
+
+    @Override
+    public RelNode visit(TableFunctionScan scan) {
+      scan.getCluster().setMetadataProvider(metadataProvider);
+      return super.visit(scan);
+    }
+
+    @Override
+    public RelNode visit(LogicalValues values) {
+      values.getCluster().setMetadataProvider(metadataProvider);
+      return super.visit(values);
+    }
+
+    @Override
+    protected RelNode visitChild(RelNode parent, int i, RelNode child) {
+      child.accept(this);
+      parent.getCluster().setMetadataProvider(metadataProvider);
+      return parent;
+    }
   }
 }

@@ -19,10 +19,14 @@ package org.apache.drill.exec.ops;
 
 import io.netty.buffer.DrillBuf;
 
+import java.io.IOException;
 import java.util.Iterator;
 
 import org.apache.drill.exec.memory.BufferAllocator;
 import org.apache.drill.exec.physical.base.PhysicalOperator;
+import org.apache.drill.exec.testing.ExecutionControls;
+import org.apache.drill.exec.store.dfs.DrillFileSystem;
+import org.apache.hadoop.conf.Configuration;
 
 public abstract class OperatorContext {
 
@@ -35,6 +39,10 @@ public abstract class OperatorContext {
   public abstract BufferAllocator getAllocator();
 
   public abstract OperatorStats getStats();
+
+  public abstract ExecutionControls getExecutionControls();
+
+  public abstract DrillFileSystem newFileSystem(Configuration conf) throws IOException;
 
   public static int getChildCount(PhysicalOperator popConfig) {
     Iterator<PhysicalOperator> iter = popConfig.iterator();

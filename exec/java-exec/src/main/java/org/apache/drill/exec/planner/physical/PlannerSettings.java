@@ -33,6 +33,7 @@ public class PlannerSettings implements Context{
 
   private int numEndPoints = 0;
   private boolean useDefaultCosting = false; // True: use default Optiq costing, False: use Drill costing
+  private boolean forceSingleMode;
 
   public static final int MAX_BROADCAST_THRESHOLD = Integer.MAX_VALUE;
   public static final int DEFAULT_IDENTIFIER_MAX_LENGTH = 1024;
@@ -53,7 +54,7 @@ public class PlannerSettings implements Context{
   public static final OptionValidator JOIN_ROW_COUNT_ESTIMATE_FACTOR = new RangeDoubleValidator("planner.join.row_count_estimate_factor", 0, Double.MAX_VALUE, 1.0d);
   public static final OptionValidator MUX_EXCHANGE = new BooleanValidator("planner.enable_mux_exchange", true);
   public static final OptionValidator DEMUX_EXCHANGE = new BooleanValidator("planner.enable_demux_exchange", false);
-  public static final OptionValidator PARTITION_SENDER_THREADS_FACTOR = new LongValidator("planner.partitioner_sender_threads_factor", 1);
+  public static final OptionValidator PARTITION_SENDER_THREADS_FACTOR = new LongValidator("planner.partitioner_sender_threads_factor", 2);
   public static final OptionValidator PARTITION_SENDER_MAX_THREADS = new LongValidator("planner.partitioner_sender_max_threads", 8);
   public static final OptionValidator PARTITION_SENDER_SET_THREADS = new LongValidator("planner.partitioner_sender_set_threads", -1);
   public static final OptionValidator PRODUCER_CONSUMER = new BooleanValidator("planner.add_producer_consumer", false);
@@ -61,6 +62,9 @@ public class PlannerSettings implements Context{
   public static final OptionValidator HASH_SINGLE_KEY = new BooleanValidator("planner.enable_hash_single_key", true);
   public static final OptionValidator HASH_JOIN_SWAP = new BooleanValidator("planner.enable_hashjoin_swap", true);
   public static final OptionValidator HASH_JOIN_SWAP_MARGIN_FACTOR = new RangeDoubleValidator("planner.join.hash_join_swap_margin_factor", 0, 100, 10d);
+  public static final String ENABLE_DECIMAL_DATA_TYPE_KEY = "planner.enable_decimal_data_type";
+  public static final OptionValidator ENABLE_DECIMAL_DATA_TYPE = new BooleanValidator(ENABLE_DECIMAL_DATA_TYPE_KEY, false);
+  public static final OptionValidator HEP_JOIN_OPT = new BooleanValidator("planner.enable_hep_join_opt", true);
 
   public static final OptionValidator IDENTIFIER_MAX_LENGTH =
       new RangeLongValidator("planner.identifier_max_length", 128 /* A minimum length is needed because option names are identifiers themselves */,
@@ -79,7 +83,11 @@ public class PlannerSettings implements Context{
   }
 
   public boolean isSingleMode() {
-    return options.getOption(EXCHANGE.getOptionName()).bool_val;
+    return forceSingleMode || options.getOption(EXCHANGE.getOptionName()).bool_val;
+  }
+
+  public void forceSingleMode() {
+    forceSingleMode = true;
   }
 
   public int numEndPoints() {
@@ -153,6 +161,8 @@ public class PlannerSettings implements Context{
   public boolean isHashJoinSwapEnabled() {
     return options.getOption(HASH_JOIN_SWAP.getOptionName()).bool_val;
   }
+
+  public boolean isHepJoinOptEnabled() { return options.getOption(HEP_JOIN_OPT.getOptionName()).bool_val;}
 
   public double getHashJoinSwapMarginFactor() {
     return options.getOption(HASH_JOIN_SWAP_MARGIN_FACTOR.getOptionName()).float_val / 100d;

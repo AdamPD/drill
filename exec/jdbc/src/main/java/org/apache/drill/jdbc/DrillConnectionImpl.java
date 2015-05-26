@@ -21,9 +21,11 @@ import java.io.IOException;
 import java.sql.PreparedStatement;
 import java.sql.SQLException;
 import java.sql.SQLFeatureNotSupportedException;
+import java.sql.SQLNonTransientConnectionException;
 import java.sql.Savepoint;
 import java.util.Properties;
 import java.util.TimeZone;
+import java.util.concurrent.Executor;
 
 import net.hydromatic.avatica.AvaticaConnection;
 import net.hydromatic.avatica.AvaticaFactory;
@@ -32,6 +34,7 @@ import net.hydromatic.avatica.Meta;
 import net.hydromatic.avatica.UnregisteredDriver;
 
 import org.apache.drill.common.config.DrillConfig;
+import org.apache.drill.common.exceptions.DrillRuntimeException;
 import org.apache.drill.exec.client.DrillClient;
 import org.apache.drill.exec.memory.BufferAllocator;
 import org.apache.drill.exec.memory.TopLevelAllocator;
@@ -40,6 +43,7 @@ import org.apache.drill.exec.server.Drillbit;
 import org.apache.drill.exec.server.RemoteServiceSet;
 import org.apache.drill.exec.store.StoragePluginRegistry;
 import org.apache.drill.exec.util.TestUtilities;
+import org.apache.drill.jdbc.impl.DrillStatementImpl;
 
 // (Public until JDBC impl. classes moved out of published-intf. package. (DRILL-2089).)
 /**
@@ -53,7 +57,8 @@ public abstract class DrillConnectionImpl extends AvaticaConnection
                                           implements DrillConnection {
   private static final org.slf4j.Logger logger = org.slf4j.LoggerFactory.getLogger(DrillConnection.class);
 
-  final DrillStatementRegistry openStatementsRegistry = new DrillStatementRegistry();
+  // (Public until JDBC impl. classes moved out of published-intf. package. (DRILL-2089).)
+  public final DrillStatementRegistry openStatementsRegistry = new DrillStatementRegistry();
   final DrillConnectionConfig config;
 
   private final DrillClient client;
@@ -74,8 +79,10 @@ public abstract class DrillConnectionImpl extends AvaticaConnection
       if (config.isLocal()) {
         try {
           Class.forName("org.eclipse.jetty.server.Handler");
-        } catch (ClassNotFoundException e1) {
-          throw new SQLException("Running Drill in embedded mode using the JDBC jar alone is not supported.");
+        } catch (final ClassNotFoundException e) {
+          throw new SQLNonTransientConnectionException(
+              "Running Drill in embedded mode using Drill's jdbc-all JDBC"
+              + " driver Jar file alone is not supported.",  e);
         }
 
         final DrillConfig dConfig = DrillConfig.create(info);
@@ -89,7 +96,10 @@ public abstract class DrillConnectionImpl extends AvaticaConnection
             bit = new Drillbit(dConfig, serviceSet);
             bit.run();
           } catch (Exception e) {
-            throw new SQLException("Failure while attempting to start Drillbit in embedded mode.", e);
+            // (Include cause exception's text in wrapping exception's text so
+            // it's more likely to get to user (e.g., via SQLLine), and use
+            // toString() since getMessage() text doesn't always mention error:)
+            throw new SQLException("Failure in starting embedded Drillbit: " + e, e);
           }
         } else {
           serviceSet = null;
@@ -116,17 +126,18 @@ public abstract class DrillConnectionImpl extends AvaticaConnection
         this.client.connect(config.getZookeeperConnectionString(), info);
       }
     } catch (RpcException e) {
-      throw new SQLException("Failure while attempting to connect to Drill: " + e.getMessage(), e);
+      // (Include cause exception's text in wrapping exception's text so
+      // it's more likely to get to user (e.g., via SQLLine), and use
+      // toString() since getMessage() text doesn't always mention error:)
+      throw new SQLException("Failure in connecting to Drill: " + e, e);
     }
   }
 
   /**
-   * Throws AlreadyClosedSqlException if this Connection is closed.
+   * Throws AlreadyClosedSqlException <i>iff</i> this Connection is closed.
    *
-   * @throws AlreadyClosedSqlException if Connection is closed
-   * @throws SQLException if error in calling {@link #isClosed()}
-   */
-  private void checkNotClosed() throws SQLException {
+   * @throws  AlreadyClosedSqlException  if Connection is closed   */
+  private void checkNotClosed() throws AlreadyClosedSqlException {
     if ( isClosed() ) {
       throw new AlreadyClosedSqlException( "Connection is already closed." );
     }
@@ -167,9 +178,9 @@ public abstract class DrillConnectionImpl extends AvaticaConnection
   }
 
   @Override
-  public void commit() throws SQLException  {
+  public void commit() throws SQLException {
     checkNotClosed();
-    if ( getAutoCommit()  ) {
+    if ( getAutoCommit() ) {
       throw new JdbcApiSqlException( "Can't call commit() in auto-commit mode." );
     }
     else {
@@ -191,6 +202,23 @@ public abstract class DrillConnectionImpl extends AvaticaConnection
           "Connection.rollback() is not supported.  (Drill is not transactional.)" );
     }
   }
+
+
+  @Override
+  public boolean isClosed() {
+    try {
+      return super.isClosed();
+    }
+    catch ( SQLException e ) {
+      // Currently can't happen, since AvaticaConnection.isClosed() never throws
+      // SQLException.
+      throw new DrillRuntimeException(
+          "Unexpected exception from " + getClass().getSuperclass()
+          + ".isClosed(): " + e,
+          e );
+    }
+  }
+
 
   @Override
   public Savepoint setSavepoint() throws SQLException {
@@ -258,11 +286,43 @@ public abstract class DrillConnectionImpl extends AvaticaConnection
   }
 
   @Override
-  public DrillStatement createStatement(int resultSetType, int resultSetConcurrency,
+  public void setNetworkTimeout( Executor executor, int milliseconds )
+      throws AlreadyClosedSqlException,
+             JdbcApiSqlException,
+             SQLFeatureNotSupportedException {
+    checkNotClosed();
+    if ( null == executor ) {
+      throw new InvalidParameterSqlException(
+          "Invalid (null) \"executor\" parameter to setNetworkTimeout(...)" );
+    }
+    else if ( milliseconds < 0 ) {
+      throw new InvalidParameterSqlException(
+          "Invalid (negative) \"milliseconds\" parameter to setNetworkTimeout(...)"
+          + " (" + milliseconds + ")" );
+    }
+    else {
+      if ( 0 != milliseconds ) {
+        throw new SQLFeatureNotSupportedException(
+            "Setting network timeout is not supported." );
+      }
+    }
+  }
+
+
+  @Override
+  public int getNetworkTimeout() throws AlreadyClosedSqlException
+  {
+    checkNotClosed();
+    return 0;  // (No no timeout.)
+  }
+
+
+  @Override
+  public DrillStatementImpl createStatement(int resultSetType, int resultSetConcurrency,
                                         int resultSetHoldability) throws SQLException {
     checkNotClosed();
-    DrillStatement statement =
-        (DrillStatement) super.createStatement(resultSetType, resultSetConcurrency,
+    DrillStatementImpl statement =
+        (DrillStatementImpl) super.createStatement(resultSetType, resultSetConcurrency,
                                                resultSetHoldability);
     return statement;
   }
@@ -332,7 +392,8 @@ public abstract class DrillConnectionImpl extends AvaticaConnection
   private static void makeTmpSchemaLocationsUnique(StoragePluginRegistry pluginRegistry, Properties props) {
     try {
       if (props != null && "true".equalsIgnoreCase(props.getProperty("drillJDBCUnitTests"))) {
-        TestUtilities.updateDfsTestTmpSchemaLocation(pluginRegistry);
+        final String tmpDirPath = TestUtilities.createTempDir();
+        TestUtilities.updateDfsTestTmpSchemaLocation(pluginRegistry, tmpDirPath);
         TestUtilities.makeDfsTmpSchemaImmutable(pluginRegistry);
       }
     } catch(Throwable e) {

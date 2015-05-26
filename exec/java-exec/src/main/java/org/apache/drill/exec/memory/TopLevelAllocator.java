@@ -31,11 +31,15 @@ import org.apache.drill.common.config.DrillConfig;
 import org.apache.drill.exec.ExecConstants;
 import org.apache.drill.exec.ops.FragmentContext;
 import org.apache.drill.exec.proto.ExecProtos.FragmentHandle;
+import org.apache.drill.exec.testing.ExecutionControlsInjector;
 import org.apache.drill.exec.util.AssertionUtil;
 import org.apache.drill.exec.util.Pointer;
 
 public class TopLevelAllocator implements BufferAllocator {
-  static final org.slf4j.Logger logger = org.slf4j.LoggerFactory.getLogger(TopLevelAllocator.class);
+  private static final org.slf4j.Logger logger = org.slf4j.LoggerFactory.getLogger(TopLevelAllocator.class);
+
+  private static final ExecutionControlsInjector injector = ExecutionControlsInjector.getInjector(TopLevelAllocator.class);
+  public static final String CHILD_BUFFER_INJECTION_SITE = "child.buffer";
 
   public static long MAXIMUM_DIRECT_MEMORY;
 
@@ -91,10 +95,20 @@ public class TopLevelAllocator implements BufferAllocator {
     if(!acct.reserve(min)) {
       return null;
     }
-    UnsafeDirectLittleEndian buffer = innerAllocator.directBuffer(min, max);
-    DrillBuf wrapped = new DrillBuf(this, acct, buffer);
-    acct.reserved(min, wrapped);
-    return wrapped;
+
+    try {
+      UnsafeDirectLittleEndian buffer = innerAllocator.directBuffer(min, max);
+      DrillBuf wrapped = new DrillBuf(this, acct, buffer);
+      acct.reserved(min, wrapped);
+      return wrapped;
+    } catch (OutOfMemoryError e) {
+      if ("Direct buffer memory".equals(e.getMessage())) {
+        acct.release(min);
+        return null;
+      } else {
+        throw e;
+      }
+    }
   }
 
   @Override
@@ -127,7 +141,7 @@ public class TopLevelAllocator implements BufferAllocator {
               .format(
                   "You attempted to create a new child allocator with initial reservation %d but only %d bytes of memory were available.",
                   initialReservation, acct.getCapacity() - acct.getAllocation()));
-    };
+    }
     logger.debug("New child allocator with initial reservation {}", initialReservation);
     ChildAllocator allocator = new ChildAllocator(context, acct, maximumReservation, initialReservation, childrenMap, applyFragmentLimit);
     if(ENABLE_ACCOUNTING){
@@ -180,7 +194,7 @@ public class TopLevelAllocator implements BufferAllocator {
 
 
 
-  private class ChildAllocator implements BufferAllocator{
+  private class ChildAllocator implements BufferAllocator {
     private final DrillBuf empty;
     private Accountor childAcct;
     private Map<ChildAllocator, StackTraceElement[]> children = new HashMap<>();
@@ -221,18 +235,38 @@ public class TopLevelAllocator implements BufferAllocator {
 
     @Override
     public DrillBuf buffer(int size, int max) {
+      if (ENABLE_ACCOUNTING) {
+        try {
+          injector.injectUnchecked(fragmentContext, CHILD_BUFFER_INJECTION_SITE);
+        } catch (NullPointerException e) {
+          // This is an unusual way to use exception injection. If we inject a NullPointerException into this site
+          // it will actually cause this method to return null, simulating a "normal" failure to allocate memory
+          // this can be useful to check if the caller will properly handle nulls
+          return null;
+        }
+      }
+
       if (size == 0) {
         return empty;
       }
       if(!childAcct.reserve(size)) {
         logger.warn("Unable to allocate buffer of size {} due to memory limit. Current allocation: {}", size, getAllocatedMemory(), new Exception());
         return null;
-      };
+      }
 
-      UnsafeDirectLittleEndian buffer = innerAllocator.directBuffer(size, max);
-      DrillBuf wrapped = new DrillBuf(this, childAcct, buffer);
-      childAcct.reserved(buffer.capacity(), wrapped);
-      return wrapped;
+      try {
+        UnsafeDirectLittleEndian buffer = innerAllocator.directBuffer(size, max);
+        DrillBuf wrapped = new DrillBuf(this, childAcct, buffer);
+        childAcct.reserved(buffer.capacity(), wrapped);
+        return wrapped;
+      } catch (OutOfMemoryError e) {
+        if ("Direct buffer memory".equals(e.getMessage())) {
+          childAcct.release(size);
+          return null;
+        } else {
+          throw e;
+        }
+      }
     }
 
     public DrillBuf buffer(int size) {
@@ -253,7 +287,7 @@ public class TopLevelAllocator implements BufferAllocator {
                 .format(
                     "You attempted to create a new child allocator with initial reservation %d but only %d bytes of memory were available.",
                     initialReservation, childAcct.getAvailable()));
-      };
+      }
       logger.debug("New child allocator with initial reservation {}", initialReservation);
       ChildAllocator newChildAllocator = new ChildAllocator(context, childAcct, maximumReservation, initialReservation, null, applyFragmentLimit);
       this.children.put(newChildAllocator, Thread.currentThread().getStackTrace());
@@ -289,7 +323,7 @@ public class TopLevelAllocator implements BufferAllocator {
           if (!child.isClosed()) {
             StringBuilder sb = new StringBuilder();
             StackTraceElement[] elements = children.get(child);
-            for (int i = 3; i < elements.length; i++) {
+            for (int i = 1; i < elements.length; i++) {
               sb.append("\t\t");
               sb.append(elements[i]);
               sb.append("\n");

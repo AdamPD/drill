@@ -26,10 +26,14 @@ import java.io.FileOutputStream;
 import java.io.IOException;
 import java.io.InputStream;
 import java.io.OutputStream;
+import java.io.RandomAccessFile;
 import java.net.URI;
 import java.net.URISyntaxException;
+import java.nio.ByteBuffer;
+import java.util.RandomAccess;
 
 import org.apache.commons.io.FileUtils;
+import org.apache.hadoop.fs.ByteBufferReadable;
 import org.apache.hadoop.fs.FSDataInputStream;
 import org.apache.hadoop.fs.FSDataOutputStream;
 import org.apache.hadoop.fs.FileStatus;
@@ -118,7 +122,8 @@ public class LocalSyncableFileSystem extends FileSystem {
 
   @Override
   public FileStatus getFileStatus(Path path) throws IOException {
-    return null;
+    File file = new File(Path.getPathWithoutSchemeAndAuthority(path).toString());
+    return new FileStatus(file.length(), file.isDirectory(), 1, 0, file.lastModified(), path);
   }
 
   public class LocalSyncableOutputStream extends OutputStream implements Syncable {
@@ -161,12 +166,15 @@ public class LocalSyncableFileSystem extends FileSystem {
     }
   }
 
-  public class LocalInputStream extends InputStream implements Seekable, PositionedReadable {
+  public class LocalInputStream extends InputStream implements Seekable, PositionedReadable, ByteBufferReadable {
 
     private BufferedInputStream input;
+    private String path;
+    private long position = 0;
 
     public LocalInputStream(Path path)  throws IOException {
-      input = new BufferedInputStream(new FileInputStream(path.toString()), 1024*1024);
+      this.path = path.toString();
+      input = new BufferedInputStream(new FileInputStream(new RandomAccessFile(this.path, "r").getFD()), 1024*1024);
     }
 
     @Override
@@ -186,13 +194,16 @@ public class LocalSyncableFileSystem extends FileSystem {
 
     @Override
     public void seek(long l) throws IOException {
-      input.reset();
-      input.skip(l);
+      input.close();
+      RandomAccessFile raf = new RandomAccessFile(path, "r");
+      raf.seek(l);
+      input = new BufferedInputStream(new FileInputStream(raf.getFD()), 1024*1024);
+      position = l;
     }
 
     @Override
     public long getPos() throws IOException {
-      throw new IOException("getPos not supported");
+      return position;
     }
 
     @Override
@@ -200,10 +211,41 @@ public class LocalSyncableFileSystem extends FileSystem {
       throw new IOException("seekToNewSource not supported");
     }
 
+
+
+    @Override
+    public int read(ByteBuffer buf) throws IOException {
+      buf.reset();
+
+      if(buf.hasArray()){
+        int read = read(buf.array(), buf.arrayOffset(), buf.capacity());
+        buf.limit(read);
+        return read;
+      }else{
+        byte[] b = new byte[buf.capacity()];
+        int read = read(b);
+        buf.put(b);
+        return read;
+      }
+
+    }
+
+
+    @Override
+    public int read(byte[] b) throws IOException {
+      return input.read(b);
+    }
+
+    @Override
+    public int read(byte[] b, int off, int len) throws IOException {
+      return input.read(b, off, len);
+    }
+
     @Override
     public int read() throws IOException {
       byte[] b = new byte[1];
       input.read(b);
+      position++;
       return (int) b[0] & 0xFF;
     }
   }

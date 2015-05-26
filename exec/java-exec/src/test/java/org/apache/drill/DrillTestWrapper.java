@@ -37,6 +37,7 @@ import java.io.UnsupportedEncodingException;
 import java.lang.reflect.Array;
 import java.util.ArrayList;
 import java.util.Arrays;
+import java.util.Collections;
 import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
@@ -224,6 +225,8 @@ public class DrillTestWrapper {
     for (int i = 0; i < size; i++) {
       batch = records.get(0);
       loader.load(batch.getHeader().getDef(), batch.getData());
+      // TODO:  Clean:  DRILL-2933:  That load(...) no longer throws
+      // SchemaChangeException, so check/clean throws clause above.
       if (schema == null) {
         schema = loader.getSchema();
         for (MaterializedField mf : schema) {
@@ -267,28 +270,32 @@ public class DrillTestWrapper {
     RecordBatchLoader loader = new RecordBatchLoader(getAllocator());
     BatchSchema schema = null;
 
-    BaseTestQuery.test(testOptionSettingQueries);
-    List<QueryDataBatch> expected = BaseTestQuery.testRunAndReturn(queryType, query);
-
-    addTypeInfoIfMissing(expected.get(0), testBuilder);
-
+    List<QueryDataBatch> actual = Collections.EMPTY_LIST;;
+    List<QueryDataBatch> expected = Collections.EMPTY_LIST;
     List<Map> expectedRecords = new ArrayList<>();
-    addToMaterializedResults(expectedRecords, expected, loader, schema);
-
-    List<QueryDataBatch> results = new ArrayList();
     List<Map> actualRecords = new ArrayList<>();
-    // If baseline data was not provided to the test builder directly, we must run a query for the baseline, this includes
-    // the cases where the baseline is stored in a file.
-    if (baselineRecords == null) {
-      BaseTestQuery.test(baselineOptionSettingQueries);
-      results = BaseTestQuery.testRunAndReturn(baselineQueryType, testBuilder.getValidationQuery());
-      addToMaterializedResults(actualRecords, results, loader, schema);
-    } else {
-      actualRecords = baselineRecords;
-    }
 
-    compareResults(expectedRecords, actualRecords);
-    cleanupBatches(expected, results);
+    try {
+      BaseTestQuery.test(testOptionSettingQueries);
+      actual = BaseTestQuery.testRunAndReturn(queryType, query);
+
+      addTypeInfoIfMissing(actual.get(0), testBuilder);
+      addToMaterializedResults(actualRecords, actual, loader, schema);
+
+      // If baseline data was not provided to the test builder directly, we must run a query for the baseline, this includes
+      // the cases where the baseline is stored in a file.
+      if (baselineRecords == null) {
+        BaseTestQuery.test(baselineOptionSettingQueries);
+        expected = BaseTestQuery.testRunAndReturn(baselineQueryType, testBuilder.getValidationQuery());
+        addToMaterializedResults(expectedRecords, expected, loader, schema);
+      } else {
+        expectedRecords = baselineRecords;
+      }
+
+      compareResults(expectedRecords, actualRecords);
+    } finally {
+      cleanupBatches(actual, expected);
+    }
   }
 
   /**
@@ -312,15 +319,18 @@ public class DrillTestWrapper {
     RecordBatchLoader loader = new RecordBatchLoader(getAllocator());
     BatchSchema schema = null;
 
+    List<QueryDataBatch> actual = Collections.EMPTY_LIST;;
+    List<QueryDataBatch> expected = Collections.EMPTY_LIST;
+    Map<String, List> actualSuperVectors;
+    Map<String, List> expectedSuperVectors;
+
+    try {
     BaseTestQuery.test(testOptionSettingQueries);
-    List<QueryDataBatch> results = BaseTestQuery.testRunAndReturn(queryType, query);
+    actual = BaseTestQuery.testRunAndReturn(queryType, query);
     // To avoid extra work for test writers, types can optionally be inferred from the test query
-    addTypeInfoIfMissing(results.get(0), testBuilder);
+    addTypeInfoIfMissing(actual.get(0), testBuilder);
 
-    Map<String, List> actualSuperVectors = addToCombinedVectorResults(results, loader, schema);
-
-    List<QueryDataBatch> expected = null;
-    Map<String, List> expectedSuperVectors = null;
+    actualSuperVectors = addToCombinedVectorResults(actual, loader, schema);
 
     // If baseline data was not provided to the test builder directly, we must run a query for the baseline, this includes
     // the cases where the baseline is stored in a file.
@@ -344,8 +354,9 @@ public class DrillTestWrapper {
     }
 
     compareMergedVectors(expectedSuperVectors, actualSuperVectors);
-
-    cleanupBatches(expected, results);
+    } finally {
+      cleanupBatches(expected, actual);
+    }
   }
 
   public void compareResultsHyperVector() throws Exception {
@@ -401,6 +412,8 @@ public class DrillTestWrapper {
     for (int i = 0; i < size; i++) {
       batch = records.get(0);
       loader.load(batch.getHeader().getDef(), batch.getData());
+      // TODO:  Clean:  DRILL-2933:  That load(...) no longer throws
+      // SchemaChangeException, so check/clean throws clause above.
       if (schema == null) {
         schema = loader.getSchema();
       }

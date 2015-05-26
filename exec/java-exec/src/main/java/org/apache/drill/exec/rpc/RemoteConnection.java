@@ -20,6 +20,9 @@ package org.apache.drill.exec.rpc;
 import io.netty.channel.Channel;
 import io.netty.channel.ChannelHandlerContext;
 import io.netty.channel.ChannelInboundHandlerAdapter;
+import io.netty.channel.socket.SocketChannel;
+import io.netty.util.concurrent.Future;
+import io.netty.util.concurrent.GenericFutureListener;
 
 import java.util.concurrent.ExecutionException;
 
@@ -30,16 +33,35 @@ public abstract class RemoteConnection implements ConnectionThrottle, AutoClosea
   static final org.slf4j.Logger logger = org.slf4j.LoggerFactory.getLogger(RemoteConnection.class);
   private final Channel channel;
   private final WriteManager writeManager;
+  private String name;
+  private final String clientName;
 
   public boolean inEventLoop(){
     return channel.eventLoop().inEventLoop();
   }
 
-  public RemoteConnection(Channel channel) {
+  public RemoteConnection(SocketChannel channel, String name) {
     super();
     this.channel = channel;
+    this.clientName = name;
     this.writeManager = new WriteManager();
     channel.pipeline().addLast(new BackPressureHandler());
+    channel.closeFuture().addListener(new GenericFutureListener<Future<? super Void>>() {
+      public void operationComplete(Future<? super Void> future) throws Exception {
+        // this could possibly overrelease but it doesn't matter since we're only going to do this to ensure that we
+        // fail out any pending messages
+        writeManager.disable();
+        writeManager.setWritable(true);
+      }
+    });
+
+  }
+
+  public String getName() {
+    if(name == null){
+      name = String.format("%s <--> %s (%s)", channel.localAddress(), channel.remoteAddress(), clientName);
+    }
+    return name;
   }
 
   public abstract BufferAllocator getAllocator();
@@ -52,9 +74,13 @@ public abstract class RemoteConnection implements ConnectionThrottle, AutoClosea
     try{
       writeManager.waitForWritable();
       return true;
-    }catch(InterruptedException e){
-      listener.failed(new RpcException(e));
-      // TODO InterruptedException
+    }catch(final InterruptedException e){
+      listener.interrupted(e);
+
+      // Preserve evidence that the interruption occurred so that code higher up on the call stack can learn of the
+      // interruption and respond to it if it wants to.
+      Thread.currentThread().interrupt();
+
       return false;
     }
   }
@@ -72,6 +98,7 @@ public abstract class RemoteConnection implements ConnectionThrottle, AutoClosea
    */
   private static class WriteManager{
     private final ResettableBarrier barrier = new ResettableBarrier();
+    private volatile boolean disabled = false;
 
     public WriteManager(){
       barrier.openBarrier();
@@ -82,15 +109,17 @@ public abstract class RemoteConnection implements ConnectionThrottle, AutoClosea
     }
 
     public void setWritable(boolean isWritable){
-//      logger.debug("Set writable: {}", isWritable);
       if(isWritable){
         barrier.openBarrier();
-      }else{
+      } else if (!disabled) {
         barrier.closeBarrier();
       }
 
     }
 
+    public void disable() {
+      disabled = true;
+    }
   }
 
   private class BackPressureHandler extends ChannelInboundHandlerAdapter{
@@ -107,10 +136,15 @@ public abstract class RemoteConnection implements ConnectionThrottle, AutoClosea
   @Override
   public void close() {
     try {
-      channel.close().get();
-    } catch (InterruptedException | ExecutionException e) {
+      if (channel.isActive()) {
+        channel.close().get();
+      }
+    } catch (final InterruptedException | ExecutionException e) {
       logger.warn("Caught exception while closing channel.", e);
-      // TODO InterruptedException
+
+      // Preserve evidence that the interruption occurred so that code higher up on the call stack can learn of the
+      // interruption and respond to it if it wants to.
+      Thread.currentThread().interrupt();
     }
   }
 

@@ -24,6 +24,7 @@ import java.util.concurrent.CountDownLatch;
 import java.util.concurrent.LinkedBlockingDeque;
 import java.util.concurrent.TimeUnit;
 import java.util.concurrent.atomic.AtomicBoolean;
+import java.util.concurrent.atomic.AtomicInteger;
 
 import net.hydromatic.avatica.AvaticaPrepareResult;
 import net.hydromatic.avatica.AvaticaResultSet;
@@ -44,32 +45,34 @@ import org.apache.drill.jdbc.DrillConnection;
 import org.apache.drill.jdbc.DrillConnectionImpl;
 import org.apache.drill.jdbc.DrillCursor;
 import org.apache.drill.jdbc.DrillResultSet;
+import org.apache.drill.jdbc.ExecutionCanceledSqlException;
 import org.apache.drill.jdbc.SchemaChangeListener;
+
+import static org.slf4j.LoggerFactory.getLogger;
+import org.slf4j.Logger;
 
 import com.google.common.collect.Queues;
 
 
-//???? Split this into interface org.apache.drill.jdbc.DrillResultSet for published
-// interface and a class probably named org.apache.drill.jdbc.impl.DrillResultSetImpl.
-// Add any needed documentation of Drill-specific behavior of JDBC-defined
-// ResultSet methods to new DrillResultSet. ...
-
 public class DrillResultSetImpl extends AvaticaResultSet implements DrillResultSet {
+  @SuppressWarnings("unused")
   private static final org.slf4j.Logger logger = org.slf4j.LoggerFactory.getLogger(DrillResultSetImpl.class);
 
   // (Public until JDBC impl. classes moved out of published-intf. package. (DRILL-2089).)
   public SchemaChangeListener changeListener;
   // (Public until JDBC impl. classes moved out of published-intf. package. (DRILL-2089).)
-  public final ResultsListener resultslistener = new ResultsListener();
-  private volatile QueryId queryId;
+  public final ResultsListener resultsListener = new ResultsListener();
   private final DrillClient client;
   // (Public until JDBC impl. classes moved out of published-intf. package. (DRILL-2089).)
+  // TODO:  Resolve:  Since is barely manipulated here in DrillResultSetImpl,
+  //  move down into DrillCursor and have this.clean() have cursor clean it.
   public final RecordBatchLoader currentBatch;
   // (Public until JDBC impl. classes moved out of published-intf. package. (DRILL-2089).)
   public final DrillCursor cursor;
+  public boolean hasPendingCancelationNotification;
 
   public DrillResultSetImpl(AvaticaStatement statement, AvaticaPrepareResult prepareResult,
-      ResultSetMetaData resultSetMetaData, TimeZone timeZone) {
+                            ResultSetMetaData resultSetMetaData, TimeZone timeZone) {
     super(statement, prepareResult, resultSetMetaData, timeZone);
     DrillConnection c = (DrillConnection) statement.getConnection();
     DrillClient client = c.getClient();
@@ -80,14 +83,25 @@ public class DrillResultSetImpl extends AvaticaResultSet implements DrillResultS
   }
 
   /**
-   * Throws AlreadyClosedSqlException if this ResultSet is closed.
+   * Throws AlreadyClosedSqlException or QueryCanceledSqlException if this
+   * ResultSet is closed.
    *
-   * @throws AlreadyClosedSqlException if ResultSet is closed
+   * @throws  ExecutionCanceledSqlException  if ResultSet is closed because of
+   *          cancelation and no QueryCanceledSqlException had been thrown yet
+   *          for this ResultSet
+   * @throws  AlreadyClosedSqlException  if ResultSet is closed
    * @throws SQLException if error in calling {@link #isClosed()}
    */
   private void checkNotClosed() throws SQLException {
     if ( isClosed() ) {
-      throw new AlreadyClosedSqlException( "ResultSet is already closed." );
+      if ( hasPendingCancelationNotification ) {
+        hasPendingCancelationNotification = false;
+        throw new ExecutionCanceledSqlException(
+            "SQL statement execution canceled; ResultSet now closed." );
+      }
+      else {
+        throw new AlreadyClosedSqlException( "ResultSet is already closed." );
+      }
     }
   }
 
@@ -100,16 +114,17 @@ public class DrillResultSetImpl extends AvaticaResultSet implements DrillResultS
 
   @Override
   protected void cancel() {
+    hasPendingCancelationNotification = true;
     cleanup();
     close();
   }
 
   // (Public until JDBC impl. classes moved out of published-intf. package. (DRILL-2089).)
   public synchronized void cleanup() {
-    if (queryId != null && ! resultslistener.completed) {
-      client.cancelQuery(queryId);
+    if (resultsListener.getQueryId() != null && ! resultsListener.completed) {
+      client.cancelQuery(resultsListener.getQueryId());
     }
-    resultslistener.close();
+    resultsListener.close();
     currentBatch.clear();
   }
 
@@ -128,50 +143,102 @@ public class DrillResultSetImpl extends AvaticaResultSet implements DrillResultS
 
   @Override
   protected DrillResultSetImpl execute() throws SQLException{
-    checkNotClosed();
-    // Call driver's callback. It is permitted to throw a RuntimeException.
     DrillConnectionImpl connection = (DrillConnectionImpl) statement.getConnection();
 
     connection.getClient().runQuery(QueryType.SQL, this.prepareResult.getSql(),
-                                    resultslistener);
+                                    resultsListener);
     connection.getDriver().handler.onStatementExecute(statement, null);
 
     super.execute();
 
     // don't return with metadata until we've achieved at least one return message.
     try {
-      resultslistener.latch.await();
-      cursor.next();
-    } catch (InterruptedException e) {
-     // TODO:  Check:  Should this call Thread.currentThread.interrupt()?   If
-     // not, at least document why this is empty.
+      // TODO:  Revisit:  Why reaching directly into ResultsListener rather than
+      // calling some wait method?
+      resultsListener.latch.await();
+    } catch ( InterruptedException e ) {
+      // Preserve evidence that the interruption occurred so that code higher up on the call stack can learn of the
+      // interruption and respond to it if it wants to.
+      Thread.currentThread().interrupt();
+
+      // Not normally expected--Drill doesn't interrupt in this area (right?)--
+      // but JDBC client certainly could.
+      throw new SQLException( "Interrupted", e );
     }
+    cursor.next();
 
     return this;
   }
 
   public String getQueryId() {
-    if (queryId != null) {
-      return QueryIdHelper.getQueryId(queryId);
+    if (resultsListener.queryId != null) {
+      return QueryIdHelper.getQueryId(resultsListener.queryId);
     } else {
       return null;
     }
   }
 
   // (Public until JDBC impl. classes moved out of published-intf. package. (DRILL-2089).)
-  public class ResultsListener implements UserResultsListener {
-    private static final int MAX = 100;
-    private volatile UserException ex;
+  public static class ResultsListener implements UserResultsListener {
+    private static Logger logger = getLogger( ResultsListener.class );
+
+    private static final int THROTTLING_QUEUE_SIZE_THRESHOLD = 100;
+
+    private volatile QueryId queryId;
+
+    private volatile UserException executionFailureException;
+
+    // TODO:  Revisit "completed".  Determine and document exactly what it
+    // means.  Some uses imply that it means that incoming messages indicate
+    // that the _query_ has _terminated_ (not necessarily _completing_
+    // normally), while some uses imply that it's some other state of the
+    // ResultListener.  Some uses seem redundant.)
     volatile boolean completed = false;
-    private volatile boolean autoread = true;
+
+    /** Whether throttling of incoming data is active. */
+    private final AtomicBoolean throttled = new AtomicBoolean( false );
     private volatile ConnectionThrottle throttle;
+
     private volatile boolean closed = false;
+    // TODO:  Rename.  It's obvious it's a latch--but what condition or action
+    // does it represent or control?
     private CountDownLatch latch = new CountDownLatch(1);
     private AtomicBoolean receivedMessage = new AtomicBoolean(false);
 
+    final LinkedBlockingDeque<QueryDataBatch> batchQueue =
+        Queues.newLinkedBlockingDeque();
 
 
-    final LinkedBlockingDeque<QueryDataBatch> queue = Queues.newLinkedBlockingDeque();
+    ResultsListener() {
+      logger.debug( "Query listener created." );
+    }
+
+    /**
+     * Starts throttling if not currently throttling.
+     * @param  throttle  the "throttlable" object to throttle
+     * @return  true if actually started (wasn't throttling already)
+     */
+    private boolean startThrottlingIfNot( ConnectionThrottle throttle ) {
+      final boolean started = throttled.compareAndSet( false, true );
+      if ( started ) {
+        this.throttle = throttle;
+        throttle.setAutoRead(false);
+      }
+      return started;
+    }
+
+    /**
+     * Stops throttling if currently active.
+     * @return  true if actually stopped (was throttling)
+     */
+    private boolean stopThrottlingIfSo() {
+      final boolean stopped = throttled.compareAndSet( true, false );
+      if ( stopped ) {
+        throttle.setAutoRead(true);
+        throttle = null;
+      }
+      return stopped;
+    }
 
     // TODO:  Doc.:  Release what if what is first relative to what?
     private boolean releaseIfFirst() {
@@ -184,57 +251,84 @@ public class DrillResultSetImpl extends AvaticaResultSet implements DrillResultS
     }
 
     @Override
-    public void submissionFailed(UserException ex) {
-      this.ex = ex;
-      completed = true;
-      close();
-      System.out.println("Query failed: " + ex.getMessage());
+    public void queryIdArrived(QueryId queryId) {
+      logger.debug( "Received query ID: {}.", queryId );
+      this.queryId = queryId;
     }
 
     @Override
-    public void queryCompleted(QueryState state) {
-      releaseIfFirst();
+    public void submissionFailed(UserException ex) {
+      logger.debug( "Received query failure:", ex );
+      this.executionFailureException = ex;
       completed = true;
+      close();
+      logger.info( "Query failed: ", ex );
     }
 
     @Override
     public void dataArrived(QueryDataBatch result, ConnectionThrottle throttle) {
-      logger.debug("Result arrived {}", result);
+      logger.debug( "Received query data batch: {}.", result );
 
       // If we're in a closed state, just release the message.
       if (closed) {
         result.release();
+        // TODO:  Revisit member completed:  Is ResultListener really completed
+        // after only one data batch after being closed?
         completed = true;
         return;
       }
 
       // We're active; let's add to the queue.
-      queue.add(result);
-      if (queue.size() >= MAX - 1) {
-        throttle.setAutoRead(false);
-        this.throttle = throttle;
-        autoread = false;
+      batchQueue.add(result);
+      if (batchQueue.size() >= THROTTLING_QUEUE_SIZE_THRESHOLD - 1) {
+        if ( startThrottlingIfNot( throttle ) ) {
+          logger.debug( "Throttling started at queue size {}.", batchQueue.size() );
+        }
       }
 
       releaseIfFirst();
     }
 
-    // TODO:  Doc.:  Specify whether result can be null and what that means.
-    public QueryDataBatch getNext() throws Exception {
+    @Override
+    public void queryCompleted(QueryState state) {
+      logger.debug( "Received query completion: {}.", state );
+      releaseIfFirst();
+      completed = true;
+    }
+
+    public QueryId getQueryId() {
+      return queryId;
+    }
+
+
+    /**
+     * Gets the next batch of query results from the queue.
+     * @return  the next batch, or {@code null} after last batch has been returned
+     * @throws UserException
+     *         if the query failed
+     * @throws InterruptedException
+     *         if waiting on the queue was interrupted
+     */
+    public QueryDataBatch getNext() throws UserException,
+                                           InterruptedException {
       while (true) {
-        if (ex != null) {
-          throw ex;
+        if (executionFailureException != null) {
+          logger.debug( "Dequeued query failure exception: {}.", executionFailureException );
+          throw executionFailureException;
         }
-        if (completed && queue.isEmpty()) {
+        if (completed && batchQueue.isEmpty()) {
           return null;
         } else {
-          QueryDataBatch q = queue.poll(50, TimeUnit.MILLISECONDS);
+          QueryDataBatch q = batchQueue.poll(50, TimeUnit.MILLISECONDS);
           if (q != null) {
-            if (!autoread && queue.size() < MAX / 2) {
-              autoread = true;
-              throttle.setAutoRead(true);
-              throttle = null;
+            assert THROTTLING_QUEUE_SIZE_THRESHOLD >= 2;
+            if (batchQueue.size() < THROTTLING_QUEUE_SIZE_THRESHOLD / 2) {
+              if ( stopThrottlingIfSo() ) {
+                logger.debug( "Throttling stopped at queue size {}.",
+                              batchQueue.size() );
+              }
             }
+            logger.debug( "Dequeued query data batch: {}.", q );
             return q;
           }
         }
@@ -243,22 +337,21 @@ public class DrillResultSetImpl extends AvaticaResultSet implements DrillResultS
 
     void close() {
       closed = true;
-      while (!queue.isEmpty()) {
-        QueryDataBatch qrb = queue.poll();
+      if ( stopThrottlingIfSo() ) {
+        logger.debug( "Throttling stopped at close() (at queue size {}).", batchQueue.size() );
+      }
+      while (!batchQueue.isEmpty()) {
+        QueryDataBatch qrb = batchQueue.poll();
         if (qrb != null && qrb.getData() != null) {
           qrb.getData().release();
         }
       }
       // close may be called before the first result is received and the main thread is blocked waiting
       // for the result. In that case we want to unblock the main thread.
-      latch.countDown();
+      latch.countDown(); // TODO:  Why not call releaseIfFirst as used elsewhere?
       completed = true;
     }
 
-    @Override
-    public void queryIdArrived(QueryId queryId) {
-      DrillResultSetImpl.this.queryId = queryId;
-    }
   }
 
 }

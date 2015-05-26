@@ -26,6 +26,7 @@ import java.util.Set;
 import java.util.concurrent.atomic.AtomicInteger;
 
 import org.apache.drill.common.exceptions.DrillRuntimeException;
+import org.apache.drill.common.exceptions.UserException;
 import org.apache.drill.common.exceptions.UserRemoteException;
 import org.apache.drill.exec.ops.FragmentContext;
 import org.apache.drill.exec.proto.BitControl.FragmentStatus;
@@ -42,15 +43,18 @@ import org.apache.drill.exec.proto.UserBitShared.QueryResult.QueryState;
 import org.apache.drill.exec.proto.UserProtos.RunQuery;
 import org.apache.drill.exec.proto.helper.QueryIdHelper;
 import org.apache.drill.exec.rpc.RpcException;
+import org.apache.drill.exec.rpc.control.ControlTunnel;
 import org.apache.drill.exec.rpc.control.Controller;
 import org.apache.drill.exec.server.DrillbitContext;
 import org.apache.drill.exec.store.sys.PStore;
 import org.apache.drill.exec.store.sys.PStoreConfig;
 import org.apache.drill.exec.store.sys.PStoreProvider;
 import org.apache.drill.exec.work.EndpointListener;
+import org.apache.drill.exec.work.WorkManager;
 import org.apache.drill.exec.work.foreman.Foreman.StateListener;
 import org.apache.drill.exec.work.fragment.AbstractStatusReporter;
 import org.apache.drill.exec.work.fragment.FragmentExecutor;
+import org.apache.drill.exec.work.fragment.NonRootStatusReporter;
 import org.apache.drill.exec.work.fragment.StatusReporter;
 
 import com.carrotsearch.hppc.IntObjectOpenHashMap;
@@ -173,23 +177,27 @@ public class QueryManager {
   }
 
   /**
-   * Stop all fragments with a currently active status.
+   * Stop all fragments with currently *known* active status (active as in SENDING, AWAITING_ALLOCATION, RUNNING).
+   *
+   * For the actual cancel calls for intermediate and leaf fragments, see
+   * {@link org.apache.drill.exec.work.batch.ControlMessageHandler#cancelFragment}
+   * (1) Root fragment: pending or running, send the cancel signal through a tunnel.
+   * (2) Intermediate fragment: pending or running, send the cancel signal through a tunnel (for local and remote
+   *    fragments). The actual cancel is done by delegating the cancel to the work bus.
+   * (3) Leaf fragment: running, send the cancel signal through a tunnel. The cancel is done directly.
    */
-  void cancelExecutingFragments(final DrillbitContext drillbitContext, final FragmentExecutor rootRunner) {
+  void cancelExecutingFragments(final DrillbitContext drillbitContext) {
     final Controller controller = drillbitContext.getController();
     for(final FragmentData data : fragmentDataSet) {
       switch(data.getState()) {
       case SENDING:
       case AWAITING_ALLOCATION:
       case RUNNING:
-        if (rootRunner.getContext().getHandle().equals(data.getHandle())) {
-            rootRunner.cancel();
-        } else {
-          final DrillbitEndpoint endpoint = data.getEndpoint();
-          final FragmentHandle handle = data.getHandle();
-          // TODO is the CancelListener redundant? Does the FragmentStatusListener get notified of the same?
-          controller.getTunnel(endpoint).cancelFragment(new CancelListener(endpoint, handle), handle);
-        }
+        final FragmentHandle handle = data.getHandle();
+        final DrillbitEndpoint endpoint = data.getEndpoint();
+        // TODO is the CancelListener redundant? Does the FragmentStatusListener get notified of the same?
+        controller.getTunnel(endpoint).cancelFragment(new SignalListener(endpoint, handle,
+            SignalListener.Signal.CANCEL), handle);
         break;
 
       case FINISHED:
@@ -202,30 +210,59 @@ public class QueryManager {
     }
   }
 
+  /**
+   * Sends a resume signal to all fragments, regardless of their state, since the fragment might have paused before
+   * sending any message. Resume all fragments through the control tunnel.
+   */
+  void unpauseExecutingFragments(final DrillbitContext drillbitContext) {
+    final Controller controller = drillbitContext.getController();
+    for(final FragmentData data : fragmentDataSet) {
+      final DrillbitEndpoint endpoint = data.getEndpoint();
+      final FragmentHandle handle = data.getHandle();
+      controller.getTunnel(endpoint).resumeFragment(new SignalListener(endpoint, handle,
+        SignalListener.Signal.UNPAUSE), handle);
+    }
+  }
+
   /*
    * This assumes that the FragmentStatusListener implementation takes action when it hears
-   * that the target fragment has been cancelled. As a result, this listener doesn't do anything
+   * that the target fragment has acknowledged the signal. As a result, this listener doesn't do anything
    * but log messages.
    */
-  private class CancelListener extends EndpointListener<Ack, FragmentHandle> {
-    public CancelListener(final DrillbitEndpoint endpoint, final FragmentHandle handle) {
+  private static class SignalListener extends EndpointListener<Ack, FragmentHandle> {
+    /**
+     * An enum of possible signals that {@link SignalListener} listens to.
+     */
+    public static enum Signal { CANCEL, UNPAUSE }
+
+    private final Signal signal;
+
+    public SignalListener(final DrillbitEndpoint endpoint, final FragmentHandle handle, final Signal signal) {
       super(endpoint, handle);
+      this.signal = signal;
     }
 
     @Override
     public void failed(final RpcException ex) {
-      logger.error("Failure while attempting to cancel fragment {} on endpoint {}.", value, endpoint, ex);
+      logger.error("Failure while attempting to {} fragment {} on endpoint {} with {}.", signal, value, endpoint, ex);
     }
 
     @Override
-    public void success(final Ack value, final ByteBuf buf) {
-      if (!value.getOk()) {
-        logger.warn("Remote node {} responded negative on cancellation request for fragment {}.", endpoint, value);
+    public void success(final Ack ack, final ByteBuf buf) {
+      if (!ack.getOk()) {
+        logger.warn("Remote node {} responded negative on {} request for fragment {} with {}.", endpoint, signal, value,
+          ack);
       }
+    }
+
+    @Override
+    public void interrupted(final InterruptedException ex) {
+      logger.error("Interrupted while waiting for RPC outcome of action fragment {}. " +
+          "Endpoint {}, Fragment handle {}", signal, endpoint, value, ex);
     }
   }
 
-  QueryState updateQueryStateInStore(final QueryState queryState) {
+  QueryState updateEphemeralState(final QueryState queryState) {
     switch (queryState) {
       case PENDING:
       case RUNNING:
@@ -242,8 +279,6 @@ public class QueryManager {
           logger.warn("Failure while trying to delete the estore profile for this query.", e);
         }
 
-        // TODO(DRILL-2362) when do these ever get deleted?
-        profilePStore.put(stringQueryId, getQueryProfile());
         break;
 
       default:
@@ -253,18 +288,33 @@ public class QueryManager {
     return queryState;
   }
 
+  void writeFinalProfile(UserException ex) {
+    try {
+      // TODO(DRILL-2362) when do these ever get deleted?
+      profilePStore.put(stringQueryId, getQueryProfile(ex));
+    } catch (Exception e) {
+      logger.error("Failure while storing Query Profile", e);
+    }
+  }
+
   private QueryInfo getQueryInfo() {
     return QueryInfo.newBuilder()
-      .setQuery(runQuery.getPlan())
-      .setState(foreman.getState())
-      .setForeman(foreman.getQueryContext().getCurrentEndpoint())
-      .setStart(startTime)
-      .build();
+        .setQuery(runQuery.getPlan())
+        .setState(foreman.getState())
+        .setUser(foreman.getQueryContext().getQueryUserName())
+        .setForeman(foreman.getQueryContext().getCurrentEndpoint())
+        .setStart(startTime)
+        .build();
   }
 
   public QueryProfile getQueryProfile() {
+    return getQueryProfile(null);
+  }
+
+  private QueryProfile getQueryProfile(UserException ex) {
     final QueryProfile.Builder profileBuilder = QueryProfile.newBuilder()
         .setQuery(runQuery.getPlan())
+        .setUser(foreman.getQueryContext().getQueryUserName())
         .setType(runQuery.getType())
         .setId(queryId)
         .setState(foreman.getState())
@@ -273,6 +323,15 @@ public class QueryManager {
         .setEnd(endTime)
         .setTotalFragments(fragmentDataSet.size())
         .setFinishedFragments(finishedFragments.get());
+
+    if (ex != null) {
+      profileBuilder.setError(ex.getMessage(false));
+      profileBuilder.setVerboseError(ex.getVerboseMessage(false));
+      profileBuilder.setErrorId(ex.getErrorId());
+      if (ex.getErrorLocation() != null) {
+        profileBuilder.setErrorNode(ex.getErrorLocation());
+      }
+    }
 
     if (planText != null) {
       profileBuilder.setPlan(planText);
@@ -375,19 +434,9 @@ public class QueryManager {
     }
   }
 
-  public StatusReporter newRootStatusHandler(final FragmentContext context) {
-    return new RootStatusReporter(context);
-  }
-
-  private class RootStatusReporter extends AbstractStatusReporter {
-    private RootStatusReporter(final FragmentContext context) {
-      super(context);
-    }
-
-    @Override
-    protected void statusChange(final FragmentHandle handle, final FragmentStatus status) {
-      fragmentStatusListener.statusUpdate(status);
-    }
+  public StatusReporter newRootStatusHandler(final FragmentContext context, final DrillbitContext dContext) {
+    final ControlTunnel tunnel = dContext.getController().getTunnel(foreman.getQueryContext().getCurrentEndpoint());
+    return new NonRootStatusReporter(context, tunnel);
   }
 
   public FragmentStatusListener getFragmentStatusListener(){

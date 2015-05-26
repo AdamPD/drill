@@ -27,12 +27,12 @@ import org.apache.calcite.jdbc.SimpleCalciteSchema;
 import org.apache.drill.common.config.DrillConfig;
 import org.apache.drill.exec.ExecConstants;
 import org.apache.drill.exec.expr.fn.FunctionImplementationRegistry;
-import org.apache.drill.exec.expr.fn.impl.DateUtility;
 import org.apache.drill.common.exceptions.DrillRuntimeException;
 import org.apache.drill.exec.memory.BufferAllocator;
 import org.apache.drill.exec.memory.OutOfMemoryException;
 import org.apache.drill.exec.planner.physical.PlannerSettings;
 import org.apache.drill.exec.planner.sql.DrillOperatorTable;
+import org.apache.drill.exec.proto.BitControl.QueryContextInformation;
 import org.apache.drill.exec.proto.CoordinationProtos.DrillbitEndpoint;
 import org.apache.drill.exec.rpc.user.UserSession;
 import org.apache.drill.exec.server.DrillbitContext;
@@ -44,6 +44,7 @@ import org.apache.drill.exec.store.SchemaConfig;
 import org.apache.drill.exec.store.StoragePluginRegistry;
 import org.apache.drill.exec.testing.ExecutionControls;
 import org.apache.drill.exec.util.ImpersonationUtil;
+import org.apache.drill.exec.util.Utilities;
 
 // TODO except for a couple of tests, this is only created by Foreman
 // TODO the many methods that just return drillbitContext.getXxx() should be replaced with getDrillbitContext()
@@ -53,7 +54,7 @@ public class QueryContext implements AutoCloseable, UdfUtilities {
   private static final org.slf4j.Logger logger = org.slf4j.LoggerFactory.getLogger(QueryContext.class);
 
   private static final int INITIAL_OFF_HEAP_ALLOCATION_IN_BYTES = 1024 * 1024;
-  private static final int MAX_OFF_HEAP_ALLOCATION_IN_BYTES = 16 * 1024 * 1024;
+  private static final int MAX_OFF_HEAP_ALLOCATION_IN_BYTES = 256 * 1024 * 1024;
 
   private final DrillbitContext drillbitContext;
   private final UserSession session;
@@ -64,7 +65,8 @@ public class QueryContext implements AutoCloseable, UdfUtilities {
 
   private final BufferAllocator allocator;
   private final BufferManager bufferManager;
-  private final QueryDateTimeInfo queryDateTimeInfo;
+  private final ContextInformation contextInformation;
+  private final QueryContextInformation queryContextInfo;
   private final ViewExpansionContext viewExpansionContext;
 
   /*
@@ -82,9 +84,8 @@ public class QueryContext implements AutoCloseable, UdfUtilities {
     plannerSettings.setNumEndPoints(drillbitContext.getBits().size());
     table = new DrillOperatorTable(getFunctionRegistry());
 
-    final long queryStartTime = System.currentTimeMillis();
-    final int timeZone = DateUtility.getIndex(System.getProperty("user.timezone"));
-    queryDateTimeInfo = new QueryDateTimeInfo(queryStartTime, timeZone);
+    queryContextInfo = Utilities.createQueryContextInfo(session.getDefaultSchemaName());
+    contextInformation = new ContextInformation(session.getCredentials(), queryContextInfo);
 
     try {
       allocator = drillbitContext.getAllocator().getChildAllocator(null, INITIAL_OFF_HEAP_ALLOCATION_IN_BYTES,
@@ -212,9 +213,13 @@ public class QueryContext implements AutoCloseable, UdfUtilities {
     return table;
   }
 
+  public QueryContextInformation getQueryContextInfo() {
+    return queryContextInfo;
+  }
+
   @Override
-  public QueryDateTimeInfo getQueryDateTimeInfo() {
-    return queryDateTimeInfo;
+  public ContextInformation getContextInformation() {
+    return contextInformation;
   }
 
   @Override

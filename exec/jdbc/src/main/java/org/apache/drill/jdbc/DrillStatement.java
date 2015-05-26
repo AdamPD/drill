@@ -1,11 +1,10 @@
 /**
- * Licensed to the Apache Software Foundation (ASF) under one
- * or more contributor license agreements.  See the NOTICE file
- * distributed with this work for additional information
- * regarding copyright ownership.  The ASF licenses this file
- * to you under the Apache License, Version 2.0 (the
- * "License"); you may not use this file except in compliance
- * with the License.  You may obtain a copy of the License at
+ * Licensed to the Apache Software Foundation (ASF) under one or more
+ * contributor license agreements.  See the NOTICE file distributed with this
+ * work for additional information regarding copyright ownership.  The ASF
+ * licenses this file to you under the Apache License, Version 2.0 (the
+ * "License"); you may not use this file except in compliance with the License.
+ * You may obtain a copy of the License at
  *
  * http://www.apache.org/licenses/LICENSE-2.0
  *
@@ -17,71 +16,50 @@
  */
 package org.apache.drill.jdbc;
 
-import java.sql.ResultSet;
-import java.sql.SQLException;
+import java.sql.SQLFeatureNotSupportedException;
+import java.sql.Statement;
 
-import net.hydromatic.avatica.AvaticaStatement;
 
-public abstract class DrillStatement extends AvaticaStatement
-   implements DrillRemoteStatement {
-
-  DrillStatement(DrillConnectionImpl connection, int resultSetType, int resultSetConcurrency, int resultSetHoldability) {
-    super(connection, resultSetType, resultSetConcurrency, resultSetHoldability);
-    connection.openStatementsRegistry.addStatement(this);
-  }
+/**
+ * Drill-specific {@link Statement}.
+ */
+public interface DrillStatement extends Statement {
 
   /**
-   * Throws AlreadyClosedSqlException if this Statement is closed.
-   *
-   * @throws AlreadyClosedSqlException if Statement is closed
-   * @throws SQLException if error in calling {@link #isClosed()}
+   * Returns zero.
+   * {@inheritDoc}
+   * @throws  AlreadyClosedSqlException
+   *            if connection is closed
    */
-  private void checkNotClosed() throws SQLException {
-    if ( isClosed() ) {
-      throw new AlreadyClosedSqlException( "Statement is already closed." );
-    }
-  }
-
   @Override
-  public DrillConnectionImpl getConnection() {
-    return (DrillConnectionImpl) connection;
-  }
+  int getQueryTimeout() throws AlreadyClosedSqlException;
 
-
+  /**
+   * Not supported (for non-zero timeout value).
+   * <p>
+   *   Normally, just throws {@link SQLFeatureNotSupportedException} unless
+   *   request is trivially for no timeout (zero {@code milliseconds} value).
+   * </p>
+   * @throws  AlreadyClosedSqlException
+   *            if connection is closed
+   * @throws  JdbcApiSqlException
+   *            if an invalid parameter value is detected (and not above case)
+   * @throws  SQLFeatureNotSupportedException
+   *            if timeout is non-zero (and not above case)
+   */
   @Override
-  public boolean execute( String sql ) throws SQLException {
-    checkNotClosed();
-    return super.execute( sql );
-  }
+  void setQueryTimeout( int milliseconds )
+      throws AlreadyClosedSqlException,
+             JdbcApiSqlException,
+             SQLFeatureNotSupportedException;
 
+  /**
+   * {@inheritDoc}
+   * <p>
+   *   <strong>Drill</strong>: Does not throw SQLException.
+   * </p>
+   */
   @Override
-  public ResultSet  executeQuery( String sql ) throws SQLException {
-    checkNotClosed();
-    return super.executeQuery( sql );
-  }
-
-  @Override
-  public int executeUpdate( String sql ) throws SQLException {
-    checkNotClosed();
-    return super.executeUpdate( sql );
-  }
-
-  @Override
-  public int executeUpdate( String sql, int[] columnIndexes ) throws SQLException {
-    checkNotClosed();
-    return super.executeUpdate( sql, columnIndexes );
-  }
-
-  @Override
-  public int executeUpdate( String sql, String[] columnNames ) throws SQLException {
-    checkNotClosed();
-    return super.executeUpdate( sql, columnNames );
-  }
-
-  @Override
-  public void cleanup() {
-    final DrillConnectionImpl connection1 = (DrillConnectionImpl) connection;
-    connection1.openStatementsRegistry.removeStatement(this);
-  }
+  boolean isClosed();
 
 }

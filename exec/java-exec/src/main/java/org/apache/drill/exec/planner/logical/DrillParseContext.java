@@ -17,12 +17,18 @@
  */
 package org.apache.drill.exec.planner.logical;
 
-// TODO: Can we remove this completely? Or is there any plan to add any props in future for parsing?
+import org.apache.drill.exec.planner.physical.PlannerSettings;
+
 public class DrillParseContext {
   static final org.slf4j.Logger logger = org.slf4j.LoggerFactory.getLogger(DrillParseContext.class);
 
-  public DrillParseContext() {
-    super();
+  private final PlannerSettings plannerSettings;
+
+  public DrillParseContext(PlannerSettings plannerSettings) {
+    this.plannerSettings = plannerSettings;
   }
 
+  public PlannerSettings getPlannerSettings() {
+    return plannerSettings;
+  }
 }

@@ -284,6 +284,7 @@ public class TestExampleQueries extends BaseTestQuery{
   }
 
   @Test
+  @Ignore("DRILL-3004")
   public void testJoin() throws Exception{
     test("alter session set `planner.enable_hashjoin` = false");
     test("SELECT\n" +
@@ -830,5 +831,168 @@ public class TestExampleQueries extends BaseTestQuery{
         .baselineValues("EUROPE")
         .baselineValues("MIDDLE EAST")
         .build().run();
+  }
+
+  @Test // DRILL-2221
+  public void createJsonWithEmptyList() throws Exception {
+    final String file = FileUtils.getResourceAsFile("/store/json/record_with_empty_list.json").toURI().toString();
+    final String tableName = "jsonWithEmptyList";
+    test("USE dfs_test.tmp");
+    test("ALTER SESSION SET `store.format`='json'");
+    test(String.format("CREATE TABLE %s AS SELECT * FROM `%s`", tableName, file));
+    test(String.format("SELECT COUNT(*) FROM %s", tableName));
+    test("ALTER SESSION SET `store.format`='parquet'");
+  }
+
+  @Test // DRILL-2914
+  public void testGroupByStarSchemaless() throws Exception {
+    String query = "SELECT n.n_nationkey AS col \n" +
+        "FROM (SELECT * FROM cp.`tpch/nation.parquet`) AS n \n" +
+        "GROUP BY n.n_nationkey \n" +
+        "ORDER BY n.n_nationkey";
+
+    testBuilder()
+        .sqlQuery(query)
+        .ordered()
+        .csvBaselineFile("testframework/testExampleQueries/testGroupByStarSchemaless.tsv")
+        .baselineTypes(TypeProtos.MinorType.INT)
+        .baselineColumns("col")
+        .build()
+        .run();
+  }
+
+  @Test // DRILL-1927
+  public void testGroupByCaseInSubquery() throws Exception {
+    String query1 = "select (case when t.r_regionkey in (3) then 0 else 1 end) as col \n" +
+        "from cp.`tpch/region.parquet` t \n" +
+        "group by (case when t.r_regionkey in (3) then 0 else 1 end)";
+
+    String query2 = "select sum(case when t.r_regionkey in (3) then 0 else 1 end) as col \n" +
+        "from cp.`tpch/region.parquet` t";
+
+    String query3 = "select (case when (r_regionkey IN (0, 2, 3, 4)) then 0 else r_regionkey end) as col1, min(r_regionkey) as col2 \n" +
+        "from cp.`tpch/region.parquet` \n" +
+        "group by (case when (r_regionkey IN (0, 2, 3, 4)) then 0 else r_regionkey end)";
+
+    testBuilder()
+        .sqlQuery(query1)
+        .unOrdered()
+        .baselineColumns("col")
+        .baselineValues(0)
+        .baselineValues(1)
+        .build()
+        .run();
+
+    testBuilder()
+        .sqlQuery(query2)
+        .unOrdered()
+        .baselineColumns("col")
+        .baselineValues((long) 4)
+        .build()
+        .run();
+
+    testBuilder()
+        .sqlQuery(query3)
+        .unOrdered()
+        .baselineColumns("col1", "col2")
+        .baselineValues(0, 0)
+        .baselineValues(1, 1)
+        .build()
+        .run();
+  }
+
+  @Test  // DRILL-2966
+  public void testHavingAggFunction() throws Exception {
+    String query1 = "select n_nationkey as col \n" +
+        "from cp.`tpch/nation.parquet` \n" +
+        "group by n_nationkey \n" +
+        "having sum(case when n_regionkey in (1, 2) then 1 else 0 end) + \n" +
+        "sum(case when n_regionkey in (2, 3) then 1 else 0 end) > 1";
+
+    String query2 = "select n_nationkey as col \n"
+        + "from cp.`tpch/nation.parquet` \n"
+        + "group by n_nationkey \n"
+        + "having n_nationkey in \n"
+            + "(select r_regionkey \n"
+            + "from cp.`tpch/region.parquet` \n"
+            + "group by r_regionkey \n"
+            + "having sum(r_regionkey) > 0)";
+
+    String query3 = "select n_nationkey as col \n"
+        + "from cp.`tpch/nation.parquet` \n"
+        + "group by n_nationkey \n"
+        + "having max(n_regionkey) > ((select min(r_regionkey) from cp.`tpch/region.parquet`) + 3)";
+
+    testBuilder()
+        .sqlQuery(query1)
+        .unOrdered()
+        .csvBaselineFile("testframework/testExampleQueries/testHavingAggFunction/q1.tsv")
+        .baselineTypes(TypeProtos.MinorType.INT)
+        .baselineColumns("col")
+        .build()
+        .run();
+
+    testBuilder()
+        .sqlQuery(query2)
+        .unOrdered()
+        .csvBaselineFile("testframework/testExampleQueries/testHavingAggFunction/q2.tsv")
+        .baselineTypes(TypeProtos.MinorType.INT)
+        .baselineColumns("col")
+        .build()
+        .run();
+
+    testBuilder()
+        .sqlQuery(query3)
+        .unOrdered()
+        .csvBaselineFile("testframework/testExampleQueries/testHavingAggFunction/q3.tsv")
+        .baselineTypes(TypeProtos.MinorType.INT)
+        .baselineColumns("col")
+        .build()
+        .run();
+  }
+
+  @Test  //DRILL-3018
+  public void testNestLoopJoinScalarSubQ() throws Exception {
+    testBuilder()
+        .sqlQuery("select n_nationkey from cp.`tpch/nation.parquet` where n_nationkey >= (select min(c_nationkey) from cp.`tpch/customer.parquet`)")
+        .unOrdered()
+        .sqlBaselineQuery("select n_nationkey from cp.`tpch/nation.parquet`")
+        .build()
+        .run();
+  }
+
+  @Test //DRILL-2953
+  public void testGbAndObDifferentExp() throws Exception {
+    String root = FileUtils.getResourceAsFile("/store/text/data/nations.csv").toURI().toString();
+    String query = String.format(
+        "select cast(columns[0] as int) as nation_key " +
+        " from dfs_test.`%s` " +
+        " group by columns[0] " +
+        " order by cast(columns[0] as int)", root);
+
+    testBuilder()
+        .sqlQuery(query)
+        .ordered()
+        .csvBaselineFile("testframework/testExampleQueries/testGroupByStarSchemaless.tsv")
+        .baselineTypes(TypeProtos.MinorType.INT)
+        .baselineColumns("nation_key")
+        .build()
+        .run();
+
+    String query2 = String.format(
+        "select cast(columns[0] as int) as nation_key " +
+            " from dfs_test.`%s` " +
+            " group by cast(columns[0] as int) " +
+            " order by cast(columns[0] as int)", root);
+
+    testBuilder()
+        .sqlQuery(query2)
+        .ordered()
+        .csvBaselineFile("testframework/testExampleQueries/testGroupByStarSchemaless.tsv")
+        .baselineTypes(TypeProtos.MinorType.INT)
+        .baselineColumns("nation_key")
+        .build()
+        .run();
+
   }
 }
