@@ -82,7 +82,7 @@ public class ${tryCast?string('Try','')}Cast${type.from}${type.to} implements Dr
   }
 }
 
-</#list> <!-- try cast -->
+</#list> <#-- try cast -->
 
 </#if> <#-- type.major -->
 </#list>

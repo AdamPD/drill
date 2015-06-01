@@ -58,7 +58,7 @@ public class ${tryCast?string('Try','')}Cast${type.from}${type.to} implements Dr
     }
 }
 
-</#list> <!-- try cast -->
+</#list> <#-- try cast -->
 
 <#elseif type.major == "DecimalComplexFloat" || type.major == "DecimalComplexDouble"> <#-- Cast function template for conversion from Decimal9, Decimal18 to Float4 -->
 
@@ -105,7 +105,7 @@ public class ${tryCast?string('Try','')}Cast${type.from}${type.to} implements Dr
     }
 }
 
-</#list> <!-- try cast -->
+</#list> <#-- try cast -->
 
 </#if>
 </#list>
