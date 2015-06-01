@@ -223,7 +223,7 @@ public class UnionAllRecordBatch extends AbstractRecordBatch<UnionAll> {
         // If two inputs' MinorTypes are different,
         // Insert a cast before the Union operation
         if(vvIn.getField().getType().getMinorType() != outputFields.get(index).getType().getMinorType()) {
-          expr = ExpressionTreeMaterializer.addCastExpression(expr, outputFields.get(index).getType(), context.getFunctionRegistry(), collector);
+          expr = ExpressionTreeMaterializer.addCastExpression(expr, outputFields.get(index).getType(), context.getFunctionRegistry(), collector, false);
           if (collector.hasErrors()) {
             throw new SchemaChangeException(String.format("Failure while trying to materialize incoming schema.  Errors:\n %s.", collector.toErrorString()));
           }
