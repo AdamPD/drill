@@ -65,7 +65,7 @@ public class ${tryCast?string('Try','')}Cast${type.from}${type.to} implements Dr
     }
 }
 
-</#list> <!-- try cast -->
+</#list> <#-- try cast -->
 
 <#elseif type.major == "DecimalComplexInt" || type.major == "DecimalComplexBigInt"> <#-- Cast function template for conversion from Decimal28Sparse, Decimal38Sparse to Int and BigInt -->
 
@@ -119,7 +119,7 @@ public class ${tryCast?string('Try','')}Cast${type.from}${type.to} implements Dr
     }
 }
 
-</#list> <!-- try cast -->
+</#list> <#-- try cast -->
 
 </#if> <#-- type.major -->
 </#list>
