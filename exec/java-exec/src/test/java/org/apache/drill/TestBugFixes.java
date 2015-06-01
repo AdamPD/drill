@@ -129,4 +129,32 @@ public class TestBugFixes extends BaseTestQuery {
             .build().run();
   }
 
+  public void testDRILL3150_NonExistentStringFilter() throws Exception {
+    testBuilder()
+            .sqlQuery("select * from cp.`employee.json` where `blah` = 'test'")
+            .expectsEmptyResultSet()
+            .build().run();
+  }
+
+  @Test
+  public void testDRILL3150_NonExistentBooleanFilter() throws Exception {
+    testBuilder()
+          .sqlQuery("select * from cp.`employee.json` where `blah` = false")
+          .expectsEmptyResultSet()
+          .build().run();
+  }
+
+  @Test
+  public void testDRILL3150_NonExistentDoubleFilter() throws Exception {
+      testBuilder()
+              .sqlQuery("select * from cp.`employee.json` where `blah` = 102.54")
+              .expectsEmptyResultSet()
+              .build().run();
+  }
+
+    @Test
+    public void testDRILL3150_InvalidCast() throws Exception {
+        errorMsgTestHelper("select * from cp.`employee.json` where `blah` = CAST('test' AS INT)", "NumberFormatException");
+    }
+
 }

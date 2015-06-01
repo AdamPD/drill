@@ -195,14 +195,14 @@ public class JoinUtils {
               rightExpression.getMajorType().toString()));
         } else if (result != rightType) {
           // Add a cast expression on top of the right expression
-          LogicalExpression castExpr = ExpressionTreeMaterializer.addCastExpression(rightExpression, leftExpression.getMajorType(), context.getFunctionRegistry(), errorCollector);
+          LogicalExpression castExpr = ExpressionTreeMaterializer.addCastExpression(rightExpression, leftExpression.getMajorType(), context.getFunctionRegistry(), errorCollector, false);
           // Store the newly casted expression
           rightExpressions[i] =
               ExpressionTreeMaterializer.materialize(castExpr, rightBatch, errorCollector,
                   context.getFunctionRegistry());
         } else if (result != leftType) {
           // Add a cast expression on top of the left expression
-          LogicalExpression castExpr = ExpressionTreeMaterializer.addCastExpression(leftExpression, rightExpression.getMajorType(), context.getFunctionRegistry(), errorCollector);
+          LogicalExpression castExpr = ExpressionTreeMaterializer.addCastExpression(leftExpression, rightExpression.getMajorType(), context.getFunctionRegistry(), errorCollector, false);
           // store the newly casted expression
           leftExpressions[i] =
               ExpressionTreeMaterializer.materialize(castExpr, leftBatch, errorCollector,

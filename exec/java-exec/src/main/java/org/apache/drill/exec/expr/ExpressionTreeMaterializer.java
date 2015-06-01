@@ -131,8 +131,8 @@ public class ExpressionTreeMaterializer {
   }
 
 
-  public static LogicalExpression addCastExpression(LogicalExpression fromExpr, MajorType toType, FunctionImplementationRegistry registry, ErrorCollector errorCollector) {
-    String castFuncName = CastFunctions.getCastFunc(toType.getMinorType());
+  public static LogicalExpression addCastExpression(LogicalExpression fromExpr, MajorType toType, FunctionImplementationRegistry registry, ErrorCollector errorCollector, boolean tryCast) {
+    String castFuncName = tryCast ? CastFunctions.getTryCastFunc(toType.getMinorType()) : CastFunctions.getCastFunc(toType.getMinorType());
     List<LogicalExpression> castArgs = Lists.newArrayList();
     castArgs.add(fromExpr);  //input_expr
 
@@ -275,7 +275,7 @@ public class ExpressionTreeMaterializer {
               parmType = MajorType.newBuilder().setMinorType(parmType.getMinorType()).setMode(parmType.getMode()).
                   setScale(currentArg.getMajorType().getScale()).setPrecision(currentArg.getMajorType().getPrecision()).build();
             }
-            argsWithCast.add(addCastExpression(currentArg, parmType, registry, errorCollector));
+            argsWithCast.add(addCastExpression(currentArg, parmType, registry, errorCollector, true));
           }
         }
 
@@ -301,7 +301,7 @@ public class ExpressionTreeMaterializer {
               parmType = MajorType.newBuilder().setMinorType(parmType.getMinorType()).setMode(parmType.getMode()).
                   setScale(currentArg.getMajorType().getScale()).setPrecision(currentArg.getMajorType().getPrecision()).build();
             }
-            extArgsWithCast.add(addCastExpression(call.args.get(i), parmType, registry, errorCollector));
+            extArgsWithCast.add(addCastExpression(call.args.get(i), parmType, registry, errorCollector, true));
           }
         }
 
@@ -331,10 +331,10 @@ public class ExpressionTreeMaterializer {
         if (leastRestrictive != thenType) {
           // Implicitly cast the then expression
           conditions = new IfExpression.IfCondition(newCondition,
-          addCastExpression(conditions.expression, newElseExpr.getMajorType(), registry, errorCollector));
+          addCastExpression(conditions.expression, newElseExpr.getMajorType(), registry, errorCollector, true));
         } else if (leastRestrictive != elseType) {
           // Implicitly cast the else expression
-          newElseExpr = addCastExpression(newElseExpr, conditions.expression.getMajorType(), registry, errorCollector);
+          newElseExpr = addCastExpression(newElseExpr, conditions.expression.getMajorType(), registry, errorCollector, true);
         } else {
           /* Cannot cast one of the two expressions to make the output type of if and else expression
            * to be the same. Raise error.
