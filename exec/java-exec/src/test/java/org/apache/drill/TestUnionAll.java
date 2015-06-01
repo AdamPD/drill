@@ -357,7 +357,7 @@ public class TestUnionAll extends BaseTestQuery{
         .build().run();
   }
 
-  @Test(expected = UserException.class) // see DRILL-2590
+  @Test // see DRILL-2590
   public void testUnionAllImplicitCastingFailure() throws Exception {
     String rootInt = FileUtils.getResourceAsFile("/store/json/intData.json").toURI().toString();
     String rootBoolean = FileUtils.getResourceAsFile("/store/json/booleanData.json").toURI().toString();
