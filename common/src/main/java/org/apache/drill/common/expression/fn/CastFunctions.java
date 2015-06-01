@@ -27,6 +27,7 @@ import org.apache.drill.common.types.TypeProtos.MinorType;
 public class CastFunctions {
 
   private static Map<MinorType, String> TYPE2FUNC = new HashMap<>();
+  private static Map<MinorType, String> TYPE2TRYFUNC = new HashMap<>();
   /** The cast functions that need to be replaced (if
    * "drill.exec.functions.cast_empty_string_to_null" is set to true). */
   private static Set<String> CAST_FUNC_REPLACEMENT_NEEDED = new HashSet<>();
@@ -58,6 +59,29 @@ public class CastFunctions {
     TYPE2FUNC.put(MinorType.DECIMAL28DENSE, "castDECIMAL28DENSE");
     TYPE2FUNC.put(MinorType.DECIMAL38SPARSE, "castDECIMAL38SPARSE");
     TYPE2FUNC.put(MinorType.DECIMAL38DENSE, "castDECIMAL38DENSE");
+
+    TYPE2TRYFUNC.put(MinorType.BIGINT, "tryCastBIGINT");
+    TYPE2TRYFUNC.put(MinorType.INT, "tryCastINT");
+    TYPE2TRYFUNC.put(MinorType.BIT, "castBIT");
+    TYPE2TRYFUNC.put(MinorType.TINYINT, "castTINYINT");
+    TYPE2TRYFUNC.put(MinorType.FLOAT4, "tryCastFLOAT4");
+    TYPE2TRYFUNC.put(MinorType.FLOAT8, "tryCastFLOAT8");
+    TYPE2TRYFUNC.put(MinorType.VARCHAR, "castVARCHAR");
+    TYPE2TRYFUNC.put(MinorType.VAR16CHAR, "castVAR16CHAR");
+    TYPE2TRYFUNC.put(MinorType.VARBINARY, "castVARBINARY");
+    TYPE2TRYFUNC.put(MinorType.DATE, "castDATE");
+    TYPE2TRYFUNC.put(MinorType.TIME, "castTIME");
+    TYPE2TRYFUNC.put(MinorType.TIMESTAMP, "castTIMESTAMP");
+    TYPE2TRYFUNC.put(MinorType.TIMESTAMPTZ, "castTIMESTAMPTZ");
+    TYPE2TRYFUNC.put(MinorType.INTERVALDAY, "castINTERVALDAY");
+    TYPE2TRYFUNC.put(MinorType.INTERVALYEAR, "castINTERVALYEAR");
+    TYPE2TRYFUNC.put(MinorType.INTERVAL, "castINTERVAL");
+    TYPE2TRYFUNC.put(MinorType.DECIMAL9, "castDECIMAL9");
+    TYPE2TRYFUNC.put(MinorType.DECIMAL18, "castDECIMAL18");
+    TYPE2TRYFUNC.put(MinorType.DECIMAL28SPARSE, "castDECIMAL28SPARSE");
+    TYPE2TRYFUNC.put(MinorType.DECIMAL28DENSE, "castDECIMAL28DENSE");
+    TYPE2TRYFUNC.put(MinorType.DECIMAL38SPARSE, "castDECIMAL38SPARSE");
+    TYPE2TRYFUNC.put(MinorType.DECIMAL38DENSE, "castDECIMAL38DENSE");
 
     CAST_FUNC_REPLACEMENT_NEEDED.add(TYPE2FUNC.get(MinorType.INT));
     CAST_FUNC_REPLACEMENT_NEEDED.add(TYPE2FUNC.get(MinorType.BIGINT));
@@ -100,6 +124,21 @@ public class CastFunctions {
 
     throw new RuntimeException(
       String.format("cast function for type %s is not defined", targetMinorType.name()));
+  }
+
+  /**
+   * Given the target type, get the appropriate cast function
+   * @param targetMinorType the target data type
+   * @return
+   */
+  public static String getTryCastFunc(MinorType targetMinorType) {
+    String func = TYPE2TRYFUNC.get(targetMinorType);
+    if (func != null) {
+      return func;
+    }
+
+    throw new RuntimeException(
+            String.format("cast function for type %s is not defined", targetMinorType.name()));
   }
 
   /**

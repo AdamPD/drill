@@ -28,7 +28,9 @@
 <#list cast.types as type>
 <#if type.major == "SrcVarlen">
 
-<@pp.changeOutputFile name="/org/apache/drill/exec/expr/fn/impl/gcast/Cast${type.from}${type.to}.java" />
+<#list [false, true] as tryCast>
+
+<@pp.changeOutputFile name="/org/apache/drill/exec/expr/fn/impl/gcast/${tryCast?string('Try','')}Cast${type.from}${type.to}.java" />
 
 <#include "/@includes/license.ftl" />
 
@@ -45,15 +47,18 @@ import javax.inject.Inject;
 import io.netty.buffer.DrillBuf;
 
 @SuppressWarnings("unused")
-@FunctionTemplate(name = "cast${type.to?upper_case}", scope = FunctionTemplate.FunctionScope.SIMPLE, nulls=NullHandling.NULL_IF_NULL)
-public class Cast${type.from}${type.to} implements DrillSimpleFunc{
+@FunctionTemplate(name = "${tryCast?string('tryCast','cast')}${type.to?upper_case}", scope = FunctionTemplate.FunctionScope.SIMPLE, nulls=NullHandling.NULL_IF_NULL)
+public class ${tryCast?string('Try','')}Cast${type.from}${type.to} implements DrillSimpleFunc{
 
   @Param ${type.from}Holder in;
-  @Output ${type.to}Holder out;
+  @Output ${tryCast?string('Nullable','')}${type.to}Holder out;
 
   public void setup() {}
 
   public void eval() {
+    <#if tryCast>
+    try {
+    </#if>
     <#if type.to == "Float4" || type.to == "Float8">
       
       byte[] buf = new byte[in.end - in.start];
@@ -68,8 +73,16 @@ public class Cast${type.from}${type.to} implements DrillSimpleFunc{
     <#elseif type.to == "BigInt">
       out.value = org.apache.drill.exec.expr.fn.impl.StringFunctionHelpers.varCharToLong(in.start, in.end, in.buffer);
     </#if>
+    <#if tryCast>
+      out.isSet = 1;
+    } catch (NumberFormatException e) {
+      out.isSet = 0;
+    }
+    </#if>
   }
 }
+
+</#list> <!-- try cast -->
 
 </#if> <#-- type.major -->
 </#list>

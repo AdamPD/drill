@@ -132,7 +132,7 @@ public class ExpressionTreeMaterializer {
 
 
   public static LogicalExpression addCastExpression(LogicalExpression fromExpr, MajorType toType, FunctionImplementationRegistry registry, ErrorCollector errorCollector) {
-    String castFuncName = CastFunctions.getCastFunc(toType.getMinorType());
+    String castFuncName = CastFunctions.getTryCastFunc(toType.getMinorType());
     List<LogicalExpression> castArgs = Lists.newArrayList();
     castArgs.add(fromExpr);  //input_expr
 

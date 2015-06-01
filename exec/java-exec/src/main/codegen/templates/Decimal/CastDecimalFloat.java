@@ -21,7 +21,9 @@
 <#list cast.types as type>
 <#if type.major == "DecimalSimpleFloat" || type.major == "DecimalSimpleDouble"> <#-- Cast function template for conversion from Decimal9, Decimal18 to Float4 and Float8-->
 
-<@pp.changeOutputFile name="/org/apache/drill/exec/expr/fn/impl/gcast/Cast${type.from}${type.to}.java" />
+<#list [false, true] as tryCast>
+
+<@pp.changeOutputFile name="/org/apache/drill/exec/expr/fn/impl/gcast/${tryCast?string('Try','')}Cast${type.from}${type.to}.java" />
 
 <#include "/@includes/license.ftl" />
 
@@ -40,8 +42,8 @@ import io.netty.buffer.ByteBuf;
 import java.nio.ByteBuffer;
 
 @SuppressWarnings("unused")
-@FunctionTemplate(name = "cast${type.to?upper_case}", scope = FunctionTemplate.FunctionScope.SIMPLE, nulls=NullHandling.NULL_IF_NULL)
-public class Cast${type.from}${type.to} implements DrillSimpleFunc {
+@FunctionTemplate(name = "${tryCast?string('tryCast','cast')}${type.to?upper_case}", scope = FunctionTemplate.FunctionScope.SIMPLE, nulls=NullHandling.NULL_IF_NULL)
+public class ${tryCast?string('Try','')}Cast${type.from}${type.to} implements DrillSimpleFunc {
 
 @Param ${type.from}Holder in;
 @Output ${type.to}Holder out;
@@ -55,9 +57,14 @@ public class Cast${type.from}${type.to} implements DrillSimpleFunc {
         out.value = ((${type.javatype}) (in.value)) / (org.apache.drill.exec.util.DecimalUtility.getPowerOfTen((int) in.scale));
     }
 }
+
+</#list> <!-- try cast -->
+
 <#elseif type.major == "DecimalComplexFloat" || type.major == "DecimalComplexDouble"> <#-- Cast function template for conversion from Decimal9, Decimal18 to Float4 -->
 
-<@pp.changeOutputFile name="/org/apache/drill/exec/expr/fn/impl/gcast/Cast${type.from}${type.to}.java" />
+<#list [false, true] as tryCast>
+
+<@pp.changeOutputFile name="/org/apache/drill/exec/expr/fn/impl/gcast/${tryCast?string('Try','')}Cast${type.from}${type.to}.java" />
 
 <#include "/@includes/license.ftl" />
 
@@ -78,8 +85,8 @@ import io.netty.buffer.ByteBuf;
 import java.nio.ByteBuffer;
 
 @SuppressWarnings("unused")
-@FunctionTemplate(name = "cast${type.to?upper_case}", scope = FunctionTemplate.FunctionScope.SIMPLE, nulls=NullHandling.NULL_IF_NULL)
-public class Cast${type.from}${type.to} implements DrillSimpleFunc {
+@FunctionTemplate(name = "${tryCast?string('tryCast','cast')}${type.to?upper_case}", scope = FunctionTemplate.FunctionScope.SIMPLE, nulls=NullHandling.NULL_IF_NULL)
+public class ${tryCast?string('Try','')}Cast${type.from}${type.to} implements DrillSimpleFunc {
 
 @Param ${type.from}Holder in;
 @Output ${type.to}Holder out;
@@ -97,5 +104,8 @@ public class Cast${type.from}${type.to} implements DrillSimpleFunc {
         out.value = bigDecimal.${type.javatype}Value();
     }
 }
+
+</#list> <!-- try cast -->
+
 </#if>
 </#list>
