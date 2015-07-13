@@ -23,6 +23,7 @@ import java.util.Set;
 import java.util.regex.Matcher;
 import java.util.regex.Pattern;
 
+import com.google.common.base.Preconditions;
 import org.apache.commons.lang3.ArrayUtils;
 import org.apache.drill.common.exceptions.ExecutionSetupException;
 import org.apache.drill.common.expression.SchemaPath;
@@ -57,6 +58,7 @@ import org.apache.hadoop.conf.Configuration;
 
 import com.google.common.collect.ImmutableSet;
 import com.google.common.collect.Lists;
+import org.apache.hadoop.fs.Path;
 
 public abstract class EasyFormatPlugin<T extends FormatPluginConfig> implements FormatPlugin {
   private static final org.slf4j.Logger logger = org.slf4j.LoggerFactory.getLogger(EasyFormatPlugin.class);
@@ -171,8 +173,8 @@ public abstract class EasyFormatPlugin<T extends FormatPluginConfig> implements 
     for(FileWork work : scan.getWorkUnits()){
       readers.add(getRecordReader(context, dfs, work, scan.getColumns()));
       if (scan.getSelectionRoot() != null) {
-        String[] r = scan.getSelectionRoot().split("/");
-        String[] p = work.getPath().split("/");
+        String[] r = Path.getPathWithoutSchemeAndAuthority(new Path(scan.getSelectionRoot())).toString().split("/");
+        String[] p = Path.getPathWithoutSchemeAndAuthority(new Path(work.getPath())).toString().split("/");
         if (p.length > r.length) {
           String[] q = ArrayUtils.subarray(p, r.length, p.length - 1);
           partitionColumns.add(q);
@@ -216,8 +218,8 @@ public abstract class EasyFormatPlugin<T extends FormatPluginConfig> implements 
   }
 
   @Override
-  public AbstractWriter getWriter(PhysicalOperator child, String location) throws IOException {
-    return new EasyWriter(child, location, this);
+  public AbstractWriter getWriter(PhysicalOperator child, String location, List<String> partitionColumns) throws IOException {
+    return new EasyWriter(child, location, partitionColumns, this);
   }
 
   @Override
@@ -244,6 +246,11 @@ public abstract class EasyFormatPlugin<T extends FormatPluginConfig> implements 
   @Override
   public boolean supportsWrite() {
     return writable;
+  }
+
+  @Override
+  public boolean supportsAutoPartitioning() {
+    return false;
   }
 
   @Override

@@ -47,6 +47,7 @@ public class TestSampleHiveUDFs extends HiveTestBase {
     helper(query, expected);
   }
 
+  @Ignore("DRILL-2470")
   @Test
   public void byteInOut() throws Exception{
     String query = "SELECT testHiveUDFByte(tinyint_field) as col1 FROM hive.readtest";
@@ -54,6 +55,7 @@ public class TestSampleHiveUDFs extends HiveTestBase {
     helper(query, expected);
   }
 
+  @Ignore("DRILL-2470")
   @Test
   public void shortInOut() throws Exception{
     String query = "SELECT testHiveUDFShort(smallint_field) as col1 FROM hive.readtest";
@@ -91,14 +93,14 @@ public class TestSampleHiveUDFs extends HiveTestBase {
   @Test
   public void stringInOut() throws Exception{
     String query = "SELECT testHiveUDFString(string_field) as col1 FROM hive.readtest";
-    String expected = "col1\n" + "stringfield\n" + "\n";
+    String expected = "col1\n" + "stringfield\n" + "null\n";
     helper(query, expected);
   }
 
   @Test
   public void binaryInOut() throws Exception{
     String query = "SELECT testHiveUDFBinary(binary_field) as col1 FROM hive.readtest";
-    String expected = "col1\n" + "binaryfield\n" + "\n";
+    String expected = "col1\n" + "binaryfield\n" + "null\n";
     helper(query, expected);    helper(query, expected);
   }
 

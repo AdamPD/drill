@@ -27,9 +27,11 @@ import java.util.List;
 import org.apache.drill.exec.memory.BufferAllocator;
 
 import com.google.protobuf.CodedInputStream;
+import org.apache.drill.exec.memory.OutOfMemoryRuntimeException;
 
 /**
- * Modified version of ProtobufVarint32FrameDecoder that avoids bytebuf copy.
+ * Modified version of {@link io.netty.handler.codec.protobuf.ProtobufVarint32FrameDecoder} that avoids bytebuf copy.
+ * See the documentation there.
  */
 public class ProtobufLengthDecoder extends ByteToMessageDecoder {
   static final org.slf4j.Logger logger = org.slf4j.LoggerFactory.getLogger(ProtobufLengthDecoder.class);
@@ -80,8 +82,10 @@ public class ProtobufLengthDecoder extends ByteToMessageDecoder {
         } else {
           // need to make buffer copy, otherwise netty will try to refill this buffer if we move the readerIndex forward...
           // TODO: Can we avoid this copy?
-          ByteBuf outBuf = allocator.buffer(length);
-          if (outBuf == null) {
+          ByteBuf outBuf;
+          try {
+            outBuf = allocator.buffer(length);
+          } catch (OutOfMemoryRuntimeException e) {
             logger.warn("Failure allocating buffer on incoming stream due to memory limits.  Current Allocation: {}.", allocator.getAllocatedMemory());
             in.resetReaderIndex();
             outOfMemoryHandler.handle();

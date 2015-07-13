@@ -24,12 +24,12 @@ import org.apache.drill.exec.exception.SchemaChangeException;
 import org.apache.drill.exec.ops.FragmentContext;
 import org.apache.drill.exec.record.RecordBatch;
 import org.apache.drill.exec.record.TransferPair;
-import org.apache.drill.exec.vector.RepeatedValueVector;
+import org.apache.drill.exec.vector.complex.RepeatedValueVector;
 
 public interface Flattener {
 
   public abstract void setup(FragmentContext context, RecordBatch incoming,  RecordBatch outgoing, List<TransferPair> transfers)  throws SchemaChangeException;
-  public abstract int flattenRecords(int startIndex, int recordCount, int firstOutputIndex);
+  public abstract int flattenRecords(int recordCount, int firstOutputIndex);
   public void setFlattenField(RepeatedValueVector repeatedColumn);
   public RepeatedValueVector getFlattenField();
   public void resetGroupIndex();

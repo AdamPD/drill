@@ -69,17 +69,20 @@ import org.apache.drill.exec.proto.UserProtos.RunQuery;
 import org.apache.drill.exec.proto.helper.QueryIdHelper;
 import org.apache.drill.exec.rpc.BaseRpcOutcomeListener;
 import org.apache.drill.exec.rpc.RpcException;
+import org.apache.drill.exec.rpc.control.ControlTunnel;
 import org.apache.drill.exec.rpc.control.Controller;
 import org.apache.drill.exec.rpc.user.UserServer.UserClientConnection;
 import org.apache.drill.exec.server.DrillbitContext;
 import org.apache.drill.exec.server.options.OptionManager;
-import org.apache.drill.exec.testing.ExecutionControlsInjector;
+import org.apache.drill.exec.testing.ControlsInjector;
+import org.apache.drill.exec.testing.ControlsInjectorFactory;
 import org.apache.drill.exec.util.Pointer;
 import org.apache.drill.exec.work.EndpointListener;
 import org.apache.drill.exec.work.QueryWorkUnit;
 import org.apache.drill.exec.work.WorkManager.WorkerBee;
 import org.apache.drill.exec.work.batch.IncomingBuffers;
 import org.apache.drill.exec.work.fragment.FragmentExecutor;
+import org.apache.drill.exec.work.fragment.FragmentStatusReporter;
 import org.apache.drill.exec.work.fragment.RootFragmentManager;
 import org.codehaus.jackson.map.ObjectMapper;
 
@@ -107,8 +110,9 @@ import com.google.common.collect.Sets;
 public class Foreman implements Runnable {
   private static final org.slf4j.Logger logger = org.slf4j.LoggerFactory.getLogger(Foreman.class);
   private static final org.slf4j.Logger queryLogger = org.slf4j.LoggerFactory.getLogger("query.logger");
+  private static final ControlsInjector injector = ControlsInjectorFactory.getInjector(Foreman.class);
+
   private static final ObjectMapper MAPPER = new ObjectMapper();
-  private final static ExecutionControlsInjector injector = ExecutionControlsInjector.getInjector(Foreman.class);
   private static final long RPC_WAIT_IN_MSECS_PER_FRAGMENT = 5000;
 
   private final QueryId queryId;
@@ -122,8 +126,6 @@ public class Foreman implements Runnable {
   private boolean resume = false;
 
   private volatile DistributedLease lease; // used to limit the number of concurrent queries
-
-  private FragmentExecutor rootRunner; // root Fragment
 
   private final ExtendedLatch acceptExternalEvents = new ExtendedLatch(); // gates acceptance of external events
   private final StateListener stateListener = new StateListener(); // source of external events
@@ -244,7 +246,7 @@ public class Foreman implements Runnable {
       }
       injector.injectChecked(queryContext.getExecutionControls(), "run-try-end", ForemanException.class);
     } catch (final OutOfMemoryException | OutOfMemoryRuntimeException e) {
-      moveToState(QueryState.FAILED, UserException.memoryError(e).build());
+      moveToState(QueryState.FAILED, UserException.memoryError(e).build(logger));
     } catch (final ForemanException e) {
       moveToState(QueryState.FAILED, e);
     } catch (AssertionError | Exception ex) {
@@ -255,7 +257,7 @@ public class Foreman implements Runnable {
         moveToState(QueryState.FAILED,
             UserException.resourceError(e)
                 .message("One or more nodes ran out of memory while executing the query.")
-                .build());
+                .build(logger));
       } else {
         /*
          * FragmentExecutors use a DrillbitStatusListener to watch out for the death of their query's Foreman. So, if we
@@ -293,7 +295,6 @@ public class Foreman implements Runnable {
       if(resume) {
         resume();
       }
-      injector.injectPause(queryContext.getExecutionControls(), "foreman-ready", logger);
 
       // restore the thread's original name
       currentThread.setName(originalName);
@@ -494,7 +495,7 @@ public class Foreman implements Runnable {
             .message(
                 "Unable to acquire queue resources for query within timeout.  Timeout for %s queue was set at %d seconds.",
                 queueName, queueTimeout / 1000)
-            .build();
+            .build(logger);
       }
 
     }
@@ -733,7 +734,7 @@ public class Foreman implements Runnable {
       final UserException uex;
       if (resultException != null) {
         final boolean verbose = queryContext.getOptions().getOption(ExecConstants.ENABLE_VERBOSE_ERRORS_KEY).bool_val;
-        uex = UserException.systemError(resultException).addIdentity(queryContext.getCurrentEndpoint()).build();
+        uex = UserException.systemError(resultException).addIdentity(queryContext.getCurrentEndpoint()).build(logger);
         resultBuilder.addError(uex.getOrCreatePBError(verbose));
       } else {
         uex = null;
@@ -934,8 +935,9 @@ public class Foreman implements Runnable {
 
     queryManager.addFragmentStatusTracker(rootFragment, true);
 
-    rootRunner = new FragmentExecutor(rootContext, rootFragment,
-        queryManager.newRootStatusHandler(rootContext, drillbitContext),
+    final ControlTunnel tunnel = drillbitContext.getController().getTunnel(queryContext.getCurrentEndpoint());
+    final FragmentExecutor rootRunner = new FragmentExecutor(rootContext, rootFragment,
+        new FragmentStatusReporter(rootContext, tunnel),
         rootOperator);
     final RootFragmentManager fragmentManager = new RootFragmentManager(rootFragment.getHandle(), buffers, rootRunner);
 
@@ -944,7 +946,6 @@ public class Foreman implements Runnable {
       bee.addFragmentRunner(fragmentManager.getRunnable());
     } else {
       // if we do, record the fragment manager in the workBus.
-      // TODO aren't we managing our own work? What does this do? It looks like this will never get run
       drillbitContext.getWorkBus().addFragmentManager(fragmentManager);
     }
   }
@@ -1004,7 +1005,7 @@ public class Foreman implements Runnable {
               "Exceeded timeout (%d) while waiting send intermediate work fragments to remote nodes. " +
                   "Sent %d and only heard response back from %d nodes.",
               timeout, numIntFragments, numIntFragments - numberRemaining)
-          .build();
+          .build(logger);
     }
 
     // if any of the intermediate fragment submissions failed, fail the query
@@ -1028,7 +1029,7 @@ public class Foreman implements Runnable {
       throw UserException.connectionError(submissionExceptions.get(0).rpcException)
           .message("Error setting up remote intermediate fragment execution")
           .addContext("Nodes with failures", sb.toString())
-          .build();
+          .build(logger);
     }
 
     injector.injectChecked(queryContext.getExecutionControls(), "send-fragments", ForemanException.class);

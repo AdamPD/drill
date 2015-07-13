@@ -44,17 +44,33 @@ public abstract class AbstractMapVector extends AbstractContainerVector {
     super(field, allocator, callBack);
     // create the hierarchy of the child vectors based on the materialized field
     for (MaterializedField child : field.getChildren()) {
-      String fieldName = child.getLastName();
-      ValueVector  v = TypeHelper.getNewVector(child, allocator, callBack);
-      putVector(fieldName, v);
+      if (!child.equals(BaseRepeatedValueVector.OFFSETS_FIELD)) {
+        String fieldName = child.getLastName();
+        ValueVector v = TypeHelper.getNewVector(child, allocator, callBack);
+        putVector(fieldName, v);
+      }
     }
   }
 
   @Override
   public boolean allocateNewSafe() {
-    for (ValueVector v : vectors.values()) {
-      if (!v.allocateNewSafe()) {
-        return false;
+    /* boolean to keep track if all the memory allocation were successful
+     * Used in the case of composite vectors when we need to allocate multiple
+     * buffers for multiple vectors. If one of the allocations failed we need to
+     * clear all the memory that we allocated
+     */
+    boolean success = false;
+    try {
+
+      for (ValueVector v : vectors.values()) {
+        if (!v.allocateNewSafe()) {
+          return false;
+        }
+      }
+      success = true;
+    } finally {
+      if (!success) {
+        clear();
       }
     }
     return true;

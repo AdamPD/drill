@@ -48,7 +48,8 @@ import org.apache.drill.exec.planner.sql.parser.SqlCreateTable;
 import org.apache.drill.exec.planner.sql.parser.impl.DrillParserWithCompoundIdConverter;
 import org.apache.drill.exec.planner.types.DrillRelDataTypeSystem;
 import org.apache.drill.exec.store.StoragePluginRegistry;
-import org.apache.drill.exec.testing.ExecutionControlsInjector;
+import org.apache.drill.exec.testing.ControlsInjector;
+import org.apache.drill.exec.testing.ControlsInjectorFactory;
 import org.apache.drill.exec.util.Pointer;
 import org.apache.drill.exec.work.foreman.ForemanSetupException;
 import org.apache.calcite.rel.RelCollationTraitDef;
@@ -65,8 +66,8 @@ import org.apache.drill.exec.work.foreman.SqlUnsupportedException;
 import org.apache.hadoop.security.AccessControlException;
 
 public class DrillSqlWorker {
-//  private static final org.slf4j.Logger logger = org.slf4j.LoggerFactory.getLogger(DrillSqlWorker.class);
-  private final static ExecutionControlsInjector injector = ExecutionControlsInjector.getInjector(DrillSqlWorker.class);
+  private static final org.slf4j.Logger logger = org.slf4j.LoggerFactory.getLogger(DrillSqlWorker.class);
+  private static final ControlsInjector injector = ControlsInjectorFactory.getInjector(DrillSqlWorker.class);
 
   private final Planner planner;
   private final HepPlanner hepPlanner;
@@ -144,7 +145,7 @@ public class DrillSqlWorker {
       injector.injectChecked(context.getExecutionControls(), "sql-parsing", ForemanSetupException.class);
       sqlNode = planner.parse(sql);
     } catch (SqlParseException e) {
-      throw UserException.parseError(e).build();
+      throw UserException.parseError(e).build(logger);
     }
 
     AbstractSqlHandler handler;
@@ -177,12 +178,15 @@ public class DrillSqlWorker {
       return handler.getPlan(sqlNode);
     } catch(ValidationException e) {
       String errorMessage = e.getCause() != null ? e.getCause().getMessage() : e.getMessage();
-      throw UserException.parseError(e).message(errorMessage).build();
+      throw UserException.parseError(e)
+        .message(errorMessage)
+        .build(logger);
     } catch (AccessControlException e) {
-      throw UserException.permissionError(e).build();
+      throw UserException.permissionError(e)
+        .build(logger);
     } catch(SqlUnsupportedException e) {
       throw UserException.unsupportedError(e)
-          .build();
+        .build(logger);
     } catch (IOException | RelConversionException e) {
       throw new QueryInputException("Failure handling SQL.", e);
     }

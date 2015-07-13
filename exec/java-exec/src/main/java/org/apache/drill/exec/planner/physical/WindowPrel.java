@@ -30,18 +30,23 @@ import org.apache.drill.common.logical.data.Order;
 import org.apache.drill.exec.physical.base.PhysicalOperator;
 import org.apache.drill.exec.physical.config.WindowPOP;
 import org.apache.drill.exec.planner.common.DrillWindowRelBase;
+import org.apache.drill.exec.planner.logical.DrillOptiq;
+import org.apache.drill.exec.planner.logical.DrillParseContext;
 import org.apache.drill.exec.planner.physical.visitor.PrelVisitor;
 import org.apache.drill.exec.record.BatchSchema;
+
+import org.apache.calcite.rel.type.RelDataType;
+import org.apache.calcite.rel.type.RelDataTypeField;
 import org.apache.calcite.rel.core.AggregateCall;
 import org.apache.calcite.rel.RelFieldCollation;
 import org.apache.calcite.rel.RelNode;
 import org.apache.calcite.plan.RelOptCluster;
 import org.apache.calcite.plan.RelTraitSet;
-import org.apache.calcite.rel.type.RelDataType;
 import org.apache.calcite.rex.RexLiteral;
 import org.apache.calcite.util.BitSets;
 
 import java.io.IOException;
+import java.util.ArrayList;
 import java.util.Collections;
 import java.util.Iterator;
 import java.util.List;
@@ -60,7 +65,8 @@ public class WindowPrel extends DrillWindowRelBase implements Prel {
 
   @Override
   public RelNode copy(RelTraitSet traitSet, List<RelNode> inputs) {
-    return new WindowPrel(getCluster(), traitSet, sole(inputs), constants, getRowType(), groups.get(0));
+    final RelDataType copiedRowType = deriveCopiedRowTypeFromInput(sole(inputs));
+    return new WindowPrel(getCluster(), traitSet, sole(inputs), constants, copiedRowType, groups.get(0));
   }
 
   @Override
@@ -107,17 +113,26 @@ public class WindowPrel extends DrillWindowRelBase implements Prel {
   }
 
   protected LogicalExpression toDrill(AggregateCall call, List<String> fn) {
+    DrillParseContext context = new DrillParseContext(PrelUtil.getSettings(getCluster()));
+
     List<LogicalExpression> args = Lists.newArrayList();
     for (Integer i : call.getArgList()) {
-      args.add(new FieldReference(fn.get(i)));
+      final int indexInConstants = i - fn.size();
+      if (i < fn.size()) {
+        args.add(new FieldReference(fn.get(i)));
+      } else {
+        final RexLiteral constant = constants.get(indexInConstants);
+        LogicalExpression expr = DrillOptiq.toDrill(context, getInput(), constant);
+        args.add(expr);
+      }
     }
 
     // for count(1).
     if (args.isEmpty()) {
       args.add(new ValueExpressions.LongExpression(1l));
     }
-    LogicalExpression expr = new FunctionCall(call.getAggregation().getName().toLowerCase(), args, ExpressionPosition.UNKNOWN);
-    return expr;
+
+    return new FunctionCall(call.getAggregation().getName().toLowerCase(), args, ExpressionPosition.UNKNOWN);
   }
 
   @Override
@@ -144,4 +159,27 @@ public class WindowPrel extends DrillWindowRelBase implements Prel {
   public Iterator<Prel> iterator() {
     return PrelUtil.iter(getInput());
   }
+
+  /**
+   * Derive rowType for the copied WindowPrel based on input.
+   * When copy() is called, the input might be different from the current one's input.
+   * We have to use the new input's field in the copied WindowPrel.
+   */
+  private RelDataType deriveCopiedRowTypeFromInput(final RelNode input) {
+    final RelDataType inputRowType = input.getRowType();
+    final RelDataType windowRowType = this.getRowType();
+
+    final List<RelDataTypeField> fieldList = new ArrayList<>(inputRowType.getFieldList());
+    final int inputFieldCount = inputRowType.getFieldCount();
+    final int windowFieldCount = windowRowType.getFieldCount();
+
+    for (int i = inputFieldCount; i < windowFieldCount; i++) {
+      fieldList.add(windowRowType.getFieldList().get(i));
+    }
+
+    final RelDataType rowType = this.getCluster().getRexBuilder().getTypeFactory().createStructType(fieldList);
+
+    return rowType;
+  }
+
 }

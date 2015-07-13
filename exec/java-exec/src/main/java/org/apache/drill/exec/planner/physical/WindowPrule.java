@@ -22,13 +22,14 @@ import com.google.common.base.Predicate;
 import com.google.common.collect.ImmutableList;
 import com.google.common.collect.Iterables;
 import com.google.common.collect.Lists;
-import com.sun.java.swing.plaf.windows.resources.windows;
+
 import org.apache.calcite.linq4j.Ord;
 import org.apache.calcite.rel.core.Window;
 import org.apache.calcite.util.BitSets;
 import org.apache.drill.exec.planner.logical.DrillRel;
 import org.apache.drill.exec.planner.logical.DrillWindowRel;
 import org.apache.drill.exec.planner.logical.RelOptHelper;
+import org.apache.drill.exec.planner.physical.DrillDistributionTrait.DistributionField;
 import org.apache.calcite.rel.RelCollation;
 import org.apache.calcite.rel.RelCollationImpl;
 import org.apache.calcite.rel.RelFieldCollation;
@@ -43,7 +44,7 @@ import org.apache.calcite.sql.SqlAggFunction;
 
 import java.util.List;
 
-public class WindowPrule extends RelOptRule {
+public class WindowPrule extends Prule {
   public static final RelOptRule INSTANCE = new WindowPrule();
 
   private WindowPrule() {
@@ -58,15 +59,45 @@ public class WindowPrule extends RelOptRule {
     // TODO: Order window based on existing partition by
     //input.getTraitSet().subsumes()
 
+    boolean partitionby = false;
+    boolean addMerge = false;
     for (final Ord<Window.Group> w : Ord.zip(window.groups)) {
       Window.Group windowBase = w.getValue();
-      DrillDistributionTrait distOnAllKeys =
-          new DrillDistributionTrait(DrillDistributionTrait.DistributionType.HASH_DISTRIBUTED,
-              ImmutableList.copyOf(getDistributionFields(windowBase)));
+      RelTraitSet traits = call.getPlanner().emptyTraitSet().plus(Prel.DRILL_PHYSICAL);
+      if (windowBase.keys.size() > 0) {
+        DrillDistributionTrait distOnAllKeys =
+            new DrillDistributionTrait(DrillDistributionTrait.DistributionType.HASH_DISTRIBUTED,
+                ImmutableList.copyOf(getDistributionFields(windowBase)));
 
-      RelCollation collation = getCollation(windowBase);
-      RelTraitSet traits = call.getPlanner().emptyTraitSet().plus(Prel.DRILL_PHYSICAL).plus(collation).plus(distOnAllKeys);
-      final RelNode convertedInput = convert(input, traits);
+        partitionby = true;
+        traits = traits.plus(distOnAllKeys);
+      } else if (windowBase.orderKeys.getFieldCollations().size() > 0) {
+        // if only the order-by clause is specified, there is a single partition
+        // consisting of all the rows, so we do a distributed sort followed by a
+        // single merge as the input of the window operator
+        DrillDistributionTrait distKeys =
+            new DrillDistributionTrait(DrillDistributionTrait.DistributionType.HASH_DISTRIBUTED,
+                ImmutableList.copyOf(getDistributionFieldsFromCollation(windowBase)));
+
+        traits = traits.plus(distKeys);
+        if(!isSingleMode(call)) {
+          addMerge = true;
+        }
+      }
+
+      // Add collation trait if either partition-by or order-by is specified.
+      if (partitionby || windowBase.orderKeys.getFieldCollations().size() > 0) {
+        RelCollation collation = getCollation(windowBase);
+        traits = traits.plus(collation);
+      }
+
+      RelNode convertedInput = convert(input, traits);
+
+      if (addMerge) {
+        traits = traits.plus(DrillDistributionTrait.SINGLETON);
+        convertedInput = new SingleMergeExchangePrel(window.getCluster(), traits,
+                         convertedInput, windowBase.collation());
+      }
 
       List<RelDataTypeField> newRowFields = Lists.newArrayList();
       for(RelDataTypeField field : convertedInput.getRowType().getFieldList()) {
@@ -115,6 +146,11 @@ public class WindowPrule extends RelOptRule {
     call.transformTo(input);
   }
 
+  /**
+   * Create a RelCollation that has partition-by as the leading keys followed by order-by keys
+   * @param window The window specification
+   * @return a RelCollation with {partition-by keys, order-by keys}
+   */
   private RelCollation getCollation(Window.Group window) {
     List<RelFieldCollation> fields = Lists.newArrayList();
     for (int group : BitSets.toIter(window.keys)) {
@@ -134,6 +170,19 @@ public class WindowPrule extends RelOptRule {
       DrillDistributionTrait.DistributionField field = new DrillDistributionTrait.DistributionField(group);
       groupByFields.add(field);
     }
+
     return groupByFields;
   }
+
+  private List<DistributionField> getDistributionFieldsFromCollation(Window.Group window) {
+    List<DistributionField> distFields = Lists.newArrayList();
+
+    for (RelFieldCollation relField : window.collation().getFieldCollations()) {
+      DistributionField field = new DistributionField(relField.getFieldIndex());
+      distFields.add(field);
+    }
+
+    return distFields;
+  }
+
 }

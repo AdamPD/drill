@@ -17,20 +17,59 @@
  ******************************************************************************/
 package org.apache.drill.exec.physical.impl.window;
 
+import java.util.Properties;
+
 import org.apache.drill.BaseTestQuery;
+import org.apache.drill.DrillTestWrapper;
+import org.apache.drill.common.config.DrillConfig;
+import org.apache.drill.common.util.TestTools;
 import org.apache.drill.exec.ExecConstants;
+import org.junit.BeforeClass;
 import org.junit.Test;
 
 public class TestWindowFrame extends BaseTestQuery {
 
-  private void runTest(String data, String results, String window) throws Exception {
-    testNoResult("alter session set `%s`= true", ExecConstants.ENABLE_WINDOW_FUNCTIONS);
-    testBuilder()
-      .sqlQuery("select count(*) over pos_win `count`, sum(salary) over pos_win `sum` from cp.`window/%s.json` window pos_win as (%s)", data, window)
+  private static final String TEST_RES_PATH = TestTools.getWorkingPath() + "/src/test/resources";
+
+  @BeforeClass
+  public static void setupMSortBatchSize() {
+    // make sure memory sorter outputs 20 rows per batch
+    final Properties props = cloneDefaultTestConfigProperties();
+    props.put(ExecConstants.EXTERNAL_SORT_MSORT_MAX_BATCHSIZE, Integer.toString(20));
+
+    updateTestCluster(1, DrillConfig.create(props));
+  }
+
+  private DrillTestWrapper buildWindowQuery(final String tableName, final boolean withPartitionBy) throws Exception {
+    return testBuilder()
+      .sqlQuery(String.format(getFile("window/q1.sql"), TEST_RES_PATH, tableName, withPartitionBy ? "(partition by position_id)":"()"))
       .ordered()
-      .csvBaselineFile("window/" + results + ".tsv")
+      .csvBaselineFile("window/" + tableName + (withPartitionBy ? ".pby" : "") + ".tsv")
       .baselineColumns("count", "sum")
-      .build().run();
+      .build();
+  }
+
+  private DrillTestWrapper buildWindowWithOrderByQuery(final String tableName, final boolean withPartitionBy) throws Exception {
+    return testBuilder()
+      .sqlQuery(String.format(getFile("window/q2.sql"), TEST_RES_PATH, tableName, withPartitionBy ? "(partition by position_id order by sub)":"(order by sub)"))
+      .ordered()
+      .csvBaselineFile("window/" + tableName + (withPartitionBy ? ".pby" : "") + ".oby.tsv")
+      .baselineColumns("count", "sum", "row_number", "rank", "dense_rank", "cume_dist", "percent_rank")
+      .build();
+  }
+
+  private void runTest(final String tableName, final boolean withPartitionBy, final boolean withOrderBy) throws Exception {
+
+    DrillTestWrapper testWrapper = withOrderBy ?
+      buildWindowWithOrderByQuery(tableName, withPartitionBy) : buildWindowQuery(tableName, withPartitionBy);
+    testWrapper.run();
+  }
+
+  private void runTest(final String tableName) throws Exception {
+    runTest(tableName, true, true);
+    runTest(tableName, true, false);
+    runTest(tableName, false, true);
+    runTest(tableName, false, false);
   }
 
   /**
@@ -38,15 +77,7 @@ public class TestWindowFrame extends BaseTestQuery {
    */
   @Test
   public void testB1P1() throws Exception {
-    runTest("b1.p1.data", "b1.p1", "partition by position_id order by position_id");
-  }
-
-  /**
-   * Single batch with a single partition (position_id column) and multiple sub-partitions (sub column)
-   */
-  @Test
-  public void testB1P1OrderBy() throws Exception {
-    runTest("b1.p1.data", "b1.p1.subs", "partition by position_id order by sub");
+    runTest("b1.p1");
   }
 
   /**
@@ -54,16 +85,7 @@ public class TestWindowFrame extends BaseTestQuery {
    */
   @Test
   public void testB1P2() throws Exception {
-    runTest("b1.p2.data", "b1.p2", "partition by position_id order by position_id");
-  }
-
-  /**
-   * Single batch with 2 partitions (position_id column)
-   * with order by clause
-   */
-  @Test
-  public void testB1P2OrderBy() throws Exception {
-    runTest("b1.p2.data", "b1.p2.subs", "partition by position_id order by sub");
+    runTest("b1.p2");
   }
 
   /**
@@ -71,12 +93,7 @@ public class TestWindowFrame extends BaseTestQuery {
    */
   @Test
   public void testB2P2() throws Exception {
-    runTest("b2.p2.data", "b2.p2", "partition by position_id order by position_id");
-  }
-
-  @Test
-  public void testB2P2OrderBy() throws Exception {
-    runTest("b2.p2.data", "b2.p2.subs", "partition by position_id order by sub");
+    runTest("b2.p2");
   }
 
   /**
@@ -84,16 +101,7 @@ public class TestWindowFrame extends BaseTestQuery {
    */
   @Test
   public void testB2P4() throws Exception {
-    runTest("b2.p4.data", "b2.p4", "partition by position_id order by position_id");
-  }
-
-  /**
-   * 2 batches with 4 partitions, one partition has rows in both batches
-   * no sub partition has rows in both batches
-   */
-  @Test
-  public void testB2P4OrderBy() throws Exception {
-    runTest("b2.p4.data", "b2.p4.subs", "partition by position_id order by sub");
+    runTest("b2.p4");
   }
 
   /**
@@ -101,16 +109,7 @@ public class TestWindowFrame extends BaseTestQuery {
    */
   @Test
   public void testB3P2() throws Exception {
-    runTest("b3.p2.data", "b3.p2", "partition by position_id order by position_id");
-  }
-
-  /**
-   * 3 batches with 2 partitions, one partition has rows in all 3 batches
-   * 2 subs have rows in 2 batches
-   */
-  @Test
-  public void testB3P2OrderBy() throws Exception {
-    runTest("b3.p2.data", "b3.p2.subs", "partition by position_id order by sub");
+    runTest("b3.p2");
   }
 
   /**
@@ -118,8 +117,28 @@ public class TestWindowFrame extends BaseTestQuery {
    * current batch without the need to call next(incoming).
    */
   @Test
-  public void testb4P4() throws Exception {
-    runTest("b4.p4.data", "b4.p4", "partition by position_id order by position_id");
+  public void testB4P4() throws Exception {
+    runTest("b4.p4");
+  }
+
+  @Test // DRILL-1862
+  public void testEmptyPartitionBy() throws Exception {
+    test("SELECT employee_id, position_id, salary, SUM(salary) OVER(ORDER BY position_id) FROM cp.`employee.json` LIMIT 10");
+  }
+
+  @Test // DRILL-3172
+  public void testEmptyOverClause() throws Exception {
+    test("SELECT employee_id, position_id, salary, SUM(salary) OVER() FROM cp.`employee.json` LIMIT 10");
+  }
+
+  @Test // DRILL-3218
+  public void testMaxVarChar() throws Exception {
+    test(getFile("window/q3218.sql"), TEST_RES_PATH);
+  }
+
+  @Test // DRILL-3220
+  public void testCountConst() throws Exception {
+    test(getFile("window/q3220.sql"), TEST_RES_PATH);
   }
 
 }
