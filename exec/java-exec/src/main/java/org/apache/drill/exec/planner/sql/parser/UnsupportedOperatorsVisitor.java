@@ -17,12 +17,16 @@
  */
 package org.apache.drill.exec.planner.sql.parser;
 
-import org.apache.calcite.sql.SqlSelect;
-import org.apache.calcite.sql.fun.SqlCountAggFunction;
 import org.apache.drill.exec.ExecConstants;
 import org.apache.drill.exec.exception.UnsupportedOperatorCollector;
 import org.apache.drill.exec.ops.QueryContext;
 import org.apache.drill.exec.work.foreman.SqlUnsupportedException;
+
+import org.apache.calcite.sql.SqlSelectKeyword;
+import org.apache.calcite.sql.SqlIdentifier;
+import org.apache.calcite.sql.SqlSelect;
+import org.apache.calcite.sql.SqlWindow;
+import org.apache.calcite.sql.fun.SqlCountAggFunction;
 import org.apache.calcite.sql.SqlCall;
 import org.apache.calcite.sql.SqlKind;
 import org.apache.calcite.sql.SqlJoin;
@@ -32,7 +36,9 @@ import org.apache.calcite.sql.type.SqlTypeName;
 import org.apache.calcite.sql.util.SqlShuttle;
 import org.apache.calcite.sql.SqlDataTypeSpec;
 import org.apache.calcite.sql.SqlSetOperator;
+
 import java.util.List;
+
 import com.google.common.collect.Lists;
 
 public class UnsupportedOperatorsVisitor extends SqlShuttle {
@@ -78,23 +84,142 @@ public class UnsupportedOperatorsVisitor extends SqlShuttle {
 
   @Override
   public SqlNode visit(SqlCall sqlCall) {
+    // Inspect the window functions
+    if(sqlCall instanceof SqlSelect) {
+      SqlSelect sqlSelect = (SqlSelect) sqlCall;
+
+      // This is used to keep track of the window function which has been defined
+      SqlNode definedWindow = null;
+      for(SqlNode nodeInSelectList : sqlSelect.getSelectList()) {
+        if(nodeInSelectList.getKind() == SqlKind.AS
+            && (((SqlCall) nodeInSelectList).getOperandList().get(0).getKind() == SqlKind.OVER)) {
+          nodeInSelectList = ((SqlCall) nodeInSelectList).getOperandList().get(0);
+        }
+
+        if(nodeInSelectList.getKind() == SqlKind.OVER) {
+          // Throw exceptions if window functions are disabled
+          if(!context.getOptions().getOption(ExecConstants.ENABLE_WINDOW_FUNCTIONS).bool_val) {
+            unsupportedOperatorCollector.setException(SqlUnsupportedException.ExceptionType.FUNCTION,
+                "Window functions are disabled\n" +
+                "See Apache Drill JIRA: DRILL-2559");
+            throw new UnsupportedOperationException();
+          }
+
+          // DRILL-3182, DRILL-3195
+          SqlCall over = (SqlCall) nodeInSelectList;
+          if(over.getOperandList().get(0) instanceof SqlCall) {
+            SqlCall function = (SqlCall) over.getOperandList().get(0);
+
+            // DRILL-3195:
+            // The following window functions are temporarily disabled
+            // NTILE(), LAG(), LEAD(), FIRST_VALUE(), LAST_VALUE()
+            String functionName = function.getOperator().getName().toUpperCase();
+            switch(functionName) {
+              case "NTILE":
+              case "LAG":
+              case "LEAD":
+              case "FIRST_VALUE":
+              case "LAST_VALUE":
+                unsupportedOperatorCollector.setException(SqlUnsupportedException.ExceptionType.FUNCTION,
+                    "The window function " + functionName + " is not supported\n" +
+                    "See Apache Drill JIRA: DRILL-3195");
+                throw new UnsupportedOperationException();
+
+              default:
+                break;
+            }
+
+
+            // DRILL-3182
+            // Window function with DISTINCT qualifier is temporarily disabled
+            if(function.getFunctionQuantifier() != null
+                && function.getFunctionQuantifier().getValue() == SqlSelectKeyword.DISTINCT) {
+              unsupportedOperatorCollector.setException(SqlUnsupportedException.ExceptionType.FUNCTION,
+                  "DISTINCT for window aggregate functions is not currently supported\n" +
+                  "See Apache Drill JIRA: DRILL-3182");
+              throw new UnsupportedOperationException();
+            }
+          }
+
+          // DRILL-3196
+          // Disable multiple partitions in a SELECT-CLAUSE
+          SqlNode window = ((SqlCall) nodeInSelectList).operand(1);
+
+          // Partition window is referenced as a SqlIdentifier,
+          // which is defined in the window list
+          if(window instanceof SqlIdentifier) {
+            // Expand the SqlIdentifier as the expression defined in the window list
+            for(SqlNode sqlNode : sqlSelect.getWindowList()) {
+              if(((SqlWindow) sqlNode).getDeclName().equalsDeep(window, false)) {
+                window = sqlNode;
+                break;
+              }
+            }
+
+            assert !(window instanceof SqlIdentifier) : "Identifier should have been expanded as a window defined in the window list";
+          }
+
+          // In a SELECT-SCOPE, only a partition can be defined
+          if(definedWindow == null) {
+            definedWindow = window;
+          } else {
+            if(!definedWindow.equalsDeep(window, false)) {
+              unsupportedOperatorCollector.setException(SqlUnsupportedException.ExceptionType.FUNCTION,
+                  "Multiple window definitions in a single SELECT list is not currently supported \n" +
+                  "See Apache Drill JIRA: DRILL-3196");
+              throw new UnsupportedOperationException();
+            }
+          }
+        }
+      }
+    }
+
+    // DRILL-3188
+    // Disable frame which is other than the default
+    // (i.e., BETWEEN UNBOUNDED PRECEDING AND CURRENT ROW)
+    if(sqlCall instanceof SqlWindow) {
+      SqlWindow window = (SqlWindow) sqlCall;
+
+      SqlNode lowerBound = window.getLowerBound();
+      SqlNode upperBound = window.getUpperBound();
+
+      // If no frame is specified
+      // it is a default frame
+      boolean isSupported = (lowerBound == null && upperBound == null);
+
+      // When OVER clause contain an ORDER BY clause the following frames are equivalent to the default frame:
+      // RANGE UNBOUNDED PRECEDING
+      // RANGE BETWEEN UNBOUNDED PRECEDING AND CURRENT ROW
+      if(window.getOrderList().size() != 0
+          && !window.isRows()
+          && SqlWindow.isUnboundedPreceding(lowerBound)
+          && (upperBound == null || SqlWindow.isCurrentRow(upperBound))) {
+        isSupported = true;
+      }
+
+      // When OVER clause doesn't contain an ORDER BY clause, the following are equivalent to the default frame:
+      // RANGE BETWEEN UNBOUNDED PRECEDING AND UNBOUNDED FOLLOWING
+      // ROWS BETWEEN UNBOUNDED PRECEDING AND UNBOUNDED FOLLOWING
+      if(window.getOrderList().size() == 0
+          && SqlWindow.isUnboundedPreceding(lowerBound)
+          && SqlWindow.isUnboundedFollowing(upperBound)) {
+        isSupported = true;
+      }
+
+      if(!isSupported) {
+        unsupportedOperatorCollector.setException(SqlUnsupportedException.ExceptionType.FUNCTION,
+            "This type of window frame is currently not supported \n" +
+            "See Apache Drill JIRA: DRILL-3188");
+        throw new UnsupportedOperationException();
+      }
+    }
+
     // Disable unsupported Intersect, Except
     if(sqlCall.getKind() == SqlKind.INTERSECT || sqlCall.getKind() == SqlKind.EXCEPT) {
       unsupportedOperatorCollector.setException(SqlUnsupportedException.ExceptionType.RELATIONAL,
           sqlCall.getOperator().getName() + " is not supported\n" +
           "See Apache Drill JIRA: DRILL-1921");
       throw new UnsupportedOperationException();
-    }
-
-    // Disable unsupported Union
-    if(sqlCall.getKind() == SqlKind.UNION) {
-      SqlSetOperator op = (SqlSetOperator) sqlCall.getOperator();
-      if(!op.isAll()) {
-        unsupportedOperatorCollector.setException(SqlUnsupportedException.ExceptionType.RELATIONAL,
-            sqlCall.getOperator().getName() + " is not supported\n" +
-            "See Apache Drill JIRA: DRILL-1921");
-        throw new UnsupportedOperationException();
-      }
     }
 
     // Disable unsupported JOINs
@@ -116,15 +241,6 @@ public class UnsupportedOperatorsVisitor extends SqlShuttle {
             "See Apache Drill JIRA: DRILL-1921");
         throw new UnsupportedOperationException();
       }
-    }
-
-    // Throw exceptions if window functions are disabled
-    if(sqlCall.getOperator().getKind().equals(SqlKind.OVER)
-        && !context.getOptions().getOption(ExecConstants.ENABLE_WINDOW_FUNCTIONS).bool_val) {
-      unsupportedOperatorCollector.setException(SqlUnsupportedException.ExceptionType.FUNCTION,
-          "Window functions are disabled\n" +
-          "See Apache Drill JIRA: DRILL-2559");
-      throw new UnsupportedOperationException();
     }
 
     // Disable Function

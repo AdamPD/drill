@@ -56,7 +56,7 @@ public class TestPauseInjection extends BaseTestQuery {
    */
   private static class DummyClass {
     private static final Logger logger = org.slf4j.LoggerFactory.getLogger(DummyClass.class);
-    private static final ExecutionControlsInjector injector = ExecutionControlsInjector.getInjector(DummyClass.class);
+    private static final ControlsInjector injector = ControlsInjectorFactory.getInjector(DummyClass.class);
 
     private final QueryContext context;
     private final CountDownLatch latch;
@@ -120,14 +120,11 @@ public class TestPauseInjection extends BaseTestQuery {
     final ExtendedLatch trigger = new ExtendedLatch(1);
     final Pointer<Exception> ex = new Pointer<>();
 
-    final String jsonString = "{\"injections\":[{"
-      + "\"type\":\"pause\"," +
-      "\"siteClass\":\"org.apache.drill.exec.testing.TestPauseInjection$DummyClass\","
-      + "\"desc\":\"" + DummyClass.PAUSES + "\","
-      + "\"nSkip\":0"
-      + "}]}";
+    final String controls = Controls.newBuilder()
+      .addPause(DummyClass.class, DummyClass.PAUSES)
+      .build();
 
-    ControlsInjectionUtil.setControls(session, jsonString);
+    ControlsInjectionUtil.setControls(session, controls);
 
     final QueryContext queryContext = new QueryContext(session, bits[0].getContext());
 
@@ -174,16 +171,11 @@ public class TestPauseInjection extends BaseTestQuery {
       .build();
 
     final DrillbitEndpoint drillbitEndpoint1 = drillbitContext1.getEndpoint();
-    final String jsonString = "{\"injections\":[{"
-      + "\"type\" : \"pause\"," +
-      "\"siteClass\" : \"org.apache.drill.exec.testing.TestPauseInjection$DummyClass\","
-      + "\"desc\" : \"" + DummyClass.PAUSES + "\","
-      + "\"nSkip\" : 0, "
-      + "\"address\" : \"" + drillbitEndpoint1.getAddress() + "\","
-      + "\"port\" : " + drillbitEndpoint1.getUserPort()
-      + "}]}";
+    final String controls = Controls.newBuilder()
+      .addPauseOnBit(DummyClass.class, DummyClass.PAUSES, drillbitEndpoint1)
+      .build();
 
-    ControlsInjectionUtil.setControls(session, jsonString);
+    ControlsInjectionUtil.setControls(session, controls);
 
     {
       final long expectedDuration = 1000L;

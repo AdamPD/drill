@@ -60,7 +60,8 @@ public interface ExecConstants {
   public static final String TEMP_DIRECTORIES = "drill.exec.tmp.directories";
   public static final String TEMP_FILESYSTEM = "drill.exec.tmp.filesystem";
   public static final String INCOMING_BUFFER_IMPL = "drill.exec.buffer.impl";
-  public static final String INCOMING_BUFFER_SIZE = "drill.exec.buffer.size"; // incoming buffer size (number of batches)
+  /** incoming buffer size (number of batches) */
+  public static final String INCOMING_BUFFER_SIZE = "drill.exec.buffer.size";
   public static final String SPOOLING_BUFFER_DELETE = "drill.exec.buffer.spooling.delete";
   public static final String SPOOLING_BUFFER_MEMORY = "drill.exec.buffer.spooling.size";
   public static final String BATCH_PURGE_THRESHOLD = "drill.exec.sort.purge.threshold";
@@ -70,6 +71,7 @@ public interface ExecConstants {
   public static final String EXTERNAL_SORT_SPILL_THRESHOLD = "drill.exec.sort.external.spill.threshold";
   public static final String EXTERNAL_SORT_SPILL_DIRS = "drill.exec.sort.external.spill.directories";
   public static final String EXTERNAL_SORT_SPILL_FILESYSTEM = "drill.exec.sort.external.spill.fs";
+  public static final String EXTERNAL_SORT_MSORT_MAX_BATCHSIZE = "drill.exec.sort.external.msort.batch.maxsize";
   public static final String TEXT_LINE_READER_BATCH_SIZE = "drill.exec.storage.file.text.batch.size";
   public static final String TEXT_LINE_READER_BUFFER_SIZE = "drill.exec.storage.file.text.buffer.size";
   public static final String HAZELCAST_SUBNETS = "drill.exec.cache.hazel.subnets";
@@ -86,6 +88,9 @@ public interface ExecConstants {
   public static final String USER_AUTHENTICATOR_IMPL = "drill.exec.security.user.auth.impl";
   public static final String PAM_AUTHENTICATOR_PROFILES = "drill.exec.security.user.auth.pam_profiles";
   public static final String ERROR_ON_MEMORY_LEAK = "drill.exec.debug.error_on_leak";
+  /** Size of JDBC batch queue (in batches) above which throttling begins. */
+  public static final String JDBC_BATCH_QUEUE_THROTTLING_THRESHOLD =
+      "drill.jdbc.batch_queue_throttling_threshold";
 
   /**
    * Currently if a query is cancelled, but one of the fragments reports the status as FAILED instead of CANCELLED or
@@ -236,7 +241,7 @@ public interface ExecConstants {
   public static final String DRILL_SYS_FILE_SUFFIX = ".sys.drill";
 
   public static final String ENABLE_WINDOW_FUNCTIONS = "window.enable";
-  public static final OptionValidator ENABLE_WINDOW_FUNCTIONS_VALIDATOR = new BooleanValidator(ENABLE_WINDOW_FUNCTIONS, false);
+  public static final OptionValidator ENABLE_WINDOW_FUNCTIONS_VALIDATOR = new BooleanValidator(ENABLE_WINDOW_FUNCTIONS, true);
 
   public static final String DRILLBIT_CONTROL_INJECTIONS = "drill.exec.testing.controls";
   public static final OptionValidator DRILLBIT_CONTROLS_VALIDATOR =
@@ -248,4 +253,7 @@ public interface ExecConstants {
 
   public static final String USE_OLD_ASSIGNMENT_CREATOR = "exec.schedule.assignment.old";
   public static final OptionValidator USE_OLD_ASSIGNMENT_CREATOR_VALIDATOR = new BooleanValidator(USE_OLD_ASSIGNMENT_CREATOR, false);
+
+  public static final String CTAS_PARTITIONING_HASH_DISTRIBUTE = "store.partition.hash_distribute";
+  public static final BooleanValidator CTAS_PARTITIONING_HASH_DISTRIBUTE_VALIDATOR = new BooleanValidator(CTAS_PARTITIONING_HASH_DISTRIBUTE, false);
 }

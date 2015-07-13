@@ -47,7 +47,7 @@ public class TestCountDownLatchInjection extends BaseTestQuery {
    * {@link org.apache.drill.exec.ops.FragmentContext}.
    */
   private static class DummyClass {
-    private static final ExecutionControlsInjector injector = ExecutionControlsInjector.getInjector(DummyClass.class);
+    private static final ControlsInjector injector = ControlsInjectorFactory.getInjector(DummyClass.class);
 
     private final QueryContext context;
     private final CountDownLatch latch;
@@ -126,13 +126,11 @@ public class TestCountDownLatchInjection extends BaseTestQuery {
     final ExtendedLatch trigger = new ExtendedLatch(1);
     final Pointer<Long> countingDownTime = new Pointer<>();
 
-    final String jsonString = "{\"injections\":[{"
-      + "\"type\":\"latch\"," +
-      "\"siteClass\":\"org.apache.drill.exec.testing.TestCountDownLatchInjection$DummyClass\","
-      + "\"desc\":\"" + DummyClass.LATCH_NAME + "\""
-      + "}]}";
+    final String controls = Controls.newBuilder()
+      .addLatch(DummyClass.class, DummyClass.LATCH_NAME)
+      .build();
 
-    ControlsInjectionUtil.setControls(session, jsonString);
+    ControlsInjectionUtil.setControls(session, controls);
 
     final QueryContext queryContext = new QueryContext(session, bits[0].getContext());
 

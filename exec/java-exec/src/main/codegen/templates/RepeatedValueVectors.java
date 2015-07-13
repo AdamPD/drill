@@ -19,9 +19,7 @@
 import java.lang.Override;
 
 import org.apache.drill.exec.record.TransferPair;
-import org.apache.drill.exec.vector.BaseRepeatedValueVector;
-import org.apache.drill.exec.vector.BaseValueVector;
-import org.apache.drill.exec.vector.RepeatedFixedWidthVectorLike;
+import org.apache.drill.exec.vector.complex.BaseRepeatedValueVector;
 import org.mortbay.jetty.servlet.Holder;
 
 <@pp.dropOutputFile />
@@ -90,7 +88,7 @@ public final class Repeated${minor.class}Vector extends BaseRepeatedValueVector 
 
   @Override
   public TransferPair getTransferPair(FieldReference ref){
-    return new TransferImpl(getField().clone(ref));
+    return new TransferImpl(getField().withPath(ref));
   }
 
   @Override
@@ -179,18 +177,36 @@ public final class Repeated${minor.class}Vector extends BaseRepeatedValueVector 
     }
 
 
-  public boolean allocateNewSafe(){
-    if(!offsets.allocateNewSafe()) return false;
+  public boolean allocateNewSafe() {
+    /* boolean to keep track if all the memory allocation were successful
+     * Used in the case of composite vectors when we need to allocate multiple
+     * buffers for multiple vectors. If one of the allocations failed we need to
+     * clear all the memory that we allocated
+     */
+    boolean success = false;
+    try {
+      if(!offsets.allocateNewSafe()) return false;
+      if(!values.allocateNewSafe()) return false;
+      success = true;
+    } finally {
+      if (!success) {
+        clear();
+      }
+    }
     offsets.zeroVector();
-    if(!values.allocateNewSafe()) return false;
     mutator.reset();
     return true;
   }
   
   public void allocateNew() {
-    offsets.allocateNew();
+    try {
+      offsets.allocateNew();
+      values.allocateNew();
+    } catch (OutOfMemoryRuntimeException e) {
+      clear();
+      throw e;
+    }
     offsets.zeroVector();
-    values.allocateNew();
     mutator.reset();
   }
 
@@ -202,28 +218,17 @@ public final class Repeated${minor.class}Vector extends BaseRepeatedValueVector 
   }
   
   public void allocateNew(int totalBytes, int valueCount, int innerValueCount) {
-    offsets.allocateNew(valueCount+1);
+    try {
+      offsets.allocateNew(valueCount+1);
+      values.allocateNew(totalBytes, innerValueCount);
+    } catch (OutOfMemoryRuntimeException e) {
+      clear();
+      throw e;
+    }
     offsets.zeroVector();
-    values.allocateNew(totalBytes, innerValueCount);
     mutator.reset();
   }
-  
-  @Override
-  public int load(int dataBytes, int valueCount, int innerValueCount, DrillBuf buf){
-    clear();
-    int loaded = 0;
-    loaded += offsets.load(valueCount+1, buf.slice(loaded, buf.capacity() - loaded));
-    loaded += values.load(dataBytes + 4*(innerValueCount + 1), innerValueCount, buf.slice(loaded, buf.capacity() - loaded));
-    return loaded;
-  }
-  
-  @Override
-  public void load(SerializedField metadata, DrillBuf buffer) {
-    assert this.field.matches(metadata) : String.format("The field %s doesn't match the provided metadata %s.", this.field, metadata);
-    int loaded = load(metadata.getVarByteLength(), metadata.getGroupCount(), metadata.getValueCount(), buffer);
-    assert metadata.getBufferLength() == loaded : String.format("Expected to load %d bytes but actually loaded %d bytes", metadata.getBufferLength(), loaded);
-  }
-  
+
   public int getByteCapacity(){
     return values.getByteCapacity();
   }
@@ -232,25 +237,21 @@ public final class Repeated${minor.class}Vector extends BaseRepeatedValueVector 
 
   public void allocateNew(int valueCount, int innerValueCount) {
     clear();
-    offsets.allocateNew(valueCount+1);
+    /* boolean to keep track if all the memory allocation were successful
+     * Used in the case of composite vectors when we need to allocate multiple
+     * buffers for multiple vectors. If one of the allocations failed we need to//
+     * clear all the memory that we allocated
+     */
+    boolean success = false;
+    try {
+      offsets.allocateNew(valueCount+1);
+      values.allocateNew(innerValueCount);
+    } catch(OutOfMemoryRuntimeException e){
+      clear();
+      throw e;
+    }
     offsets.zeroVector();
-    values.allocateNew(innerValueCount);
     mutator.reset();
-  }
-  
-  public int load(int valueCount, int innerValueCount, DrillBuf buf){
-    clear();
-    int loaded = 0;
-    loaded += offsets.load(valueCount+1, buf.slice(loaded, buf.capacity() - loaded));
-    loaded += values.load(innerValueCount, buf.slice(loaded, buf.capacity() - loaded));
-    return loaded;
-  }
-  
-  @Override
-  public void load(SerializedField metadata, DrillBuf buffer) {
-    assert this.field.matches(metadata);
-    int loaded = load(metadata.getGroupCount(), metadata.getValueCount(), buffer);
-    assert metadata.getBufferLength() == loaded;
   }
   </#if>
 

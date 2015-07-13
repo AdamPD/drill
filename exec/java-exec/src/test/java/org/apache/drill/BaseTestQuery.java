@@ -17,14 +17,16 @@
  */
 package org.apache.drill;
 
+import java.io.File;
 import java.io.IOException;
+import java.io.PrintWriter;
 import java.net.URL;
-import java.util.Arrays;
 import java.util.List;
 import java.util.Properties;
 import java.util.concurrent.CountDownLatch;
 import java.util.concurrent.atomic.AtomicInteger;
 
+import com.google.common.io.Files;
 import org.apache.drill.common.config.DrillConfig;
 import org.apache.drill.common.exceptions.UserException;
 import org.apache.drill.exec.ExecConstants;
@@ -33,6 +35,7 @@ import org.apache.drill.exec.client.DrillClient;
 import org.apache.drill.exec.exception.SchemaChangeException;
 import org.apache.drill.exec.memory.BufferAllocator;
 import org.apache.drill.exec.memory.TopLevelAllocator;
+import org.apache.drill.exec.proto.UserBitShared;
 import org.apache.drill.exec.proto.UserBitShared.QueryId;
 import org.apache.drill.exec.proto.UserBitShared.QueryResult.QueryState;
 import org.apache.drill.exec.proto.UserBitShared.QueryType;
@@ -44,11 +47,8 @@ import org.apache.drill.exec.server.Drillbit;
 import org.apache.drill.exec.server.DrillbitContext;
 import org.apache.drill.exec.server.RemoteServiceSet;
 import org.apache.drill.exec.store.StoragePluginRegistry;
-import org.apache.drill.exec.util.JsonStringArrayList;
-import org.apache.drill.exec.util.JsonStringHashMap;
 import org.apache.drill.exec.util.TestUtilities;
 import org.apache.drill.exec.util.VectorUtil;
-import org.apache.hadoop.io.Text;
 import org.junit.AfterClass;
 import org.junit.BeforeClass;
 import org.junit.rules.TestRule;
@@ -62,6 +62,7 @@ import com.google.common.io.Resources;
 import static org.hamcrest.core.StringContains.containsString;
 import static org.junit.Assert.assertNotNull;
 import static org.junit.Assert.assertThat;
+import static org.junit.Assert.fail;
 
 public class BaseTestQuery extends ExecTest {
   private static final org.slf4j.Logger logger = org.slf4j.LoggerFactory.getLogger(BaseTestQuery.class);
@@ -354,12 +355,59 @@ public class BaseTestQuery extends ExecTest {
     assertThat(expException.getMessage(), containsString(expectedErrorMsg));
   }
 
+  /**
+   * Utility method which tests given query produces a {@link UserException}
+   * with {@link org.apache.drill.exec.proto.UserBitShared.DrillPBError.ErrorType} being DrillPBError.ErrorType.PARSE
+   * the given message.
+   * @param testSqlQuery Test query
+   */
+  protected static void parseErrorHelper(final String testSqlQuery) throws Exception {
+    errorMsgTestHelper(testSqlQuery, UserBitShared.DrillPBError.ErrorType.PARSE.name());
+  }
+
   public static String getFile(String resource) throws IOException{
     URL url = Resources.getResource(resource);
     if (url == null) {
       throw new IOException(String.format("Unable to find path %s.", resource));
     }
     return Resources.toString(url, Charsets.UTF_8);
+  }
+
+  /**
+   * Copy the resource (ex. file on classpath) to a physical file on FileSystem.
+   * @param resource
+   * @return
+   * @throws IOException
+   */
+  public static String getPhysicalFileFromResource(final String resource) throws IOException {
+    final File file = File.createTempFile("tempfile", ".txt");
+    file.deleteOnExit();
+    PrintWriter printWriter = new PrintWriter(file);
+    printWriter.write(BaseTestQuery.getFile(resource));
+    printWriter.close();
+
+    return file.getPath();
+  }
+
+  /**
+   * Create a temp directory to store the given <i>dirName</i>
+   * @param dirName
+   * @return Full path including temp parent directory and given directory name.
+   */
+  public static String getTempDir(final String dirName) {
+    File dir = Files.createTempDir();
+    dir.deleteOnExit();
+
+    return dir.getAbsolutePath() + File.separator + dirName;
+  }
+
+
+  protected static void setSessionOption(final String option, final String value) {
+    try {
+      runSQL(String.format("alter session set `%s` = %s", option, value));
+    } catch(final Exception e) {
+      fail(String.format("Failed to set session option `%s` = %s, Error: %s", option, value, e.toString()));
+    }
   }
 
   private static class SilentListener implements UserResultsListener {

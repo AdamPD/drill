@@ -44,8 +44,8 @@ import org.apache.drill.exec.work.WorkManager.WorkerBee;
 import org.apache.drill.exec.work.foreman.Foreman;
 import org.apache.drill.exec.work.fragment.FragmentExecutor;
 import org.apache.drill.exec.work.fragment.FragmentManager;
+import org.apache.drill.exec.work.fragment.FragmentStatusReporter;
 import org.apache.drill.exec.work.fragment.NonRootFragmentManager;
-import org.apache.drill.exec.work.fragment.NonRootStatusReporter;
 
 public class ControlMessageHandler {
   private static final org.slf4j.Logger logger = org.slf4j.LoggerFactory.getLogger(ControlMessageHandler.class);
@@ -130,8 +130,8 @@ public class ControlMessageHandler {
         final FragmentContext context = new FragmentContext(drillbitContext, fragment,
             drillbitContext.getFunctionImplementationRegistry());
         final ControlTunnel tunnel = drillbitContext.getController().getTunnel(fragment.getForeman());
-        final NonRootStatusReporter listener = new NonRootStatusReporter(context, tunnel);
-        final FragmentExecutor fr = new FragmentExecutor(context, fragment, listener);
+        final FragmentStatusReporter statusReporter = new FragmentStatusReporter(context, tunnel);
+        final FragmentExecutor fr = new FragmentExecutor(context, fragment, statusReporter);
         bee.addFragmentRunner(fr);
       } else {
         // isIntermediate, store for incoming data.
@@ -182,7 +182,7 @@ public class ControlMessageHandler {
     //     request; it is possible that before the fragment state was updated in the QueryManager, this handler
     //     received a cancel signal.
     // (2) Unknown fragment.
-    logger.warn("Dropping request to cancel fragment. {} does not exist.", QueryIdHelper.getFragmentId(handle));
+    logger.warn("Dropping request to cancel fragment. {} does not exist.", QueryIdHelper.getQueryIdentifier(handle));
     return Acks.OK;
   }
 
@@ -202,7 +202,7 @@ public class ControlMessageHandler {
     }
 
     // fragment completed or does not exist
-    logger.warn("Dropping request to resume fragment. {} does not exist.", QueryIdHelper.getFragmentId(handle));
+    logger.warn("Dropping request to resume fragment. {} does not exist.", QueryIdHelper.getQueryIdentifier(handle));
     return Acks.OK;
   }
 
@@ -221,8 +221,8 @@ public class ControlMessageHandler {
       } else {
         logger.warn(
             "Dropping request for early fragment termination for path {} -> {} as path to executor unavailable.",
-            QueryIdHelper.getFragmentId(finishedReceiver.getSender()),
-            QueryIdHelper.getFragmentId(finishedReceiver.getReceiver()));
+            QueryIdHelper.getQueryIdentifier(finishedReceiver.getSender()),
+            QueryIdHelper.getQueryIdentifier(finishedReceiver.getReceiver()));
       }
     }
 

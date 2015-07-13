@@ -28,13 +28,13 @@ import java.util.concurrent.atomic.AtomicInteger;
 import org.apache.drill.common.exceptions.DrillRuntimeException;
 import org.apache.drill.common.exceptions.UserException;
 import org.apache.drill.common.exceptions.UserRemoteException;
-import org.apache.drill.exec.ops.FragmentContext;
 import org.apache.drill.exec.proto.BitControl.FragmentStatus;
 import org.apache.drill.exec.proto.BitControl.PlanFragment;
 import org.apache.drill.exec.proto.CoordinationProtos.DrillbitEndpoint;
 import org.apache.drill.exec.proto.ExecProtos.FragmentHandle;
 import org.apache.drill.exec.proto.GeneralRPCProtos.Ack;
 import org.apache.drill.exec.proto.SchemaUserBitShared;
+import org.apache.drill.exec.proto.UserBitShared.FragmentState;
 import org.apache.drill.exec.proto.UserBitShared.MajorFragmentProfile;
 import org.apache.drill.exec.proto.UserBitShared.QueryId;
 import org.apache.drill.exec.proto.UserBitShared.QueryInfo;
@@ -43,19 +43,13 @@ import org.apache.drill.exec.proto.UserBitShared.QueryResult.QueryState;
 import org.apache.drill.exec.proto.UserProtos.RunQuery;
 import org.apache.drill.exec.proto.helper.QueryIdHelper;
 import org.apache.drill.exec.rpc.RpcException;
-import org.apache.drill.exec.rpc.control.ControlTunnel;
 import org.apache.drill.exec.rpc.control.Controller;
 import org.apache.drill.exec.server.DrillbitContext;
 import org.apache.drill.exec.store.sys.PStore;
 import org.apache.drill.exec.store.sys.PStoreConfig;
 import org.apache.drill.exec.store.sys.PStoreProvider;
 import org.apache.drill.exec.work.EndpointListener;
-import org.apache.drill.exec.work.WorkManager;
 import org.apache.drill.exec.work.foreman.Foreman.StateListener;
-import org.apache.drill.exec.work.fragment.AbstractStatusReporter;
-import org.apache.drill.exec.work.fragment.FragmentExecutor;
-import org.apache.drill.exec.work.fragment.NonRootStatusReporter;
-import org.apache.drill.exec.work.fragment.StatusReporter;
 
 import com.carrotsearch.hppc.IntObjectOpenHashMap;
 import com.google.common.base.Preconditions;
@@ -126,12 +120,31 @@ public class QueryManager {
     }
   }
 
+  private static boolean isTerminal(final FragmentState state) {
+    return state == FragmentState.FAILED
+        || state == FragmentState.FINISHED
+        || state == FragmentState.CANCELLED;
+  }
+
   private boolean updateFragmentStatus(final FragmentStatus fragmentStatus) {
     final FragmentHandle fragmentHandle = fragmentStatus.getHandle();
     final int majorFragmentId = fragmentHandle.getMajorFragmentId();
     final int minorFragmentId = fragmentHandle.getMinorFragmentId();
     final FragmentData data = fragmentDataMap.get(majorFragmentId).get(minorFragmentId);
-    return data.setStatus(fragmentStatus);
+
+    final FragmentState oldState = data.getState();
+    final boolean inTerminalState = isTerminal(oldState);
+    final FragmentState currentState = fragmentStatus.getProfile().getState();
+
+    if (inTerminalState || (oldState == FragmentState.CANCELLATION_REQUESTED && !isTerminal(currentState))) {
+      // Already in a terminal state, or invalid state transition from CANCELLATION_REQUESTED. This shouldn't happen.
+      logger.warn(String.format("Received status message for fragment %s after fragment was in state %s. New state was %s",
+        QueryIdHelper.getQueryIdentifier(fragmentHandle), oldState, currentState));
+      return false;
+    }
+
+    data.setStatus(fragmentStatus);
+    return oldState != currentState;
   }
 
   private void fragmentDone(final FragmentStatus status) {
@@ -219,7 +232,7 @@ public class QueryManager {
     for(final FragmentData data : fragmentDataSet) {
       final DrillbitEndpoint endpoint = data.getEndpoint();
       final FragmentHandle handle = data.getHandle();
-      controller.getTunnel(endpoint).resumeFragment(new SignalListener(endpoint, handle,
+      controller.getTunnel(endpoint).unpauseFragment(new SignalListener(endpoint, handle,
         SignalListener.Signal.UNPAUSE), handle);
     }
   }
@@ -432,11 +445,6 @@ public class QueryManager {
       logger.debug("Foreman is still waiting for completion message from {} nodes containing {} fragments", remaining,
           this.fragmentDataSet.size() - finishedFragments.get());
     }
-  }
-
-  public StatusReporter newRootStatusHandler(final FragmentContext context, final DrillbitContext dContext) {
-    final ControlTunnel tunnel = dContext.getController().getTunnel(foreman.getQueryContext().getCurrentEndpoint());
-    return new NonRootStatusReporter(context, tunnel);
   }
 
   public FragmentStatusListener getFragmentStatusListener(){

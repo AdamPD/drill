@@ -26,17 +26,20 @@ import org.apache.drill.exec.memory.BufferAllocator;
 import org.apache.drill.exec.proto.UserBitShared.SerializedField;
 import org.apache.drill.exec.record.MaterializedField;
 import org.apache.drill.exec.record.TransferPair;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
 
-public abstract class BaseValueVector<A extends ValueVector.Accessor, M extends ValueVector.Mutator>
-    implements ValueVector<A, M> {
-  private static final org.slf4j.Logger logger = org.slf4j.LoggerFactory.getLogger(BaseValueVector.class);
+public abstract class BaseValueVector implements ValueVector {
+  private static final Logger logger = LoggerFactory.getLogger(BaseValueVector.class);
+
+  public static final int MAX_ALLOCATION_SIZE = Integer.MAX_VALUE;
+  public static final int INITIAL_VALUE_ALLOCATION = 4096;
 
   protected final BufferAllocator allocator;
   protected final MaterializedField field;
-  public static final int INITIAL_VALUE_ALLOCATION = 4096;
 
   protected BaseValueVector(MaterializedField field, BufferAllocator allocator) {
-    this.field = field;
+    this.field = Preconditions.checkNotNull(field, "field cannot be null");
     this.allocator = Preconditions.checkNotNull(allocator, "allocator cannot be null");
   }
 
@@ -56,7 +59,7 @@ public abstract class BaseValueVector<A extends ValueVector.Accessor, M extends 
   }
 
   public MaterializedField getField(FieldReference ref){
-    return getField().clone(ref);
+    return getField().withPath(ref);
   }
 
   @Override

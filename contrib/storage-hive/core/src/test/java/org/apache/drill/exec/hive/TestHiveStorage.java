@@ -41,6 +41,17 @@ public class TestHiveStorage extends HiveTestBase {
         .go();
   }
 
+  @Test // DRILL-3328
+  public void convertFromOnHiveBinaryType() throws Exception {
+    testBuilder()
+        .sqlQuery("SELECT convert_from(binary_field, 'UTF8') col1 from hive.readtest")
+        .unOrdered()
+        .baselineColumns("col1")
+        .baselineValues("binaryfield")
+        .baselineValues(new Object[] { null })
+        .go();
+  }
+
   /**
    * Test to ensure Drill reads the all supported types correctly both normal fields (converted to Nullable types) and
    * partition fields (converted to Required types).
@@ -92,7 +103,7 @@ public class TestHiveStorage extends HiveTestBase {
               .baselineValues(
                   "binaryfield",
                   false,
-                  (byte) 34,
+                  34,
                   new BigDecimal("66"),
                   new BigDecimal("2347.92"),
                   new BigDecimal("2758725827.99990"),
@@ -102,14 +113,14 @@ public class TestHiveStorage extends HiveTestBase {
                   4.67f,
                   123456,
                   234235L,
-                  (short) 3455,
+                  3455,
                   "stringfield",
                   "varcharfield",
                   new DateTime(Timestamp.valueOf("2013-07-05 17:01:00").getTime()),
                   new DateTime(Date.valueOf("2013-07-05").getTime()),
                   "binary",
                   true,
-                  (byte) 64,
+                  64,
                   new BigDecimal("37"),
                   new BigDecimal("36.90"),
                   new BigDecimal("3289379872.94565"),
@@ -119,20 +130,16 @@ public class TestHiveStorage extends HiveTestBase {
                   4.67f,
                   123456,
                   234235L,
-                  (short) 3455,
+                  3455,
                   "string",
                   "varchar",
                   new DateTime(Timestamp.valueOf("2013-07-05 17:01:00").getTime()),
                   new DateTime(Date.valueOf("2013-07-05").getTime()))
               .baselineValues( // All fields are null, but partition fields have non-null values
-                  "", // For binary (varchar, string too) empty value is considered as empty string instead of "null"
-                  null, null, null, null, null, null, null, null, null, null, null, null,
-                  "", // string_field
-                  "", // varchar_field
-                  null, null,
+                  null, null, null, null, null, null, null, null, null, null, null, null, null, null, null, null, null,
                   "binary",
                   true,
-                  (byte) 64,
+                  64,
                   new BigDecimal("37"),
                   new BigDecimal("36.90"),
                   new BigDecimal("3289379872.94565"),
@@ -142,7 +149,7 @@ public class TestHiveStorage extends HiveTestBase {
                   4.67f,
                   123456,
                   234235L,
-                  (short) 3455,
+                  3455,
                   "string",
                   "varchar",
                   new DateTime(Timestamp.valueOf("2013-07-05 17:01:00").getTime()),
@@ -178,6 +185,26 @@ public class TestHiveStorage extends HiveTestBase {
         .unOrdered()
         .baselineColumns("key", "value")
         .baselineValues(1, " key_1")
+        .go();
+  }
+
+  @Test // DRILL-745
+  public void queryingHiveAvroTable() throws Exception {
+    testBuilder()
+        .sqlQuery("SELECT * FROM hive.db1.avro ORDER BY key DESC LIMIT 1")
+        .unOrdered()
+        .baselineColumns("key", "value")
+        .baselineValues(5, " key_5")
+        .go();
+  }
+
+  @Test // DRILL-3266
+  public void queryingTableWithSerDeInHiveContribJar() throws Exception {
+    testBuilder()
+        .sqlQuery("SELECT * FROM hive.db1.kv_db1 ORDER BY key DESC LIMIT 1")
+        .unOrdered()
+        .baselineColumns("key", "value")
+        .baselineValues("5", " key_5")
         .go();
   }
 }

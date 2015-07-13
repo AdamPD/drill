@@ -23,7 +23,6 @@ import org.apache.drill.exec.work.foreman.SqlUnsupportedException;
 import org.apache.drill.exec.work.foreman.UnsupportedDataTypeException;
 import org.apache.drill.exec.work.foreman.UnsupportedFunctionException;
 import org.apache.drill.exec.work.foreman.UnsupportedRelOperatorException;
-import org.junit.Ignore;
 import org.junit.Test;
 
 public class TestDisabledFunctionality extends BaseTestQuery{
@@ -73,24 +72,6 @@ public class TestDisabledFunctionality extends BaseTestQuery{
            "where n_nationkey = " +
            "(select r_regionkey from cp.`tpch/region.parquet` " +
            "where r_regionkey = 1)");
-    } catch(UserException ex) {
-      throwAsUnsupportedException(ex);
-    }
-  }
-
-  @Test(expected = UnsupportedRelOperatorException.class)  // see DRILL-1921
-  public void testDisabledUnion() throws Exception {
-    try {
-      test("(select n_name as name from cp.`tpch/nation.parquet`) UNION (select r_name as name from cp.`tpch/region.parquet`)");
-    } catch(UserException ex) {
-      throwAsUnsupportedException(ex);
-    }
-  }
-
-  @Test(expected = UnsupportedRelOperatorException.class) // see DRILL-1921
-  public void testDisabledUnionDistinct() throws Exception {
-    try {
-      test("(select n_name as name from cp.`tpch/nation.parquet`) UNION DISTINCT (select r_name as name from cp.`tpch/region.parquet`)");
     } catch(UserException ex) {
       throwAsUnsupportedException(ex);
     }
@@ -281,18 +262,6 @@ public class TestDisabledFunctionality extends BaseTestQuery{
       test("select a.lastname, b.n_name " +
           "from cp.`employee.json` a RIGHT OUTER JOIN cp.`tpch/nation.parquet` b " +
           "ON (a.position_id > b.n_nationKey AND a.employee_id = b.n_regionkey);");
-    } catch(UserException ex) {
-      throwAsUnsupportedException(ex);
-    }
-  }
-
-  @Test(expected = UnsupportedFunctionException.class) // see DRILL-2441
-  public void testDisabledWindowFunctions() throws Exception {
-    try {
-      test("SELECT employee_id,position_id, salary, avg(salary) " +
-          "OVER (PARTITION BY position_id order by position_id) " +
-          "FROM cp.`employee.json` " +
-          "order by employee_id;");
     } catch(UserException ex) {
       throwAsUnsupportedException(ex);
     }

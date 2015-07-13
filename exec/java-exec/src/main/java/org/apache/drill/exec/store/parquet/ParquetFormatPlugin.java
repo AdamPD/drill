@@ -120,8 +120,8 @@ public class ParquetFormatPlugin implements FormatPlugin{
   }
 
   @Override
-  public AbstractWriter getWriter(PhysicalOperator child, String location) throws IOException {
-    return new ParquetWriter(child, location, this);
+  public AbstractWriter getWriter(PhysicalOperator child, String location, List<String> partitionColumns) throws IOException {
+    return new ParquetWriter(child, location, partitionColumns, this);
   }
 
   public RecordWriter getRecordWriter(FragmentContext context, ParquetWriter writer) throws IOException, OutOfMemoryException {
@@ -178,6 +178,10 @@ public class ParquetFormatPlugin implements FormatPlugin{
     return false;
   }
 
+  @Override
+  public boolean supportsAutoPartitioning() {
+    return true;
+  }
 
 
   @Override

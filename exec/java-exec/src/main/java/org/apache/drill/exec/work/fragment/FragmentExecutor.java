@@ -41,7 +41,8 @@ import org.apache.drill.exec.proto.ExecProtos.FragmentHandle;
 import org.apache.drill.exec.proto.UserBitShared.FragmentState;
 import org.apache.drill.exec.proto.helper.QueryIdHelper;
 import org.apache.drill.exec.server.DrillbitContext;
-import org.apache.drill.exec.testing.ExecutionControlsInjector;
+import org.apache.drill.exec.testing.ControlsInjector;
+import org.apache.drill.exec.testing.ControlsInjectorFactory;
 import org.apache.drill.exec.util.ImpersonationUtil;
 import org.apache.drill.exec.work.foreman.DrillbitStatusListener;
 import org.apache.hadoop.security.UserGroupInformation;
@@ -52,12 +53,12 @@ import org.apache.hadoop.security.UserGroupInformation;
  */
 public class FragmentExecutor implements Runnable {
   private static final org.slf4j.Logger logger = org.slf4j.LoggerFactory.getLogger(FragmentExecutor.class);
-  private final static ExecutionControlsInjector injector = ExecutionControlsInjector.getInjector(FragmentExecutor.class);
+  private static final ControlsInjector injector = ControlsInjectorFactory.getInjector(FragmentExecutor.class);
 
   private final AtomicBoolean hasCloseoutThread = new AtomicBoolean(false);
   private final String fragmentName;
   private final FragmentContext fragmentContext;
-  private final StatusReporter listener;
+  private final FragmentStatusReporter statusReporter;
   private final DeferredException deferredException = new DeferredException();
   private final PlanFragment fragment;
   private final FragmentRoot rootOperator;
@@ -74,12 +75,11 @@ public class FragmentExecutor implements Runnable {
    *
    * @param context
    * @param fragment
-   * @param listener
-   * @param rootOperator
+   * @param statusReporter
    */
   public FragmentExecutor(final FragmentContext context, final PlanFragment fragment,
-      final StatusReporter listener) {
-    this(context, fragment, listener, null);
+      final FragmentStatusReporter statusReporter) {
+    this(context, fragment, statusReporter, null);
   }
 
   /**
@@ -87,13 +87,13 @@ public class FragmentExecutor implements Runnable {
    *
    * @param context
    * @param fragment
-   * @param listener
+   * @param statusReporter
    * @param rootOperator
    */
   public FragmentExecutor(final FragmentContext context, final PlanFragment fragment,
-      final StatusReporter listener, final FragmentRoot rootOperator) {
+      final FragmentStatusReporter statusReporter, final FragmentRoot rootOperator) {
     this.fragmentContext = context;
-    this.listener = listener;
+    this.statusReporter = statusReporter;
     this.fragment = fragment;
     this.rootOperator = rootOperator;
     this.fragmentName = QueryIdHelper.getQueryIdentifier(context.getHandle());
@@ -130,9 +130,7 @@ public class FragmentExecutor implements Runnable {
       return null;
     }
 
-    return AbstractStatusReporter
-        .getBuilder(fragmentContext, FragmentState.RUNNING, null)
-        .build();
+    return statusReporter.getStatus(FragmentState.RUNNING);
   }
 
   /**
@@ -240,6 +238,7 @@ public class FragmentExecutor implements Runnable {
       updateState(FragmentState.RUNNING);
 
       acceptExternalEvents.countDown();
+      injector.injectPause(fragmentContext.getExecutionControls(), "fragment-running", logger);
 
       final DrillbitEndpoint endpoint = drillbitContext.getEndpoint();
       logger.debug("Starting fragment {}:{} on {}:{}",
@@ -266,7 +265,7 @@ public class FragmentExecutor implements Runnable {
 
     } catch (OutOfMemoryError | OutOfMemoryRuntimeException e) {
       if (!(e instanceof OutOfMemoryError) || "Direct buffer memory".equals(e.getMessage())) {
-        fail(UserException.memoryError(e).build());
+        fail(UserException.memoryError(e).build(logger));
       } else {
         // we have a heap out of memory error. The JVM in unstable, exit.
         System.err.println("Node ran out of Heap memory, exiting.");
@@ -324,10 +323,10 @@ public class FragmentExecutor implements Runnable {
       final UserException uex = UserException.systemError(deferredException.getAndClear())
           .addIdentity(getContext().getIdentity())
           .addContext("Fragment", handle.getMajorFragmentId() + ":" + handle.getMinorFragmentId())
-          .build();
-      listener.fail(fragmentContext.getHandle(), uex);
+          .build(logger);
+      statusReporter.fail(uex);
     } else {
-      listener.stateChanged(fragmentContext.getHandle(), outcome);
+      statusReporter.stateChanged(outcome);
     }
   }
 
@@ -351,18 +350,17 @@ public class FragmentExecutor implements Runnable {
   }
 
   private void warnStateChange(final FragmentState current, final FragmentState target) {
-    logger.warn("Ignoring unexpected state transition {} => {}.", current.name(), target.name());
+    logger.warn(fragmentName + ": Ignoring unexpected state transition {} --> {}", current.name(), target.name());
   }
 
   private void errorStateChange(final FragmentState current, final FragmentState target) {
-    final String msg = "Invalid state transition %s => %s.";
-    throw new StateTransitionException(String.format(msg, current.name(), target.name()));
+    final String msg = "%s: Invalid state transition %s --> %s";
+    throw new StateTransitionException(String.format(msg, fragmentName, current.name(), target.name()));
   }
 
   private synchronized boolean updateState(FragmentState target) {
-    final FragmentHandle handle = fragmentContext.getHandle();
     final FragmentState current = fragmentState.get();
-    logger.info(fragmentName + ": State change requested from {} --> {} for ", current, target);
+    logger.info(fragmentName + ": State change requested {} --> {}", current, target);
     switch (target) {
     case CANCELLATION_REQUESTED:
       switch (current) {
@@ -370,7 +368,7 @@ public class FragmentExecutor implements Runnable {
       case AWAITING_ALLOCATION:
       case RUNNING:
         fragmentState.set(target);
-        listener.stateChanged(handle, target);
+        statusReporter.stateChanged(target);
         return true;
 
       default:
@@ -388,7 +386,7 @@ public class FragmentExecutor implements Runnable {
     case FAILED:
       if(!isTerminal(current)){
         fragmentState.set(target);
-        // don't notify listener until we finalize this terminal state.
+        // don't notify reporter until we finalize this terminal state.
         return true;
       } else if (current == FragmentState.FAILED) {
         // no warn since we can call fail multiple times.
@@ -404,7 +402,7 @@ public class FragmentExecutor implements Runnable {
     case RUNNING:
       if(current == FragmentState.AWAITING_ALLOCATION){
         fragmentState.set(target);
-        listener.stateChanged(handle, target);
+        statusReporter.stateChanged(target);
         return true;
       }else{
         errorStateChange(current, target);

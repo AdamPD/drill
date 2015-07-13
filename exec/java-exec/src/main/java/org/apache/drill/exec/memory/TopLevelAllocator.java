@@ -31,14 +31,14 @@ import org.apache.drill.common.config.DrillConfig;
 import org.apache.drill.exec.ExecConstants;
 import org.apache.drill.exec.ops.FragmentContext;
 import org.apache.drill.exec.proto.ExecProtos.FragmentHandle;
-import org.apache.drill.exec.testing.ExecutionControlsInjector;
+import org.apache.drill.exec.testing.ControlsInjector;
+import org.apache.drill.exec.testing.ControlsInjectorFactory;
 import org.apache.drill.exec.util.AssertionUtil;
 import org.apache.drill.exec.util.Pointer;
 
 public class TopLevelAllocator implements BufferAllocator {
   private static final org.slf4j.Logger logger = org.slf4j.LoggerFactory.getLogger(TopLevelAllocator.class);
-
-  private static final ExecutionControlsInjector injector = ExecutionControlsInjector.getInjector(TopLevelAllocator.class);
+  private static final ControlsInjector injector = ControlsInjectorFactory.getInjector(TopLevelAllocator.class);
   public static final String CHILD_BUFFER_INJECTION_SITE = "child.buffer";
 
   public static long MAXIMUM_DIRECT_MEMORY;
@@ -93,7 +93,7 @@ public class TopLevelAllocator implements BufferAllocator {
       return empty;
     }
     if(!acct.reserve(min)) {
-      return null;
+      throw new OutOfMemoryRuntimeException(createErrorMsg(this, min));
     }
 
     try {
@@ -104,7 +104,7 @@ public class TopLevelAllocator implements BufferAllocator {
     } catch (OutOfMemoryError e) {
       if ("Direct buffer memory".equals(e.getMessage())) {
         acct.release(min);
-        return null;
+        throw new OutOfMemoryRuntimeException(createErrorMsg(this, min), e);
       } else {
         throw e;
       }
@@ -233,25 +233,18 @@ public class TopLevelAllocator implements BufferAllocator {
       return acct.transferIn(b, b.capacity());
     }
 
+
     @Override
     public DrillBuf buffer(int size, int max) {
       if (ENABLE_ACCOUNTING) {
-        try {
-          injector.injectUnchecked(fragmentContext, CHILD_BUFFER_INJECTION_SITE);
-        } catch (NullPointerException e) {
-          // This is an unusual way to use exception injection. If we inject a NullPointerException into this site
-          // it will actually cause this method to return null, simulating a "normal" failure to allocate memory
-          // this can be useful to check if the caller will properly handle nulls
-          return null;
-        }
+        injector.injectUnchecked(fragmentContext, CHILD_BUFFER_INJECTION_SITE);
       }
 
       if (size == 0) {
         return empty;
       }
       if(!childAcct.reserve(size)) {
-        logger.warn("Unable to allocate buffer of size {} due to memory limit. Current allocation: {}", size, getAllocatedMemory(), new Exception());
-        return null;
+        throw new OutOfMemoryRuntimeException(createErrorMsg(this, size));
       }
 
       try {
@@ -262,7 +255,7 @@ public class TopLevelAllocator implements BufferAllocator {
       } catch (OutOfMemoryError e) {
         if ("Direct buffer memory".equals(e.getMessage())) {
           childAcct.release(size);
-          return null;
+          throw new OutOfMemoryRuntimeException(createErrorMsg(this, size), e);
         } else {
           throw e;
         }
@@ -401,4 +394,8 @@ public class TopLevelAllocator implements BufferAllocator {
     }
   }
 
+  private static String createErrorMsg(final BufferAllocator allocator, final int size) {
+    return String.format("Unable to allocate buffer of size %d due to memory limit. Current allocation: %d",
+      size, allocator.getAllocatedMemory());
+  }
 }

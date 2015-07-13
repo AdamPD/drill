@@ -18,6 +18,7 @@
 
 import java.lang.Override;
 
+import org.apache.drill.exec.memory.OutOfMemoryRuntimeException;
 import org.apache.drill.exec.vector.BaseDataValueVector;
 import org.apache.drill.exec.vector.BaseValueVector;
 import org.apache.drill.exec.vector.VariableWidthVector;
@@ -56,6 +57,9 @@ public final class ${minor.class}Vector extends BaseDataValueVector implements V
   private static final int INITIAL_BYTE_COUNT = 4096 * DEFAULT_RECORD_BYTE_COUNT;
   private static final int MIN_BYTE_COUNT = 4096;
 
+  public final static String OFFSETS_VECTOR_NAME = "offsets";
+  private final static MaterializedField offsetsField =
+    MaterializedField.create(OFFSETS_VECTOR_NAME, Types.required(MinorType.UINT4));
   private final UInt${type.width}Vector offsetVector;
   private final FieldReader reader = new ${minor.class}ReaderImpl(${minor.class}Vector.this);
 
@@ -65,12 +69,12 @@ public final class ${minor.class}Vector extends BaseDataValueVector implements V
   private final UInt${type.width}Vector.Accessor oAccessor;
 
 
-  private int allocationTotalByteCount = INITIAL_BYTE_COUNT;
+  private int allocationSizeInBytes = INITIAL_BYTE_COUNT;
   private int allocationMonitor = 0;
 
   public ${minor.class}Vector(MaterializedField field, BufferAllocator allocator) {
     super(field, allocator);
-    this.offsetVector = new UInt${type.width}Vector(null, allocator);
+    this.offsetVector = new UInt${type.width}Vector(offsetsField, allocator);
     this.oAccessor = offsetVector.getAccessor();
     this.accessor = new Accessor();
     this.mutator = new Mutator();
@@ -172,7 +176,7 @@ public final class ${minor.class}Vector extends BaseDataValueVector implements V
     return new TransferImpl(getField());
   }
   public TransferPair getTransferPair(FieldReference ref){
-    return new TransferImpl(getField().clone(ref));
+    return new TransferImpl(getField().withPath(ref));
   }
 
   public TransferPair makeTransferPair(ValueVector to) {
@@ -260,9 +264,13 @@ public final class ${minor.class}Vector extends BaseDataValueVector implements V
   }
 
   @Override
-  public void setInitialCapacity(int numRecords) {
-    allocationTotalByteCount = numRecords * DEFAULT_RECORD_BYTE_COUNT;
-    offsetVector.setInitialCapacity(numRecords + 1);
+  public void setInitialCapacity(final int valueCount) {
+    final long size = 1L * valueCount * ${type.width};
+    if (size > MAX_ALLOCATION_SIZE) {
+      throw new OversizedAllocationException("Requested amount of memory is more than max allowed allocation size");
+    }
+    allocationSizeInBytes = (int)size;
+    offsetVector.setInitialCapacity(valueCount + 1);
   }
 
   public void allocateNew() {
@@ -273,26 +281,34 @@ public final class ${minor.class}Vector extends BaseDataValueVector implements V
 
   @Override
   public boolean allocateNewSafe() {
-    clear();
+    long curAllocationSize = allocationSizeInBytes;
     if (allocationMonitor > 10) {
-      allocationTotalByteCount = Math.max(MIN_BYTE_COUNT, (int) (allocationTotalByteCount / 2));
+      curAllocationSize = Math.max(MIN_BYTE_COUNT, curAllocationSize / 2);
       allocationMonitor = 0;
     } else if (allocationMonitor < -2) {
-      allocationTotalByteCount = (int) (allocationTotalByteCount * 2);
+      curAllocationSize = curAllocationSize * 2L;
       allocationMonitor = 0;
     }
 
-    DrillBuf newBuf = allocator.buffer(allocationTotalByteCount);
-    if(newBuf == null){
+    if (curAllocationSize > MAX_ALLOCATION_SIZE) {
       return false;
     }
 
-    this.data = newBuf;
+    clear();
+    /* Boolean to keep track if all the memory allocations were successful
+     * Used in the case of composite vectors when we need to allocate multiple
+     * buffers for multiple vectors. If one of the allocations failed we need to
+     * clear all the memory that we allocated
+     */
+    try {
+      final int requestedSize = (int)curAllocationSize;
+      data = allocator.buffer(requestedSize);
+      offsetVector.allocateNew();
+    } catch (OutOfMemoryRuntimeException e) {
+      clear();
+      return false;
+    }
     data.readerIndex(0);
-
-    if(!offsetVector.allocateNewSafe()){
-      return false;
-    }
     offsetVector.zeroVector();
     return true;
   }
@@ -300,30 +316,30 @@ public final class ${minor.class}Vector extends BaseDataValueVector implements V
   public void allocateNew(int totalBytes, int valueCount) {
     clear();
     assert totalBytes >= 0;
-    DrillBuf newBuf = allocator.buffer(totalBytes);
-    if(newBuf == null){
-      throw new OutOfMemoryRuntimeException(String.format("Failure while allocating buffer of %d bytes", totalBytes));
+    try {
+      data = allocator.buffer(totalBytes);
+      offsetVector.allocateNew(valueCount + 1);
+    } catch (DrillRuntimeException e) {
+      clear();
+      throw e;
     }
-
-    this.data = newBuf;
     data.readerIndex(0);
-    allocationTotalByteCount = totalBytes;
-    offsetVector.allocateNew(valueCount+1);
+    allocationSizeInBytes = totalBytes;
     offsetVector.zeroVector();
   }
 
-    public void reAlloc() {
-      allocationTotalByteCount *= 2;
-      DrillBuf newBuf = allocator.buffer(allocationTotalByteCount);
-      if(newBuf == null){
-        throw new OutOfMemoryRuntimeException(
-          String.format("Failure while reallocating buffer of %d bytes", allocationTotalByteCount));
-      }
-
-      newBuf.setBytes(0, data, 0, data.capacity());
-      data.release();
-      data = newBuf;
+  public void reAlloc() {
+    final long newAllocationSize = allocationSizeInBytes*2L;
+    if (newAllocationSize > MAX_ALLOCATION_SIZE)  {
+      throw new OversizedAllocationException("Unable to expand the buffer. Max allowed buffer size is reached.");
     }
+
+    final DrillBuf newBuf = allocator.buffer((int)newAllocationSize);
+    newBuf.setBytes(0, data, 0, data.capacity());
+    data.release();
+    data = newBuf;
+    allocationSizeInBytes = (int)newAllocationSize;
+  }
 
   public void decrementAllocationMonitor() {
     if (allocationMonitor > 0) {

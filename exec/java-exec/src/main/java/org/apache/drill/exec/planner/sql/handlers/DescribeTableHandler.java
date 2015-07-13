@@ -44,6 +44,7 @@ import com.google.common.collect.ImmutableList;
 import static org.apache.drill.exec.planner.sql.parser.DrillParserUtil.CHARSET;
 
 public class DescribeTableHandler extends DefaultSqlHandler {
+  private static final org.slf4j.Logger logger = org.slf4j.LoggerFactory.getLogger(DescribeTableHandler.class);
 
   public DescribeTableHandler(SqlHandlerConfig config) { super(config); }
 
@@ -62,17 +63,30 @@ public class DescribeTableHandler extends DefaultSqlHandler {
           ImmutableList.of(IS_SCHEMA_NAME, TAB_COLUMNS), null, SqlParserPos.ZERO, null);
 
       final SqlIdentifier table = node.getTable();
-      final SchemaPlus schema = SchemaUtilites.findSchema(context.getNewDefaultSchema(), Util.skipLast(table.names));
+      final SchemaPlus defaultSchema = context.getNewDefaultSchema();
+      final List<String> schemaPathGivenInCmd = Util.skipLast(table.names);
+      final SchemaPlus schema = SchemaUtilites.findSchema(defaultSchema, schemaPathGivenInCmd);
+
+      if (schema == null) {
+        SchemaUtilites.throwSchemaNotFoundException(defaultSchema,
+            SchemaUtilites.SCHEMA_PATH_JOINER.join(schemaPathGivenInCmd));
+      }
+
+      if (SchemaUtilites.isRootSchema(schema)) {
+        throw UserException.validationError()
+            .message("No schema selected.")
+            .build(logger);
+      }
 
       final String tableName = Util.last(table.names);
 
       // find resolved schema path
-      final String schemaPath = SchemaUtilites.getSchemaPath(schema);
+      final String schemaPath = SchemaUtilites.unwrapAsDrillSchemaInstance(schema).getFullSchemaName();
 
       if (schema.getTable(tableName) == null) {
         throw UserException.validationError()
             .message("Unknown table [%s] in schema [%s]", tableName, schemaPath)
-            .build();
+            .build(logger);
       }
 
       SqlNode schemaCondition = null;
@@ -112,7 +126,7 @@ public class DescribeTableHandler extends DefaultSqlHandler {
     } catch (Exception ex) {
       throw UserException.planError(ex)
           .message("Error while rewriting DESCRIBE query: %d", ex.getMessage())
-          .build();
+          .build(logger);
     }
   }
 }

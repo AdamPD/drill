@@ -52,7 +52,8 @@ public class TestFilterPushdown extends PlanTestBase {
         test("alter session set `store.parquet.enable_pushdown_filter` = false");
     }
 
-    @Test
+    // Normally we could eliminate the filter if all expressions were pushed down;
+    // however, the Parquet filter implementation is type specific (whereas Drill is not)
     public void testEliminateFilter() throws Exception {
         test("alter session set `store.parquet.use_new_reader` = true");
         test("alter session set `store.parquet.enable_pushdown_filter` = true");

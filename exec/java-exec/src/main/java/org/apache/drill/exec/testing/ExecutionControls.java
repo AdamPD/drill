@@ -20,6 +20,7 @@ package org.apache.drill.exec.testing;
 import com.fasterxml.jackson.annotation.JsonSubTypes;
 import com.fasterxml.jackson.annotation.JsonSubTypes.Type;
 import com.fasterxml.jackson.annotation.JsonTypeInfo;
+import com.fasterxml.jackson.core.JsonParseException;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import com.fasterxml.jackson.databind.annotation.JsonDeserialize;
 import org.apache.drill.common.exceptions.DrillRuntimeException;
@@ -31,6 +32,7 @@ import org.apache.drill.exec.server.options.OptionValue;
 import org.apache.drill.exec.server.options.OptionValue.OptionType;
 import org.apache.drill.exec.server.options.TypeValidators.TypeValidator;
 import org.apache.drill.exec.testing.InjectionSite.InjectionSiteKeyDeserializer;
+import org.apache.drill.exec.util.AssertionUtil;
 
 import java.io.IOException;
 import java.util.Collection;
@@ -73,6 +75,7 @@ public final class ExecutionControls {
 
     /**
      * Constructor for controls option validator.
+     *
      * @param name the name of the validator
      * @param def  the default JSON, specified as string
      * @param ttl  the number of queries for which this option should be valid
@@ -85,7 +88,7 @@ public final class ExecutionControls {
 
     @Override
     public int getTtl() {
-      return  ttl;
+      return ttl;
     }
 
     @Override
@@ -100,7 +103,7 @@ public final class ExecutionControls {
       }
       final String jsonString = v.string_val;
       try {
-        controlsOptionMapper.readValue(jsonString, Controls.class);
+        validateControlsString(jsonString);
       } catch (final IOException e) {
         throw new ExpressionParsingException("Invalid control options string (" + jsonString + ").", e);
       }
@@ -110,8 +113,12 @@ public final class ExecutionControls {
   /**
    * POJO used to parse JSON-specified controls.
    */
-  public static class Controls {
+  private static class Controls {
     public Collection<? extends Injection> injections;
+  }
+
+  public static void validateControlsString(final String jsonString) throws IOException {
+    controlsOptionMapper.readValue(jsonString, Controls.class);
   }
 
   /**
@@ -129,6 +136,10 @@ public final class ExecutionControls {
 
   public ExecutionControls(final OptionManager options, final DrillbitEndpoint endpoint) {
     this.endpoint = endpoint;
+
+    if (!AssertionUtil.isAssertionsEnabled()) {
+      return;
+    }
 
     final OptionValue optionValue = options.getOption(ExecConstants.DRILLBIT_CONTROL_INJECTIONS);
     if (optionValue == null) {
