@@ -43,6 +43,8 @@ import org.joda.time.format.DateTimeFormatter;
 import org.joda.time.format.ISODateTimeFormat;
 import org.joda.time.format.ISOPeriodFormat;
 
+import antlr.ParseTree;
+
 import com.fasterxml.jackson.core.JsonParseException;
 import com.fasterxml.jackson.core.JsonParser;
 import com.fasterxml.jackson.core.JsonToken;
@@ -81,7 +83,7 @@ abstract class VectorOutput {
       switch(possibleTypeName){
       case ExtendedTypeName.BINARY:
         writeBinary(checkNextToken(JsonToken.VALUE_STRING));
-        checkNextToken(JsonToken.END_OBJECT);
+        checkCurrentToken(JsonToken.END_OBJECT);
         return true;
       case ExtendedTypeName.DATE:
         writeDate(checkNextToken(JsonToken.VALUE_STRING));
@@ -92,7 +94,7 @@ abstract class VectorOutput {
         checkNextToken(JsonToken.END_OBJECT);
         return true;
       case ExtendedTypeName.TIMESTAMP:
-        writeTimestamp(checkNextToken(JsonToken.VALUE_STRING));
+        writeTimestamp(checkNextToken(JsonToken.VALUE_STRING, JsonToken.VALUE_NUMBER_INT));
         checkNextToken(JsonToken.END_OBJECT);
         return true;
       case ExtendedTypeName.INTERVAL:
@@ -116,8 +118,35 @@ abstract class VectorOutput {
     return checkNextToken(expected, expected);
   }
 
+  public boolean checkCurrentToken(final JsonToken expected) throws IOException{
+    return checkCurrentToken(expected, expected);
+  }
+
   public boolean checkNextToken(final JsonToken expected1, final JsonToken expected2) throws IOException{
-    JsonToken t = parser.nextToken();
+    return checkToken(parser.nextToken(), expected1, expected2);
+  }
+
+  public boolean checkCurrentToken(final JsonToken expected1, final JsonToken expected2) throws IOException{
+    return checkToken(parser.getCurrentToken(), expected1, expected2);
+  }
+
+  boolean hasType() throws JsonParseException, IOException {
+    JsonToken token = parser.nextToken();
+    return token == JsonToken.FIELD_NAME && parser.getText().equals(ExtendedTypeName.TYPE);
+  }
+
+  long getType() throws JsonParseException, IOException {
+    if (!checkNextToken(JsonToken.VALUE_NUMBER_INT, JsonToken.VALUE_STRING)) {
+      long type = parser.getValueAsLong();
+      //Advancing the token, as checking current token in binary
+      parser.nextToken();
+      return type;
+    }
+    throw new JsonParseException("Failure while reading $type value. Expected a NUMBER or STRING",
+        parser.getCurrentLocation());
+  }
+
+  public boolean checkToken(final JsonToken t, final JsonToken expected1, final JsonToken expected2) throws IOException{
     if(t == JsonToken.VALUE_NULL){
       return true;
     }else if(t == expected1){
@@ -125,7 +154,7 @@ abstract class VectorOutput {
     }else if(t == expected2){
       return false;
     }else{
-      throw new JsonParseException(String.format("Failure while reading ExtendedJSON typed value. Expected a %s but "
+        throw new JsonParseException(String.format("Failure while reading ExtendedJSON typed value. Expected a %s but "
           + "received a token of type %s", expected1, t), parser.getCurrentLocation());
     }
   }
@@ -154,7 +183,12 @@ abstract class VectorOutput {
     public void writeBinary(boolean isNull) throws IOException {
       VarBinaryWriter bin = writer.varBinary();
       if(!isNull){
-        work.prepareBinary(parser.getBinaryValue(), binary);
+        byte[] binaryData = parser.getBinaryValue();
+        if (hasType()) {
+          //Ignoring type info as of now.
+          getType();
+        }
+        work.prepareBinary(binaryData, binary);
         bin.write(binary);
       }
     }
@@ -181,8 +215,18 @@ abstract class VectorOutput {
     public void writeTimestamp(boolean isNull) throws IOException {
       TimeStampWriter ts = writer.timeStamp();
       if(!isNull){
-        DateTimeFormatter f = ISODateTimeFormat.dateTime();
-        ts.writeTimeStamp(DateTime.parse(parser.getValueAsString(), f).withZoneRetainFields(org.joda.time.DateTimeZone.UTC).getMillis());
+        switch (parser.getCurrentToken()) {
+        case VALUE_NUMBER_INT:
+          DateTime dt = new DateTime(parser.getLongValue(), org.joda.time.DateTimeZone.UTC);
+          ts.writeTimeStamp(dt.getMillis());
+          break;
+        case VALUE_STRING:
+          DateTimeFormatter f = ISODateTimeFormat.dateTime();
+          ts.writeTimeStamp(DateTime.parse(parser.getValueAsString(), f).withZoneRetainFields(org.joda.time.DateTimeZone.UTC).getMillis());
+          break;
+        default:
+          break;
+        }
       }
     }
 
@@ -232,7 +276,12 @@ abstract class VectorOutput {
     public void writeBinary(boolean isNull) throws IOException {
       VarBinaryWriter bin = writer.varBinary(fieldName);
       if(!isNull){
-        work.prepareBinary(parser.getBinaryValue(), binary);
+        byte[] binaryData = parser.getBinaryValue();
+        if (hasType()) {
+          //Ignoring type info as of now.
+          getType();
+        }
+        work.prepareBinary(binaryData, binary);
         bin.write(binary);
       }
     }
@@ -260,8 +309,18 @@ abstract class VectorOutput {
     public void writeTimestamp(boolean isNull) throws IOException {
       TimeStampWriter ts = writer.timeStamp(fieldName);
       if(!isNull){
-        DateTimeFormatter f = ISODateTimeFormat.dateTime();
-        ts.writeTimeStamp(DateTime.parse(parser.getValueAsString(), f).withZoneRetainFields(org.joda.time.DateTimeZone.UTC).getMillis());
+        switch (parser.getCurrentToken()) {
+        case VALUE_NUMBER_INT:
+          DateTime dt = new DateTime(parser.getLongValue(), org.joda.time.DateTimeZone.UTC);
+          ts.writeTimeStamp(dt.getMillis());
+          break;
+        case VALUE_STRING:
+          DateTimeFormatter f = ISODateTimeFormat.dateTime();
+          ts.writeTimeStamp(DateTime.parse(parser.getValueAsString(), f).withZoneRetainFields(org.joda.time.DateTimeZone.UTC).getMillis());
+          break;
+        default:
+          break;
+        }
       }
     }
 
