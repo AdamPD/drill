@@ -286,6 +286,13 @@ public abstract class HashAggTemplate implements HashAggregator {
       // StreamingAggregate which does somethings conditionally in the outer try block.
       // In the future HashAggregate may also need to perform some actions conditionally
       // in the outer try block.
+      if (newSchema) {
+        return AggOutcome.UPDATE_AGGREGATOR;
+      }
+      if (this.allFlushed()) {
+        this.outcome = IterOutcome.NONE;
+        return AggOutcome.RETURN_OUTCOME;
+      }
 
       outside:
       while (true) {
@@ -325,10 +332,19 @@ public abstract class HashAggTemplate implements HashAggregator {
                 if (EXTRA_DEBUG_1) {
                   logger.debug("Received new schema.  Batch has {} records.", incoming.getRecordCount());
                 }
+                if (incoming.getRecordCount() == 0) {
+                  this.cleanup();
+                  // TODO: new schema case needs to be handled appropriately
+                  return AggOutcome.UPDATE_AGGREGATOR;
+                }
                 newSchema = true;
-                this.cleanup();
-                // TODO: new schema case needs to be handled appropriately
-                return AggOutcome.UPDATE_AGGREGATOR;
+
+                buildComplete = true;
+
+                updateStats(htable);
+                outputCurrentBatch();
+
+                return AggOutcome.RETURN_OUTCOME;
 
               case OK:
                 resetIndex();

@@ -26,6 +26,7 @@ import org.apache.drill.common.expression.ErrorCollectorImpl;
 import org.apache.drill.common.expression.LogicalExpression;
 import org.apache.drill.common.logical.data.NamedExpression;
 import org.apache.drill.common.types.TypeProtos;
+import org.apache.drill.exec.ExecConstants;
 import org.apache.drill.exec.compile.sig.GeneratorMapping;
 import org.apache.drill.exec.compile.sig.MappingSet;
 import org.apache.drill.exec.exception.ClassTransformationException;
@@ -81,9 +82,12 @@ public class StreamingAggBatch extends AbstractRecordBatch<StreamingAggregate> {
   private boolean specialBatchSent = false;
   private static final int SPECIAL_BATCH_COUNT = 1;
 
+  private final boolean schemaChangeEnabled;
+
   public StreamingAggBatch(StreamingAggregate popConfig, RecordBatch incoming, FragmentContext context) throws OutOfMemoryException {
     super(popConfig, context);
     this.incoming = incoming;
+    this.schemaChangeEnabled = context.getOptions().getOption(ExecConstants.EXEC_ENABLE_AGG_SCHEMA_CHANGE_VALIDATOR);
   }
 
   @Override
@@ -151,6 +155,14 @@ public class StreamingAggBatch extends AbstractRecordBatch<StreamingAggregate> {
       case STOP:
         return outcome;
       case OK_NEW_SCHEMA:
+        if (!schemaChangeEnabled) {
+          context.fail(UserException.unsupportedError()
+              .message("Hash aggregate does not support schema changes").build(logger));
+          close();
+          killIncoming(false);
+          return IterOutcome.STOP;
+        }
+        aggregator = null;
         if (!createAggregator()) {
           done = true;
           return IterOutcome.STOP;
@@ -163,37 +175,38 @@ public class StreamingAggBatch extends AbstractRecordBatch<StreamingAggregate> {
       }
     }
 
-    AggOutcome out = aggregator.doWork();
-    recordCount = aggregator.getOutputCount();
-    logger.debug("Aggregator response {}, records {}", out, aggregator.getOutputCount());
-    switch (out) {
-    case CLEANUP_AND_RETURN:
-      if (!first) {
-        container.zeroVectors();
+    while (true) {
+      AggOutcome out = aggregator.doWork();
+      recordCount = aggregator.getOutputCount();
+      logger.debug("Aggregator response {}, records {}", out, aggregator.getOutputCount());
+      switch (out) {
+        case CLEANUP_AND_RETURN:
+          if (!first) {
+            container.zeroVectors();
+          }
+          done = true;
+          // fall through
+        case RETURN_OUTCOME:
+          IterOutcome outcome = aggregator.getOutcome();
+          if (outcome == IterOutcome.NONE && first) {
+            first = false;
+            done = true;
+            return IterOutcome.OK_NEW_SCHEMA;
+          } else if (outcome == IterOutcome.OK && first) {
+            outcome = IterOutcome.OK_NEW_SCHEMA;
+          } else if (outcome != IterOutcome.OUT_OF_MEMORY) {
+            first = false;
+          }
+          return outcome;
+        case UPDATE_AGGREGATOR:
+          aggregator = null;
+          if (!createAggregator()) {
+            return IterOutcome.STOP;
+          }
+          continue;
+        default:
+          throw new IllegalStateException(String.format("Unknown state %s.", out));
       }
-      done = true;
-      // fall through
-    case RETURN_OUTCOME:
-      IterOutcome outcome = aggregator.getOutcome();
-      if (outcome == IterOutcome.NONE && first) {
-        first = false;
-        done = true;
-        return IterOutcome.OK_NEW_SCHEMA;
-      } else if (outcome == IterOutcome.OK && first) {
-        outcome = IterOutcome.OK_NEW_SCHEMA;
-      } else if (outcome != IterOutcome.OUT_OF_MEMORY) {
-        first = false;
-      }
-      return outcome;
-    case UPDATE_AGGREGATOR:
-      context.fail(UserException.unsupportedError()
-        .message("Streaming aggregate does not support schema changes")
-        .build(logger));
-      close();
-      killIncoming(false);
-      return IterOutcome.STOP;
-    default:
-      throw new IllegalStateException(String.format("Unknown state %s.", out));
     }
   }
 

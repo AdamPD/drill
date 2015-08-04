@@ -24,6 +24,7 @@ import org.apache.drill.exec.expr.annotations.Param;
 import org.apache.drill.exec.expr.annotations.Workspace;
 import org.apache.drill.exec.expr.holders.BigIntHolder;
 import org.apache.drill.exec.expr.holders.BitHolder;
+import org.apache.drill.exec.expr.holders.NullableBigIntHolder;
 import org.apache.drill.exec.expr.holders.NullableBitHolder;
 import org.apache.drill.exec.expr.holders.NullableVarCharHolder;
 import org.apache.drill.exec.expr.holders.VarCharHolder;
@@ -42,14 +43,9 @@ public class AggregateErrorFunctions {
 
     @Param BitHolder in;
     @Workspace BigIntHolder value;
-    @Output BigIntHolder out;
+    @Output NullableBigIntHolder out;
 
     public void setup() {
-      if (true) {
-        throw org.apache.drill.common.exceptions.UserException.unsupportedError()
-          .message("Only COUNT aggregate function supported for Boolean type")
-          .build(logger);
-      }
     }
 
     @Override
@@ -72,14 +68,9 @@ public class AggregateErrorFunctions {
 
     @Param NullableBitHolder in;
     @Workspace BigIntHolder value;
-    @Output BigIntHolder out;
+    @Output NullableBigIntHolder out;
 
     public void setup() {
-      if (true) {
-        throw org.apache.drill.common.exceptions.UserException.unsupportedError()
-          .message("Only COUNT aggregate function supported for Boolean type")
-          .build(logger);
-      }
     }
 
     @Override
@@ -102,14 +93,9 @@ public class AggregateErrorFunctions {
 
     @Param VarCharHolder in;
     @Workspace BigIntHolder value;
-    @Output BigIntHolder out;
+    @Output NullableBigIntHolder out;
 
     public void setup() {
-      if (true) {
-        throw org.apache.drill.common.exceptions.UserException.unsupportedError()
-          .message("Only COUNT, MIN and MAX aggregate functions supported for VarChar type")
-          .build(logger);
-      }
     }
 
     @Override
@@ -132,14 +118,9 @@ public class AggregateErrorFunctions {
 
     @Param NullableVarCharHolder in;
     @Workspace BigIntHolder value;
-    @Output BigIntHolder out;
+    @Output NullableBigIntHolder out;
 
     public void setup() {
-      if (true) {
-        throw org.apache.drill.common.exceptions.UserException.unsupportedError()
-          .message("Only COUNT, MIN and MAX aggregate functions supported for VarChar type")
-          .build(logger);
-      }
     }
 
     @Override

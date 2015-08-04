@@ -77,10 +77,12 @@ public class HashAggBatch extends AbstractRecordBatch<HashAggregate> {
           "htRowIdx" /* workspace index */, "incoming" /* read container */, "outgoing" /* write container */,
           "aggrValuesContainer" /* workspace container */, UPDATE_AGGR_INSIDE, UPDATE_AGGR_OUTSIDE, UPDATE_AGGR_INSIDE);
 
+  private final boolean schemaChangeEnabled;
 
   public HashAggBatch(HashAggregate popConfig, RecordBatch incoming, FragmentContext context) throws ExecutionSetupException {
     super(popConfig, context);
     this.incoming = incoming;
+    this.schemaChangeEnabled = context.getOptions().getOption(ExecConstants.EXEC_ENABLE_AGG_SCHEMA_CHANGE_VALIDATOR);
   }
 
   @Override
@@ -118,35 +120,44 @@ public class HashAggBatch extends AbstractRecordBatch<HashAggregate> {
   @Override
   public IterOutcome innerNext() {
 
-    if (aggregator.allFlushed()) {
-      return IterOutcome.NONE;
-    }
-
     if (aggregator.buildComplete() && !aggregator.allFlushed()) {
       // aggregation is complete and not all records have been output yet
       return aggregator.outputCurrentBatch();
     }
 
-    logger.debug("Starting aggregator doWork; incoming record count = {} ", incoming.getRecordCount());
+    logger.debug("Starting aggregator doWork");
 
-    AggOutcome out = aggregator.doWork();
-    logger.debug("Aggregator response {}, records {}", out, aggregator.getOutputCount());
-    switch (out) {
-    case CLEANUP_AND_RETURN:
-      container.zeroVectors();
-      aggregator.cleanup();
-      state = BatchState.DONE;
-      // fall through
-    case RETURN_OUTCOME:
-      return aggregator.getOutcome();
-    case UPDATE_AGGREGATOR:
-      context.fail(UserException.unsupportedError()
-        .message("Hash aggregate does not support schema changes").build(logger));
-      close();
-      killIncoming(false);
-      return IterOutcome.STOP;
-    default:
-      throw new IllegalStateException(String.format("Unknown state %s.", out));
+    while (true) {
+      AggOutcome out = aggregator.doWork();
+      logger.debug("Aggregator response {}, records {}", out, aggregator.getOutputCount());
+      switch (out) {
+        case CLEANUP_AND_RETURN:
+          container.zeroVectors();
+          aggregator.cleanup();
+          state = BatchState.DONE;
+          // fall through
+        case RETURN_OUTCOME:
+          IterOutcome outcome = aggregator.getOutcome();
+          if (outcome == IterOutcome.OK) {
+            return IterOutcome.OK_NEW_SCHEMA;
+          }
+          return outcome;
+        case UPDATE_AGGREGATOR:
+          if (!schemaChangeEnabled) {
+            context.fail(UserException.unsupportedError()
+                .message("Hash aggregate does not support schema changes").build(logger));
+            close();
+            killIncoming(false);
+            return IterOutcome.STOP;
+          }
+          aggregator = null;
+          if (!createAggregator()) {
+            return IterOutcome.STOP;
+          }
+          continue;
+        default:
+          throw new IllegalStateException(String.format("Unknown state %s.", out));
+      }
     }
   }
 

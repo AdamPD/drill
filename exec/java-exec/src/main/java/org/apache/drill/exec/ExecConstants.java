@@ -256,4 +256,7 @@ public interface ExecConstants {
 
   public static final String CTAS_PARTITIONING_HASH_DISTRIBUTE = "store.partition.hash_distribute";
   public static final BooleanValidator CTAS_PARTITIONING_HASH_DISTRIBUTE_VALIDATOR = new BooleanValidator(CTAS_PARTITIONING_HASH_DISTRIBUTE, false);
+
+  public static final String EXEC_ENABLE_AGG_SCHEMA_CHANGE = "exec.physical.enable_agg_schema_change";
+  public static final BooleanValidator EXEC_ENABLE_AGG_SCHEMA_CHANGE_VALIDATOR = new BooleanValidator(EXEC_ENABLE_AGG_SCHEMA_CHANGE, false);
 }
