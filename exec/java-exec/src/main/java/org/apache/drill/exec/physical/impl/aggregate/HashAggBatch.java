@@ -63,6 +63,7 @@ public class HashAggBatch extends AbstractRecordBatch<HashAggregate> {
   private LogicalExpression[] aggrExprs;
   private TypedFieldId[] groupByOutFieldIds;
   private TypedFieldId[] aggrOutFieldIds;      // field ids for the outgoing batch
+  private boolean newSchema;
 
   private final GeneratorMapping UPDATE_AGGR_INSIDE =
       GeneratorMapping.create("setupInterior" /* setup method */, "updateAggrValuesInternal" /* eval method */,
@@ -119,7 +120,6 @@ public class HashAggBatch extends AbstractRecordBatch<HashAggregate> {
 
   @Override
   public IterOutcome innerNext() {
-
     if (aggregator.buildComplete() && !aggregator.allFlushed()) {
       // aggregation is complete and not all records have been output yet
       return aggregator.outputCurrentBatch();
@@ -138,7 +138,8 @@ public class HashAggBatch extends AbstractRecordBatch<HashAggregate> {
           // fall through
         case RETURN_OUTCOME:
           IterOutcome outcome = aggregator.getOutcome();
-          if (outcome == IterOutcome.OK) {
+          if (outcome == IterOutcome.OK && newSchema) {
+            newSchema = false;
             return IterOutcome.OK_NEW_SCHEMA;
           }
           return outcome;
@@ -150,6 +151,7 @@ public class HashAggBatch extends AbstractRecordBatch<HashAggregate> {
             killIncoming(false);
             return IterOutcome.STOP;
           }
+          newSchema = true;
           aggregator = null;
           if (!createAggregator()) {
             return IterOutcome.STOP;
