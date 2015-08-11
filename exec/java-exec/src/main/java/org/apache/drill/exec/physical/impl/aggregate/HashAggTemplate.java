@@ -287,6 +287,7 @@ public abstract class HashAggTemplate implements HashAggregator {
       // In the future HashAggregate may also need to perform some actions conditionally
       // in the outer try block.
       if (newSchema) {
+        this.cleanup();
         return AggOutcome.UPDATE_AGGREGATOR;
       }
       if (this.allFlushed()) {
@@ -332,7 +333,7 @@ public abstract class HashAggTemplate implements HashAggregator {
                 if (EXTRA_DEBUG_1) {
                   logger.debug("Received new schema.  Batch has {} records.", incoming.getRecordCount());
                 }
-                if (incoming.getRecordCount() == 0) {
+                if (incoming.getRecordCount() == 0 || this.batchHolders.size() == 0) {
                   this.cleanup();
                   // TODO: new schema case needs to be handled appropriately
                   return AggOutcome.UPDATE_AGGREGATOR;

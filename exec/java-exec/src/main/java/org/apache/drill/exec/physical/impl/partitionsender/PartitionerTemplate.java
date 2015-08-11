@@ -160,7 +160,6 @@ public abstract class PartitionerTemplate implements Partitioner {
       batch.flush(schemaChanged);
       if (schemaChanged) {
         batch.resetBatch();
-        batch.initializeBatch();
       }
     }
   }
