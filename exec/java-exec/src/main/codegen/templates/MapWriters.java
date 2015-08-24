@@ -164,13 +164,17 @@ public class ${mode}MapWriter extends AbstractFieldWriter{
     return writer;
   }
 
-  public ${minor.class}Writer ${lowerName}(String name, int scale, int precision){
+  public ${minor.class}Writer ${lowerName}(String name, int scale, int precision) throws SchemaChangeException{
     final MajorType ${upperName}_TYPE = Types.withScaleAndPrecision(MinorType.${upperName}, DataMode.OPTIONAL, scale, precision);
   <#else>
   private static final MajorType ${upperName}_TYPE = Types.optional(MinorType.${upperName});
-  public ${minor.class}Writer ${lowerName}(String name){
+  public ${minor.class}Writer ${lowerName}(String name) throws SchemaChangeException{
   </#if>
     FieldWriter writer = fields.get(name.toLowerCase());
+    if(writer != null && ${vectName}WriterImpl.class != writer.getClass()) {
+      fields.remove(name.toLowerCase());
+      throw new SchemaChangeException(String.format("Schema has changed from %s to %s.", writer.getClass().getSimpleName(), "${vectName}WriterImpl"));
+    }
     if(writer == null){
       ${vectName}Vector vector = container.addOrGet(name, ${upperName}_TYPE, ${vectName}Vector.class);
       vector.allocateNewSafe();

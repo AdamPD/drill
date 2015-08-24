@@ -18,6 +18,7 @@
 package org.apache.drill.exec.expr.fn.impl;
 
 import io.netty.buffer.DrillBuf;
+import org.apache.drill.exec.exception.SchemaChangeException;
 import org.apache.drill.exec.expr.DrillSimpleFunc;
 import org.apache.drill.exec.expr.annotations.FunctionTemplate;
 import org.apache.drill.exec.expr.annotations.Output;
@@ -60,7 +61,11 @@ public class Mappify {
     }
 
     public void eval() {
-      buffer = org.apache.drill.exec.expr.fn.impl.MappifyUtility.mappify(reader, writer, buffer);
+      try {
+        buffer = org.apache.drill.exec.expr.fn.impl.MappifyUtility.mappify(reader, writer, buffer);
+      } catch (SchemaChangeException e) {
+        throw new IllegalArgumentException(e);
+      }
     }
   }
 }

@@ -42,9 +42,9 @@ public interface BaseWriter extends Positionable{
     <#assign upperName = minor.class?upper_case />
     <#assign capName = minor.class?cap_first />
     <#if minor.class?starts_with("Decimal") >
-    ${capName}Writer ${lowerName}(String name, int scale, int precision);
+    ${capName}Writer ${lowerName}(String name, int scale, int precision) throws SchemaChangeException;
     </#if>
-    ${capName}Writer ${lowerName}(String name);
+    ${capName}Writer ${lowerName}(String name) throws SchemaChangeException;
     </#list></#list>
     
     void copyReaderToField(String name, FieldReader reader);

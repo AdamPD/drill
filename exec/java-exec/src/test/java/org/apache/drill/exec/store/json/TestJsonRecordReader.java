@@ -154,4 +154,16 @@ public class TestJsonRecordReader extends BaseTestQuery{
       testNoResult("alter session set `store.json.read_numbers_as_double`= false");
     }
   }
+
+  @Test
+  public void testMixedTypes() throws Exception {
+    testBuilder()
+        .sqlQuery("select * from cp.`jsoninput/mixed_types.json`")
+        .unOrdered()
+        .baselineColumns("b", "a", "c")
+        .baselineValues(1L, "test", 3L)
+        .baselineValues(2L, "test2", null)
+        .baselineValues(3L, 2L, null)
+        .build().run();
+  }
 }

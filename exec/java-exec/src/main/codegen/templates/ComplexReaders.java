@@ -115,7 +115,7 @@ public class ${nullMode}${name}ReaderImpl extends AbstractFieldReader {
     impl.vector.copyFromSafe(idx(), impl.idx(), vector);
   }
   
-  public void copyAsField(String name, MapWriter writer){
+  public void copyAsField(String name, MapWriter writer) throws SchemaChangeException{
     ${nullMode}${minor.class?cap_first}WriterImpl impl = (${nullMode}${minor.class?cap_first}WriterImpl) writer.${lowerName}(name);
     impl.vector.copyFromSafe(idx(), impl.idx(), vector);
   }
@@ -163,7 +163,7 @@ public interface ${name}Reader extends BaseReader{
   </#if>  
   public boolean isSet();
   public void copyAsValue(${minor.class}Writer writer);
-  public void copyAsField(String name, ${minor.class}Writer writer);
+  public void copyAsField(String name, ${minor.class}Writer writer) throws SchemaChangeException;
   
 }
 

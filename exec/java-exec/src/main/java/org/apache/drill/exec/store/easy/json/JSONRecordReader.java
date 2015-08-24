@@ -25,6 +25,7 @@ import org.apache.drill.common.exceptions.ExecutionSetupException;
 import org.apache.drill.common.exceptions.UserException;
 import org.apache.drill.common.expression.SchemaPath;
 import org.apache.drill.exec.ExecConstants;
+import org.apache.drill.exec.expr.annotations.Output;
 import org.apache.drill.exec.memory.OutOfMemoryException;
 import org.apache.drill.exec.ops.FragmentContext;
 import org.apache.drill.exec.ops.OperatorContext;
@@ -60,6 +61,7 @@ public class JSONRecordReader extends AbstractRecordReader {
   private OperatorContext operatorContext;
   private final boolean enableAllTextMode;
   private final boolean readNumbersAsDouble;
+  private OutputMutator mutator;
 
   /**
    * Create a JSON Record Reader that uses a file based input stream.
@@ -114,6 +116,7 @@ public class JSONRecordReader extends AbstractRecordReader {
   @Override
   public void setup(final OperatorContext context, final OutputMutator output) throws ExecutionSetupException {
     this.operatorContext = context;
+    mutator = output;
     try{
       if (hadoopPath != null) {
         this.stream = fileSystem.openPossiblyCompressedStream(hadoopPath);
@@ -178,9 +181,12 @@ public class JSONRecordReader extends AbstractRecordReader {
         writer.setPosition(recordCount);
         write = jsonReader.write(writer);
 
-        if(write == ReadState.WRITE_SUCCEED){
+        if(write == ReadState.WRITE_SUCCEED) {
 //          logger.debug("Wrote record.");
           recordCount++;
+        }else if(write == ReadState.NEW_SCHEMA) {
+          //mutator.setNewSchema();
+          break outside;
         }else{
 //          logger.debug("Exiting.");
           break outside;

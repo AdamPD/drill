@@ -84,12 +84,12 @@ abstract class AbstractFieldWriter extends AbstractBaseWriter implements FieldWr
   <#assign upperName = minor.class?upper_case />
   <#assign capName = minor.class?cap_first />
   <#if minor.class?starts_with("Decimal") >
-  public ${capName}Writer ${lowerName}(String name, int scale, int precision) {
+  public ${capName}Writer ${lowerName}(String name, int scale, int precision) throws SchemaChangeException {
     fail("${capName}");
     return null;
   }
   </#if>
-  public ${capName}Writer ${lowerName}(String name) {
+  public ${capName}Writer ${lowerName}(String name) throws SchemaChangeException {
     fail("${capName}");
     return null;
   }

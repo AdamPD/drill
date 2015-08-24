@@ -17,6 +17,7 @@
  */
 package org.apache.drill.exec.vector.complex.fn;
 
+import com.fasterxml.jackson.databind.util.TokenBuffer;
 import io.netty.buffer.DrillBuf;
 
 import java.io.IOException;
@@ -26,9 +27,11 @@ import java.util.List;
 import org.apache.drill.common.exceptions.UserException;
 import org.apache.drill.common.expression.PathSegment;
 import org.apache.drill.common.expression.SchemaPath;
+import org.apache.drill.exec.exception.SchemaChangeException;
 import org.apache.drill.exec.physical.base.GroupScan;
 import org.apache.drill.exec.store.easy.json.JsonProcessor;
 import org.apache.drill.exec.store.easy.json.reader.BaseJsonProcessor;
+import org.apache.drill.exec.store.ischema.Records;
 import org.apache.drill.exec.vector.complex.fn.VectorOutput.ListVectorOutput;
 import org.apache.drill.exec.vector.complex.fn.VectorOutput.MapVectorOutput;
 import org.apache.drill.exec.vector.complex.writer.BaseWriter;
@@ -56,6 +59,7 @@ public class JsonReader extends BaseJsonProcessor {
   private final ListVectorOutput listOutput;
   private final boolean extended = true;
   private final boolean readNumbersAsDouble;
+  private TokenBuffer cache;
 
   /**
    * Describes whether or not this reader can unwrap a single root array record and treat it like a set of distinct records.
@@ -92,7 +96,7 @@ public class JsonReader extends BaseJsonProcessor {
   }
 
   @Override
-  public void ensureAtLeastOneField(ComplexWriter writer) {
+  public void ensureAtLeastOneField(ComplexWriter writer) throws SchemaChangeException {
     if (!atLeastOneWrite) {
       // if we had no columns, create one empty one so we can return some data for count purposes.
       SchemaPath sp = columns.get(0);
@@ -134,23 +138,33 @@ public class JsonReader extends BaseJsonProcessor {
   }
 
   @Override
-  public ReadState write(ComplexWriter writer) throws IOException {
-    JsonToken t = parser.nextToken();
+  public ReadState write(ComplexWriter writer) throws IOException, SchemaChangeException {
+    ReadState readState;
+    if (cache != null) {
+      try {
+        readState = writeToVector(writer, cache.firstToken());
+      } finally {
+        cache.close();
+        cache = null;
+      }
+    } else {
+      JsonToken t = parser.nextToken();
 
-    while (!parser.hasCurrentToken() && !parser.isClosed()) {
-      t = parser.nextToken();
+      while (!parser.hasCurrentToken() && !parser.isClosed()) {
+        t = parser.nextToken();
+      }
+
+      if (parser.isClosed()) {
+        return ReadState.END_OF_STREAM;
+      }
+
+      readState = writeToVector(writer, t);
     }
-
-    if (parser.isClosed()) {
-      return ReadState.END_OF_STREAM;
-    }
-
-    ReadState readState = writeToVector(writer, t);
 
     switch (readState) {
     case END_OF_STREAM:
-      break;
     case WRITE_SUCCEED:
+    case NEW_SCHEMA:
       break;
     default:
       throw
@@ -176,11 +190,10 @@ public class JsonReader extends BaseJsonProcessor {
     }
   }
 
-  private ReadState writeToVector(ComplexWriter writer, JsonToken t) throws IOException {
+  private ReadState writeToVector(ComplexWriter writer, JsonToken t) throws IOException, SchemaChangeException {
     switch (t) {
     case START_OBJECT:
-      writeDataSwitch(writer.rootAsMap());
-      break;
+      return writeDataSwitch(writer.rootAsMap());
     case START_ARRAY:
       if(inOuterList){
         throw
@@ -237,15 +250,32 @@ public class JsonReader extends BaseJsonProcessor {
 
   }
 
-  private void writeDataSwitch(MapWriter w) throws IOException {
-    if (this.allTextMode) {
-      writeDataAllText(w, this.selection, true);
-    } else {
-      writeData(w, this.selection, true);
+  private ReadState writeDataSwitch(MapWriter w) throws IOException, SchemaChangeException {
+    TokenBuffer buffer = cache != null ? cache : new TokenBuffer(parser);
+    try {
+      buffer.copyCurrentStructure(parser);
+      JsonParser bufferParser = buffer.asParser();
+      bufferParser.nextToken();
+
+      if (this.allTextMode) {
+        writeDataAllText(bufferParser, w, this.selection, true);
+      } else {
+        try {
+          writeData(bufferParser, w, this.selection, true);
+        } catch (SchemaChangeException e) {
+          cache = buffer;
+          return ReadState.NEW_SCHEMA;
+        }
+      }
+    } finally {
+      if (cache != buffer) {
+        buffer.close();
+      }
     }
+    return ReadState.WRITE_SUCCEED;
   }
 
-  private void writeDataSwitch(ListWriter w) throws IOException {
+  private void writeDataSwitch(ListWriter w) throws IOException, SchemaChangeException {
     if (this.allTextMode) {
       writeDataAllText(w);
     } else {
@@ -253,7 +283,7 @@ public class JsonReader extends BaseJsonProcessor {
     }
   }
 
-  private void consumeEntireNextValue() throws IOException {
+  private void consumeEntireNextValue(JsonParser parser) throws IOException {
     switch (parser.nextToken()) {
     case START_ARRAY:
     case START_OBJECT:
@@ -275,7 +305,7 @@ public class JsonReader extends BaseJsonProcessor {
    *          should start with the next token and ignore the current one.
    * @throws IOException
    */
-  private void writeData(MapWriter map, FieldSelection selection, boolean moveForward) throws IOException {
+  private void writeData(JsonParser parser, MapWriter map, FieldSelection selection, boolean moveForward) throws IOException, SchemaChangeException {
     //
     map.start();
     outside: while (true) {
@@ -298,7 +328,7 @@ public class JsonReader extends BaseJsonProcessor {
       this.currentFieldName = fieldName;
       FieldSelection childSelection = selection.getChild(fieldName);
       if (childSelection.isNeverValid()) {
-        consumeEntireNextValue();
+        consumeEntireNextValue(parser);
         continue outside;
       }
 
@@ -307,8 +337,8 @@ public class JsonReader extends BaseJsonProcessor {
         writeData(map.list(fieldName));
         break;
       case START_OBJECT:
-        if (!writeMapDataIfTyped(map, fieldName)) {
-          writeData(map.map(fieldName), childSelection, false);
+        if (!writeMapDataIfTyped(parser, map, fieldName)) {
+          writeData(parser, map.map(fieldName), childSelection, false);
         }
         break;
       case END_OBJECT:
@@ -358,7 +388,7 @@ public class JsonReader extends BaseJsonProcessor {
 
   }
 
-  private void writeDataAllText(MapWriter map, FieldSelection selection, boolean moveForward) throws IOException {
+  private void writeDataAllText(JsonParser parser, MapWriter map, FieldSelection selection, boolean moveForward) throws IOException, SchemaChangeException {
     //
     map.start();
     outside: while (true) {
@@ -383,7 +413,7 @@ public class JsonReader extends BaseJsonProcessor {
       this.currentFieldName = fieldName;
       FieldSelection childSelection = selection.getChild(fieldName);
       if (childSelection.isNeverValid()) {
-        consumeEntireNextValue();
+        consumeEntireNextValue(parser);
         continue outside;
       }
 
@@ -392,8 +422,8 @@ public class JsonReader extends BaseJsonProcessor {
         writeDataAllText(map.list(fieldName));
         break;
       case START_OBJECT:
-        if (!writeMapDataIfTyped(map, fieldName)) {
-          writeDataAllText(map.map(fieldName), childSelection, false);
+        if (!writeMapDataIfTyped(parser, map, fieldName)) {
+          writeDataAllText(parser, map.map(fieldName), childSelection, false);
         }
         break;
       case END_OBJECT:
@@ -431,7 +461,7 @@ public class JsonReader extends BaseJsonProcessor {
    * @return
    * @throws IOException
    */
-  private boolean writeMapDataIfTyped(MapWriter writer, String fieldName) throws IOException {
+  private boolean writeMapDataIfTyped(JsonParser parser, MapWriter writer, String fieldName) throws IOException, SchemaChangeException {
     if (extended) {
       atLeastOneWrite = true;
       return mapOutput.run(writer, fieldName);
@@ -447,7 +477,7 @@ public class JsonReader extends BaseJsonProcessor {
    * @return
    * @throws IOException
    */
-  private boolean writeListDataIfTyped(ListWriter writer) throws IOException {
+  private boolean writeListDataIfTyped(JsonParser parser, ListWriter writer) throws IOException, SchemaChangeException {
     if (extended) {
       atLeastOneWrite = true;
       return listOutput.run(writer);
@@ -457,7 +487,7 @@ public class JsonReader extends BaseJsonProcessor {
     }
   }
 
-  private void handleString(JsonParser parser, MapWriter writer, String fieldName) throws IOException {
+  private void handleString(JsonParser parser, MapWriter writer, String fieldName) throws IOException, SchemaChangeException {
     writer.varChar(fieldName).writeVarChar(0, workingBuffer.prepareVarCharHolder(parser.getText()),
         workingBuffer.getBuf());
   }
@@ -475,8 +505,8 @@ public class JsonReader extends BaseJsonProcessor {
         writeData(list.list());
         break;
       case START_OBJECT:
-        if (!writeListDataIfTyped(list)) {
-          writeData(list.map(), FieldSelection.ALL_VALID, false);
+        if (!writeListDataIfTyped(parser, list)) {
+          writeData(parser, list.map(), FieldSelection.ALL_VALID, false);
         }
         break;
       case END_ARRAY:
@@ -530,7 +560,7 @@ public class JsonReader extends BaseJsonProcessor {
 
   }
 
-  private void writeDataAllText(ListWriter list) throws IOException {
+  private void writeDataAllText(ListWriter list) throws IOException, SchemaChangeException {
     list.start();
     outside: while (true) {
 
@@ -539,8 +569,8 @@ public class JsonReader extends BaseJsonProcessor {
         writeDataAllText(list.list());
         break;
       case START_OBJECT:
-        if (!writeListDataIfTyped(list)) {
-          writeDataAllText(list.map(), FieldSelection.ALL_VALID, false);
+        if (!writeListDataIfTyped(parser, list)) {
+          writeDataAllText(parser, list.map(), FieldSelection.ALL_VALID, false);
         }
         break;
       case END_ARRAY:

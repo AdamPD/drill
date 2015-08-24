@@ -18,6 +18,7 @@
 package org.apache.drill.exec.store.parquet2;
 
 import org.apache.drill.common.expression.SchemaPath;
+import org.apache.drill.exec.exception.SchemaChangeException;
 import org.apache.drill.exec.physical.impl.OutputMutator;
 import org.apache.drill.exec.server.options.OptionManager;
 import org.apache.drill.exec.vector.complex.writer.BaseWriter.ComplexWriter;
@@ -35,7 +36,7 @@ public class DrillParquetRecordMaterializer extends RecordMaterializer<Boolean> 
   private ComplexWriter complexWriter;
 
   public DrillParquetRecordMaterializer(OutputMutator mutator, ComplexWriter complexWriter, MessageType schema,
-                                        Collection<SchemaPath> columns, OptionManager options) {
+                                        Collection<SchemaPath> columns, OptionManager options) throws SchemaChangeException {
     this.complexWriter = complexWriter;
     root = new DrillParquetGroupConverter(mutator, complexWriter.rootAsMap(), schema, columns, options);
   }

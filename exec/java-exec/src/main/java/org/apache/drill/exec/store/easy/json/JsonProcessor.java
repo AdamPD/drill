@@ -21,6 +21,7 @@ import java.io.IOException;
 import java.io.InputStream;
 
 import org.apache.drill.common.exceptions.UserException;
+import org.apache.drill.exec.exception.SchemaChangeException;
 import org.apache.drill.exec.proto.UserBitShared;
 import org.apache.drill.exec.vector.complex.writer.BaseWriter;
 
@@ -30,15 +31,16 @@ public interface JsonProcessor {
 
   public static enum ReadState {
     END_OF_STREAM,
+    NEW_SCHEMA,
     WRITE_SUCCEED
   }
 
-  ReadState write(BaseWriter.ComplexWriter writer) throws IOException;
+  ReadState write(BaseWriter.ComplexWriter writer) throws IOException, SchemaChangeException;
 
   void setSource(InputStream is) throws IOException;
   void setSource(JsonNode node);
 
-  void ensureAtLeastOneField(BaseWriter.ComplexWriter writer);
+  void ensureAtLeastOneField(BaseWriter.ComplexWriter writer) throws SchemaChangeException;
 
   public UserException.Builder getExceptionWithContext(UserException.Builder exceptionBuilder,
                                                        String field,

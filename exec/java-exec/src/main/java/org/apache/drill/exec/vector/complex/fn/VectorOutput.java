@@ -19,6 +19,7 @@ package org.apache.drill.exec.vector.complex.fn;
 
 import java.io.IOException;
 
+import org.apache.drill.exec.exception.SchemaChangeException;
 import org.apache.drill.exec.expr.fn.impl.DateUtility;
 import org.apache.drill.exec.expr.fn.impl.StringFunctionHelpers;
 import org.apache.drill.exec.expr.holders.BigIntHolder;
@@ -72,7 +73,7 @@ abstract class VectorOutput {
     this.parser = parser;
   }
 
-  protected boolean innerRun() throws IOException{
+  protected boolean innerRun() throws IOException, SchemaChangeException{
     JsonToken t = parser.nextToken();
     if(t != JsonToken.FIELD_NAME){
       return false;
@@ -159,13 +160,13 @@ abstract class VectorOutput {
     }
   }
 
-  public abstract void writeBinary(boolean isNull) throws IOException;
-  public abstract void writeDate(boolean isNull) throws IOException;
-  public abstract void writeTime(boolean isNull) throws IOException;
-  public abstract void writeTimestamp(boolean isNull) throws IOException;
-  public abstract void writeInterval(boolean isNull) throws IOException;
-  public abstract void writeInteger(boolean isNull) throws IOException;
-  public abstract void writeDecimal(boolean isNull) throws IOException;
+  public abstract void writeBinary(boolean isNull) throws IOException, SchemaChangeException;
+  public abstract void writeDate(boolean isNull) throws IOException, SchemaChangeException;
+  public abstract void writeTime(boolean isNull) throws IOException, SchemaChangeException;
+  public abstract void writeTimestamp(boolean isNull) throws IOException, SchemaChangeException;
+  public abstract void writeInterval(boolean isNull) throws IOException, SchemaChangeException;
+  public abstract void writeInteger(boolean isNull) throws IOException, SchemaChangeException;
+  public abstract void writeDecimal(boolean isNull) throws IOException, SchemaChangeException;
 
   static class ListVectorOutput extends VectorOutput{
     private ListWriter writer;
@@ -174,7 +175,7 @@ abstract class VectorOutput {
       super(work);
     }
 
-    public boolean run(ListWriter writer) throws IOException{
+    public boolean run(ListWriter writer) throws IOException, SchemaChangeException{
       this.writer = writer;
       return innerRun();
     }
@@ -266,14 +267,14 @@ abstract class VectorOutput {
       super(work);
     }
 
-    public boolean run(MapWriter writer, String fieldName) throws IOException{
+    public boolean run(MapWriter writer, String fieldName) throws IOException, SchemaChangeException{
       this.fieldName = fieldName;
       this.writer = writer;
       return innerRun();
     }
 
     @Override
-    public void writeBinary(boolean isNull) throws IOException {
+    public void writeBinary(boolean isNull) throws IOException, SchemaChangeException {
       VarBinaryWriter bin = writer.varBinary(fieldName);
       if(!isNull){
         byte[] binaryData = parser.getBinaryValue();
@@ -287,7 +288,7 @@ abstract class VectorOutput {
     }
 
     @Override
-    public void writeDate(boolean isNull) throws IOException {
+    public void writeDate(boolean isNull) throws IOException, SchemaChangeException {
       DateWriter dt = writer.date(fieldName);
       if(!isNull){
         DateTimeFormatter f = ISODateTimeFormat.date();
@@ -297,7 +298,7 @@ abstract class VectorOutput {
     }
 
     @Override
-    public void writeTime(boolean isNull) throws IOException {
+    public void writeTime(boolean isNull) throws IOException, SchemaChangeException {
       TimeWriter t = writer.time(fieldName);
       if(!isNull){
         DateTimeFormatter f = ISODateTimeFormat.time();
@@ -306,7 +307,7 @@ abstract class VectorOutput {
     }
 
     @Override
-    public void writeTimestamp(boolean isNull) throws IOException {
+    public void writeTimestamp(boolean isNull) throws IOException, SchemaChangeException {
       TimeStampWriter ts = writer.timeStamp(fieldName);
       if(!isNull){
         switch (parser.getCurrentToken()) {
@@ -325,7 +326,7 @@ abstract class VectorOutput {
     }
 
     @Override
-    public void writeInterval(boolean isNull) throws IOException {
+    public void writeInterval(boolean isNull) throws IOException, SchemaChangeException {
       IntervalWriter intervalWriter = writer.interval(fieldName);
       if(!isNull){
         final Period p = ISOPeriodFormat.standard().parsePeriod(parser.getValueAsString());
@@ -337,7 +338,7 @@ abstract class VectorOutput {
     }
 
     @Override
-    public void writeInteger(boolean isNull) throws IOException {
+    public void writeInteger(boolean isNull) throws IOException, SchemaChangeException {
       BigIntWriter intWriter = writer.bigInt(fieldName);
       if(!isNull){
         intWriter.writeBigInt(parser.getLongValue());

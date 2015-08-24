@@ -37,6 +37,7 @@ import org.apache.drill.common.exceptions.DrillRuntimeException;
 import org.apache.drill.common.exceptions.ExecutionSetupException;
 import org.apache.drill.common.expression.PathSegment;
 import org.apache.drill.common.expression.SchemaPath;
+import org.apache.drill.exec.exception.SchemaChangeException;
 import org.apache.drill.exec.expr.holders.BigIntHolder;
 import org.apache.drill.exec.expr.holders.BitHolder;
 import org.apache.drill.exec.expr.holders.Float4Holder;
@@ -107,7 +108,7 @@ public class AvroRecordReader extends AbstractRecordReader {
   }
 
   @Override
-  public int next() {
+  public int next() throws SchemaChangeException {
     final Stopwatch watch = new Stopwatch().start();
 
     if (reader == null) {
@@ -141,7 +142,7 @@ public class AvroRecordReader extends AbstractRecordReader {
     return recordCount;
   }
 
-  private void processRecord(final GenericContainer container, final Schema schema) {
+  private void processRecord(final GenericContainer container, final Schema schema) throws SchemaChangeException {
 
     final Schema.Type type = schema.getType();
 
@@ -154,7 +155,7 @@ public class AvroRecordReader extends AbstractRecordReader {
     }
   }
 
-  private void process(final Object value, final Schema schema, final String fieldName, final MapOrListWriter writer) {
+  private void process(final Object value, final Schema schema, final String fieldName, final MapOrListWriter writer) throws SchemaChangeException {
 
     writer.start();
     final Schema.Type type = schema.getType();
@@ -208,7 +209,7 @@ public class AvroRecordReader extends AbstractRecordReader {
   }
 
   private void processPrimitive(final Object value, final Schema.Type type, final String fieldName,
-                                final MapOrListWriter writer) {
+                                final MapOrListWriter writer) throws SchemaChangeException {
 
     switch (type) {
       case STRING:

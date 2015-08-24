@@ -17,6 +17,7 @@
  */
 package org.apache.drill.exec.store.avro;
 
+import org.apache.drill.exec.exception.SchemaChangeException;
 import org.apache.drill.exec.vector.complex.writer.BaseWriter;
 import org.apache.drill.exec.vector.complex.writer.BigIntWriter;
 import org.apache.drill.exec.vector.complex.writer.BitWriter;
@@ -75,31 +76,31 @@ public class MapOrListWriter {
     return map != null;
   }
 
-  VarCharWriter varChar(final String name) {
+  VarCharWriter varChar(final String name) throws SchemaChangeException {
     return (map != null) ? map.varChar(name) : list.varChar();
   }
 
-  IntWriter integer(final String name) {
+  IntWriter integer(final String name) throws SchemaChangeException {
     return (map != null) ? map.integer(name) : list.integer();
   }
 
-  BigIntWriter bigInt(final String name) {
+  BigIntWriter bigInt(final String name) throws SchemaChangeException {
     return (map != null) ? map.bigInt(name) : list.bigInt();
   }
 
-  Float4Writer float4(final String name) {
+  Float4Writer float4(final String name) throws SchemaChangeException {
     return (map != null) ? map.float4(name) : list.float4();
   }
 
-  Float8Writer float8(final String name) {
+  Float8Writer float8(final String name) throws SchemaChangeException {
     return (map != null) ? map.float8(name) : list.float8();
   }
 
-  BitWriter bit(final String name) {
+  BitWriter bit(final String name) throws SchemaChangeException {
     return (map != null) ? map.bit(name) : list.bit();
   }
 
-  VarBinaryWriter binary(final String name) {
+  VarBinaryWriter binary(final String name) throws SchemaChangeException {
     return (map != null) ? map.varBinary(name) : list.varBinary();
   }
 }
