@@ -21,6 +21,7 @@ import java.io.IOException;
 
 import com.fasterxml.jackson.core.JsonToken;
 import io.netty.buffer.DrillBuf;
+import org.apache.drill.exec.exception.SchemaChangeException;
 import org.apache.drill.exec.store.easy.json.JsonProcessor;
 import org.apache.drill.exec.vector.complex.writer.BaseWriter;
 
@@ -31,7 +32,7 @@ public class CountingJsonReader extends BaseJsonProcessor {
   }
 
   @Override
-  public ReadState write(BaseWriter.ComplexWriter writer) throws IOException {
+  public ReadState write(BaseWriter.ComplexWriter writer) throws IOException, SchemaChangeException {
     final JsonToken token = parser.nextToken();
     if (!parser.hasCurrentToken()) {
       return ReadState.END_OF_STREAM;

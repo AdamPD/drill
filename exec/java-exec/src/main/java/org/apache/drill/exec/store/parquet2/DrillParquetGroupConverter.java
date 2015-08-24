@@ -28,6 +28,7 @@ import java.util.List;
 import org.apache.drill.common.exceptions.UserException;
 import org.apache.drill.common.expression.PathSegment;
 import org.apache.drill.common.expression.SchemaPath;
+import org.apache.drill.exec.exception.SchemaChangeException;
 import org.apache.drill.exec.expr.holders.BigIntHolder;
 import org.apache.drill.exec.expr.holders.BitHolder;
 import org.apache.drill.exec.expr.holders.DateHolder;
@@ -90,13 +91,13 @@ public class DrillParquetGroupConverter extends GroupConverter {
   private final OutputMutator mutator;
   private final OptionManager options;
 
-  public DrillParquetGroupConverter(OutputMutator mutator, ComplexWriterImpl complexWriter, MessageType schema, Collection<SchemaPath> columns, OptionManager options) {
+  public DrillParquetGroupConverter(OutputMutator mutator, ComplexWriterImpl complexWriter, MessageType schema, Collection<SchemaPath> columns, OptionManager options) throws SchemaChangeException {
     this(mutator, complexWriter.rootAsMap(), schema, columns, options);
   }
 
   // This function assumes that the fields in the schema parameter are in the same order as the fields in the columns parameter. The
   // columns parameter may have fields that are not present in the schema, though.
-  public DrillParquetGroupConverter(OutputMutator mutator, MapWriter mapWriter, GroupType schema, Collection<SchemaPath> columns, OptionManager options) {
+  public DrillParquetGroupConverter(OutputMutator mutator, MapWriter mapWriter, GroupType schema, Collection<SchemaPath> columns, OptionManager options) throws SchemaChangeException {
     this.mapWriter = mapWriter;
     this.mutator = mutator;
     converters = Lists.newArrayList();
@@ -159,7 +160,7 @@ public class DrillParquetGroupConverter extends GroupConverter {
     }
   }
 
-  private PrimitiveConverter getConverterForType(String name, PrimitiveType type) {
+  private PrimitiveConverter getConverterForType(String name, PrimitiveType type) throws SchemaChangeException {
 
     switch(type.getPrimitiveTypeName()) {
       case INT32: {

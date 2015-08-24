@@ -20,6 +20,7 @@ package org.apache.drill.exec.vector.complex.writer;
 import java.io.ByteArrayOutputStream;
 import java.io.IOException;
 
+import org.apache.drill.exec.exception.SchemaChangeException;
 import org.apache.drill.exec.expr.holders.BigIntHolder;
 import org.apache.drill.exec.expr.holders.IntHolder;
 import org.apache.drill.exec.memory.BufferAllocator;
@@ -112,7 +113,7 @@ public class TestRepeated {
 //  }
 
   @Test
-  public void listOfList() throws IOException {
+  public void listOfList() throws IOException, SchemaChangeException {
     /**
      * We're going to try to create an object that looks like:
      *

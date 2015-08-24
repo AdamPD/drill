@@ -22,6 +22,7 @@ import org.apache.drill.common.types.TypeProtos;
 import org.apache.drill.common.types.TypeProtos.MinorType;
 import org.apache.drill.common.types.TypeProtos.MajorType;
 
+import org.apache.drill.exec.exception.SchemaChangeException;
 import org.apache.drill.exec.expr.fn.impl.MappifyUtility;
 import org.apache.drill.exec.record.MaterializedField;
 import org.apache.drill.exec.vector.complex.reader.FieldReader;
@@ -35,7 +36,7 @@ public class MapUtility {
    * and use the value holder to write to the Map.
    */
   // TODO : This should be templatized and generated using freemarker
-  public static void writeToMapFromReader(FieldReader fieldReader, BaseWriter.MapWriter mapWriter) {
+  public static void writeToMapFromReader(FieldReader fieldReader, BaseWriter.MapWriter mapWriter) throws SchemaChangeException {
     try {
       MajorType valueMajorType = fieldReader.getType();
       MinorType valueMinorType = valueMajorType.getMinorType();

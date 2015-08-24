@@ -24,6 +24,7 @@ import org.apache.drill.common.types.TypeProtos.DataMode;
 //import org.apache.drill.common.types.DataMode;
 import org.apache.drill.common.types.MinorType;
 import org.apache.drill.common.types.TypeProtos;
+import org.apache.drill.exec.exception.SchemaChangeException;
 import org.apache.drill.exec.expr.holders.VarCharHolder;
 import org.apache.drill.exec.vector.complex.MapUtility;
 import org.apache.drill.exec.vector.complex.impl.SingleMapReaderImpl;
@@ -40,7 +41,7 @@ public class MappifyUtility {
   public static final String fieldKey = "key";
   public static final String fieldValue = "value";
 
-  public static DrillBuf mappify(FieldReader reader, BaseWriter.ComplexWriter writer, DrillBuf buffer) {
+  public static DrillBuf mappify(FieldReader reader, BaseWriter.ComplexWriter writer, DrillBuf buffer) throws SchemaChangeException {
     // Currently we expect single map as input
     if (DataMode.REPEATED == reader.getType().getMode() || !(reader.getType().getMinorType() == TypeProtos.MinorType.MAP)) {
       throw new DrillRuntimeException("kvgen function only supports Simple maps as input");
