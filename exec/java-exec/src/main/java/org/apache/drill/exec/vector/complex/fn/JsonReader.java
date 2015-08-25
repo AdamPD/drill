@@ -118,15 +118,19 @@ public class JsonReader extends BaseJsonProcessor {
   @Override
   public void setSource(InputStream is) throws IOException {
     super.setSource(is);
-    mapOutput.setParser(parser);
-    listOutput.setParser(parser);
+    if (cache != null) {
+      cache.close();
+      cache = null;
+    }
   }
 
   @Override
-  public void setSource(JsonNode node) {
+  public void setSource(JsonNode node) throws IOException {
     super.setSource(node);
-    mapOutput.setParser(parser);
-    listOutput.setParser(parser);
+    if (cache != null) {
+      cache.close();
+      cache = null;
+    }
   }
 
   public void setSource(String data) throws IOException {

@@ -38,7 +38,7 @@ public interface JsonProcessor {
   ReadState write(BaseWriter.ComplexWriter writer) throws IOException, SchemaChangeException;
 
   void setSource(InputStream is) throws IOException;
-  void setSource(JsonNode node);
+  void setSource(JsonNode node) throws IOException;
 
   void ensureAtLeastOneField(BaseWriter.ComplexWriter writer) throws SchemaChangeException;
 

@@ -35,6 +35,7 @@ import org.apache.drill.exec.ops.FragmentContext;
 import org.apache.drill.exec.ops.OperatorContext;
 import org.apache.drill.exec.physical.impl.OutputMutator;
 import org.apache.drill.exec.store.AbstractRecordReader;
+import org.apache.drill.exec.store.easy.json.JsonProcessor;
 import org.apache.drill.exec.vector.BaseValueVector;
 import org.apache.drill.exec.vector.complex.fn.JsonReader;
 import org.apache.drill.exec.vector.complex.impl.VectorContainerWriter;
@@ -72,6 +73,8 @@ public class MongoRecordReader extends AbstractRecordReader {
 
   private final boolean enableAllTextMode;
   private final boolean readNumbersAsDouble;
+
+  private String cachedDoc;
 
   public MongoRecordReader(
       MongoSubScan.MongoSubScanSpec subScanSpec,
@@ -167,11 +170,24 @@ public class MongoRecordReader extends AbstractRecordReader {
     watch.start();
 
     try {
-      while (docCount < BaseValueVector.INITIAL_VALUE_ALLOCATION && cursor.hasNext()) {
+      while (cachedDoc != null) {
         writer.setPosition(docCount);
-        String doc = JSONSerializers.getStrict().serialize(cursor.next());
-        jsonReader.setSource(doc.getBytes(Charsets.UTF_8));
-        jsonReader.write(writer);
+        jsonReader.setSource(cachedDoc.getBytes(Charsets.UTF_8));
+        if (jsonReader.write(writer) == JsonProcessor.ReadState.NEW_SCHEMA) {
+          continue;
+        }
+        cachedDoc = null;
+        docCount++;
+      }
+
+      outside: while (docCount < BaseValueVector.INITIAL_VALUE_ALLOCATION && cursor.hasNext()) {
+        writer.setPosition(docCount);
+        cachedDoc = JSONSerializers.getStrict().serialize(cursor.next());
+        jsonReader.setSource(cachedDoc.getBytes(Charsets.UTF_8));
+        if (jsonReader.write(writer) == JsonProcessor.ReadState.NEW_SCHEMA) {
+          break outside;
+        }
+        cachedDoc = null;
         docCount++;
       }
 
