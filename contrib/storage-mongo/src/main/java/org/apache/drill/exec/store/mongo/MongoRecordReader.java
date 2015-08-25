@@ -30,6 +30,7 @@ import org.apache.drill.common.exceptions.DrillRuntimeException;
 import org.apache.drill.common.exceptions.ExecutionSetupException;
 import org.apache.drill.common.expression.SchemaPath;
 import org.apache.drill.exec.ExecConstants;
+import org.apache.drill.exec.exception.SchemaChangeException;
 import org.apache.drill.exec.ops.FragmentContext;
 import org.apache.drill.exec.ops.OperatorContext;
 import org.apache.drill.exec.physical.impl.OutputMutator;
@@ -150,7 +151,7 @@ public class MongoRecordReader extends AbstractRecordReader {
   }
 
   @Override
-  public int next() {
+  public int next() throws SchemaChangeException {
     if(cursor == null){
       logger.info("Filters Applied : " + filters);
       logger.info("Fields Selected :" + fields);
