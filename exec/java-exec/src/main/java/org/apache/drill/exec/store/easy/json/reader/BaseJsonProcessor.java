@@ -50,7 +50,7 @@ public abstract class BaseJsonProcessor implements JsonProcessor {
   }
 
   @Override
-  public void setSource(JsonNode node) {
+  public void setSource(JsonNode node) throws IOException {
     this.parser = new TreeTraversingParser(node);
   }
 

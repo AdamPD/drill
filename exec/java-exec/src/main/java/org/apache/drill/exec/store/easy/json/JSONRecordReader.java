@@ -185,7 +185,6 @@ public class JSONRecordReader extends AbstractRecordReader {
 //          logger.debug("Wrote record.");
           recordCount++;
         }else if(write == ReadState.NEW_SCHEMA) {
-          //mutator.setNewSchema();
           break outside;
         }else{
 //          logger.debug("Exiting.");
