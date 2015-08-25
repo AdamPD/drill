@@ -251,11 +251,19 @@ public class JsonReader extends BaseJsonProcessor {
   }
 
   private ReadState writeDataSwitch(MapWriter w) throws IOException, SchemaChangeException {
-    TokenBuffer buffer = cache != null ? cache : new TokenBuffer(parser);
-    try {
+    TokenBuffer buffer;
+    if (cache != null) {
+      buffer = cache;
+    } else {
+      buffer = new TokenBuffer(parser);
       buffer.copyCurrentStructure(parser);
+    }
+    try {
       JsonParser bufferParser = buffer.asParser();
       bufferParser.nextToken();
+
+      mapOutput.setParser(bufferParser);
+      listOutput.setParser(bufferParser);
 
       if (this.allTextMode) {
         writeDataAllText(bufferParser, w, this.selection, true);
