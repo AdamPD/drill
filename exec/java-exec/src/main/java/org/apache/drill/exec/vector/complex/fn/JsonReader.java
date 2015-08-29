@@ -223,7 +223,7 @@ public class JsonReader extends BaseJsonProcessor {
         }
 
       }else{
-        writeDataSwitch(writer.rootAsList());
+        writeDataSwitch(parser, writer.rootAsList());
       }
       break;
     case END_ARRAY:
@@ -287,11 +287,11 @@ public class JsonReader extends BaseJsonProcessor {
     return ReadState.WRITE_SUCCEED;
   }
 
-  private void writeDataSwitch(ListWriter w) throws IOException, SchemaChangeException {
+  private void writeDataSwitch(JsonParser parser, ListWriter w) throws IOException, SchemaChangeException {
     if (this.allTextMode) {
       writeDataAllText(w);
     } else {
-      writeData(w);
+      writeData(parser, w);
     }
   }
 
@@ -346,7 +346,7 @@ public class JsonReader extends BaseJsonProcessor {
 
       switch (parser.nextToken()) {
       case START_ARRAY:
-        writeData(map.list(fieldName));
+        writeData(parser, map.list(fieldName));
         break;
       case START_OBJECT:
         if (!writeMapDataIfTyped(parser, map, fieldName)) {
@@ -508,13 +508,13 @@ public class JsonReader extends BaseJsonProcessor {
     writer.varChar().writeVarChar(0, workingBuffer.prepareVarCharHolder(parser.getText()), workingBuffer.getBuf());
   }
 
-  private void writeData(ListWriter list) throws IOException {
+  private void writeData(JsonParser parser, ListWriter list) throws IOException {
     list.start();
     outside: while (true) {
       try {
       switch (parser.nextToken()) {
       case START_ARRAY:
-        writeData(list.list());
+        writeData(parser, list.list());
         break;
       case START_OBJECT:
         if (!writeListDataIfTyped(parser, list)) {
