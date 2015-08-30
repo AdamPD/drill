@@ -50,8 +50,9 @@ public class SingleMapReaderImpl extends AbstractFieldReader{
   @Override
   public FieldReader reader(String name){
     FieldReader reader = fields.get(name);
-    if(reader == null){
-      ValueVector child = vector.getChild(name);
+    ValueVector child = vector.getChild(name);
+    if(reader == null || (child == null && reader != NullReader.INSTANCE) ||
+            (child != null && reader.getField().getType() != child.getField().getType())){
       if(child == null){
         reader = NullReader.INSTANCE;
       }else{

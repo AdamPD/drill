@@ -119,4 +119,44 @@ public class BatchSchema implements Iterable<MaterializedField> {
     return true;
   }
 
+  private static boolean compareFields(MaterializedField[] fields1, MaterializedField[] fields2) {
+    for (int i = 0; i < fields1.length; i++) {
+      if (!fields1[i].getPath().equals(fields2[i].getPath()) ||
+          !fields1[i].getType().equals(fields2[i].getType()) ||
+          fields1[i].getChildren().size() != fields2[i].getChildren().size()) {
+        return false;
+      }
+      if (fields1[i].getChildren().size() > 0 &&
+          !compareFields(fields1[i].getChildren().toArray(new MaterializedField[0]),
+                  fields2[i].getChildren().toArray(new MaterializedField[0]))) {
+        return false;
+      }
+    }
+    return true;
+  }
+
+  public boolean deepEquals(BatchSchema other) {
+    if (this == other) {
+      return true;
+    }
+    if (this == null || other == null) {
+      return false;
+    }
+    if (this.getFieldCount() != other.getFieldCount()) {
+      return false;
+    }
+    if (this.getSelectionVectorMode() != other.getSelectionVectorMode()) {
+      return false;
+    }
+    return compareFields(this.fields.toArray(new MaterializedField[0]),
+            other.fields.toArray(new MaterializedField[0]));
+  }
+
+  public BatchSchema deepClone() {
+    List<MaterializedField> newFields = Lists.newArrayList();
+    for (MaterializedField field : fields) {
+      newFields.add(field.clone());
+    }
+    return new BatchSchema(selectionVectorMode, newFields);
+  }
 }

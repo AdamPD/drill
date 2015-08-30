@@ -143,35 +143,13 @@ public class ParquetRecordWriter extends ParquetOutputRecordWriter {
     enableDictionary = Boolean.parseBoolean(writerOptions.get(ExecConstants.PARQUET_WRITER_ENABLE_DICTIONARY_ENCODING));
   }
 
-  private boolean schemasEqual(BatchSchema schema1, BatchSchema schema2) {
-    if (schema1 == schema2) {
-      return true;
-    }
-    if (schema1 == null || schema2 == null) {
-      return false;
-    }
-    if (schema1.getFieldCount() != schema2.getFieldCount()) {
-      return false;
-    }
-    if (schema1.getSelectionVectorMode() != schema2.getSelectionVectorMode()) {
-      return false;
-    }
-    for (int i = 0; i < schema1.getFieldCount(); i++) {
-      if (!schema1.getColumn(i).getPath().equals(schema2.getColumn(i).getPath()) ||
-          !schema1.getColumn(i).getType().equals(schema2.getColumn(i).getType())) {
-        return false;
-      }
-    }
-    return true;
-  }
-
   @Override
   public void updateSchema(VectorAccessible batch) throws IOException {
-    if (this.batchSchema == null || !schemasEqual(batchSchema, batch.getSchema())) {
+    if (this.batchSchema == null || !this.batchSchema.deepEquals(batch.getSchema())) {
       if (this.batchSchema != null) {
         flush();
       }
-      this.batchSchema = batch.getSchema();
+      this.batchSchema = batch.getSchema().deepClone();
       newSchema();
     }
     TypedFieldId fieldId = batch.getValueVectorId(SchemaPath.getSimplePath(WriterPrel.PARTITION_COMPARATOR_FIELD));
