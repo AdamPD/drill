@@ -340,7 +340,7 @@ public class ParquetGroupScan extends AbstractFileGroupScan {
       }
       for (BlockMetaData rowGroup : blocks) {
         String file = Path.getPathWithoutSchemeAndAuthority(footer.getFile()).toString();
-        fileSet.add(file);
+        fileSet.add(footer.getFile().toString());
         long valueCountInGrp = 0;
         // need to grab block information from HDFS
         columnChunkMetaData = rowGroup.getColumns().iterator().next();
