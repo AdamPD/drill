@@ -17,17 +17,18 @@
  */
 package org.apache.drill;
 
+import static org.apache.drill.TestBuilder.listOf;
 import static org.junit.Assert.assertEquals;
+
+import java.math.BigDecimal;
 
 import org.apache.drill.common.types.TypeProtos;
 import org.apache.drill.common.util.FileUtils;
 import org.apache.drill.common.util.TestTools;
 import org.apache.drill.exec.ExecConstants;
+import org.apache.drill.exec.compile.ClassTransformer;
 import org.junit.Ignore;
 import org.junit.Test;
-
-import java.math.BigDecimal;
-import static org.apache.drill.TestBuilder.listOf;
 
 public class TestExampleQueries extends BaseTestQuery {
 //  private static final org.slf4j.Logger logger = org.slf4j.LoggerFactory.getLogger(TestExampleQueries.class);
@@ -183,10 +184,10 @@ public class TestExampleQueries extends BaseTestQuery {
   @Test
   public void testPushExpInJoinConditionInnerJoin() throws Exception {
     test("select a.n_nationkey from cp.`tpch/nation.parquet` a join cp.`tpch/region.parquet` b " + "" +
-        " on a.n_regionkey + 100  = b.r_regionkey + 200" +      // expressions in both sides of equal join filter
-        "   and (substr(a.n_name,1,3)= 'L1' or substr(a.n_name,2,2) = 'L2') " +  // left filter
-        "   and (substr(b.r_name,1,3)= 'R1' or substr(b.r_name,2,2) = 'R2') " +  // right filter
-        "   and (substr(a.n_name,2,3)= 'L3' or substr(b.r_name,3,2) = 'R3');");  // non-equal join filter
+      " on a.n_regionkey + 100  = b.r_regionkey + 200" +      // expressions in both sides of equal join filter
+      "   and (substr(a.n_name,1,3)= 'L1' or substr(a.n_name,2,2) = 'L2') " +  // left filter
+      "   and (substr(b.r_name,1,3)= 'R1' or substr(b.r_name,2,2) = 'R2') " +  // right filter
+      "   and (substr(a.n_name,2,3)= 'L3' or substr(b.r_name,3,2) = 'R3');");  // non-equal join filter
   }
 
   @Test
@@ -278,6 +279,7 @@ public class TestExampleQueries extends BaseTestQuery {
   }
 
   @Test
+  @Ignore("DRILL-3774")
   public void testTextPartitions() throws Exception {
     String root = FileUtils.getResourceAsFile("/store/text/data/").toURI().toString();
     String query = String.format("select * from dfs_test.`%s`", root);
@@ -421,7 +423,9 @@ public class TestExampleQueries extends BaseTestQuery {
   public void testJoinCondWithDifferentTypes() throws Exception {
     test("select t1.department_description from cp.`department.json` t1, cp.`employee.json` t2 where (cast(t1.department_id as double)) = t2.department_id");
     test("select t1.full_name from cp.`employee.json` t1, cp.`department.json` t2 where cast(t1.department_id as double) = t2.department_id and cast(t1.position_id as bigint) = t2.department_id");
-    test("select t1.full_name from cp.`employee.json` t1, cp.`department.json` t2 where t1.department_id = t2.department_id and t1.position_id = t2.department_id");
+
+    // See DRILL-3995. Re-enable this once fixed.
+//    test("select t1.full_name from cp.`employee.json` t1, cp.`department.json` t2 where t1.department_id = t2.department_id and t1.position_id = t2.department_id");
   }
 
   @Test
@@ -1069,7 +1073,7 @@ public class TestExampleQueries extends BaseTestQuery {
         .unOrdered()
         .sqlBaselineQuery(baseQuery)
         .build()
-        .run();;
+        .run();
 
     // JoinQuery: star + window function
     final String joinQuery =
@@ -1088,7 +1092,106 @@ public class TestExampleQueries extends BaseTestQuery {
         .sqlBaselineQuery(joinBaseQuery)
         .build()
         .run();
-
   }
 
+  @Test // see DRILL-3557
+  public void testEmptyCSVinDirectory() throws Exception {
+    final String root = FileUtils.getResourceAsFile("/store/text/directoryWithEmpyCSV").toURI().toString();
+    final String toFile = FileUtils.getResourceAsFile("/store/text/directoryWithEmpyCSV/empty.csv").toURI().toString();
+
+    String query1 = String.format("explain plan for select * from dfs_test.`%s`", root);
+    String query2 = String.format("explain plan for select * from dfs_test.`%s`", toFile);
+
+    test(query1);
+    test(query2);
+  }
+
+  @Test
+  public void testNegativeExtractOperator() throws Exception {
+    String query = "select -EXTRACT(DAY FROM birth_date) as col \n" +
+        "from cp.`employee.json` \n" +
+        "order by col \n" +
+        "limit 5";
+
+    testBuilder()
+        .sqlQuery(query)
+        .ordered()
+        .baselineColumns("col")
+        .baselineValues(-27l)
+        .baselineValues(-27l)
+        .baselineValues(-27l)
+        .baselineValues(-26l)
+        .baselineValues(-26l)
+        .build()
+        .run();
+  }
+
+  @Test // see DRILL-2313
+  public void testDistinctOverAggFunctionWithGroupBy() throws Exception {
+    String query1 = "select distinct count(distinct n_nationkey) as col from cp.`tpch/nation.parquet` group by n_regionkey order by 1";
+    String query2 = "select distinct count(distinct n_nationkey) as col from cp.`tpch/nation.parquet` group by n_regionkey order by count(distinct n_nationkey)";
+    String query3 = "select distinct sum(n_nationkey) as col from cp.`tpch/nation.parquet` group by n_regionkey order by 1";
+    String query4 = "select distinct sum(n_nationkey) as col from cp.`tpch/nation.parquet` group by n_regionkey order by col";
+
+    testBuilder()
+        .sqlQuery(query1)
+        .unOrdered()
+        .baselineColumns("col")
+        .baselineValues((long) 5)
+        .build()
+        .run();
+
+    testBuilder()
+        .sqlQuery(query2)
+        .unOrdered()
+        .baselineColumns("col")
+        .baselineValues((long) 5)
+        .build()
+        .run();
+
+    testBuilder()
+        .sqlQuery(query3)
+        .ordered()
+        .baselineColumns("col")
+        .baselineValues((long) 47)
+        .baselineValues((long) 50)
+        .baselineValues((long) 58)
+        .baselineValues((long) 68)
+        .baselineValues((long) 77)
+        .build()
+        .run();
+
+    testBuilder()
+        .sqlQuery(query4)
+        .ordered()
+        .baselineColumns("col")
+        .baselineValues((long) 47)
+        .baselineValues((long) 50)
+        .baselineValues((long) 58)
+        .baselineValues((long) 68)
+        .baselineValues((long) 77)
+        .build()
+        .run();
+  }
+
+  @Test // DRILL-2190
+  public void testDateImplicitCasting() throws Exception {
+    String query = "SELECT birth_date \n" +
+        "FROM cp.`employee.json` \n" +
+        "WHERE birth_date BETWEEN '1920-01-01' AND cast('1931-01-01' AS DATE) \n" +
+        "order by birth_date";
+
+    testBuilder()
+        .sqlQuery(query)
+        .unOrdered()
+        .baselineColumns("birth_date")
+        .baselineValues("1920-04-17")
+        .baselineValues("1921-12-04")
+        .baselineValues("1922-08-10")
+        .baselineValues("1926-10-27")
+        .baselineValues("1928-03-20")
+        .baselineValues("1930-01-08")
+        .build()
+        .run();
+  }
 }

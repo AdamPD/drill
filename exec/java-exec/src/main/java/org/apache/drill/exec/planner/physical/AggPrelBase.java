@@ -28,6 +28,7 @@ import org.apache.drill.common.expression.FunctionCall;
 import org.apache.drill.common.expression.LogicalExpression;
 import org.apache.drill.common.expression.ValueExpressions;
 import org.apache.drill.common.logical.data.NamedExpression;
+import org.apache.drill.exec.planner.common.DrillAggregateRelBase;
 import org.apache.drill.exec.planner.physical.visitor.PrelVisitor;
 import org.apache.calcite.rel.core.AggregateCall;
 import org.apache.calcite.rel.core.Aggregate;
@@ -48,7 +49,7 @@ import java.util.Collections;
 import java.util.Iterator;
 import java.util.List;
 
-public abstract class AggPrelBase extends Aggregate implements Prel {
+public abstract class AggPrelBase extends DrillAggregateRelBase implements Prel {
 
   protected static enum OperatorPhase {PHASE_1of1, PHASE_1of2, PHASE_2of2};
 
@@ -126,13 +127,13 @@ public abstract class AggPrelBase extends Aggregate implements Prel {
     final List<String> fields = getRowType().getFieldNames();
 
     for (int group : BitSets.toIter(groupSet)) {
-      FieldReference fr = new FieldReference(childFields.get(group), ExpressionPosition.UNKNOWN);
+      FieldReference fr = FieldReference.getWithQuotedRef(childFields.get(group));
       keys.add(new NamedExpression(fr, fr));
     }
 
     for (Ord<AggregateCall> aggCall : Ord.zip(aggCalls)) {
       int aggExprOrdinal = groupSet.cardinality() + aggCall.i;
-      FieldReference ref = new FieldReference(fields.get(aggExprOrdinal));
+      FieldReference ref = FieldReference.getWithQuotedRef(fields.get(aggExprOrdinal));
       LogicalExpression expr = toDrill(aggCall.e, childFields);
       NamedExpression ne = new NamedExpression(expr, ref);
       aggExprs.add(ne);
@@ -168,7 +169,7 @@ public abstract class AggPrelBase extends Aggregate implements Prel {
   protected LogicalExpression toDrill(AggregateCall call, List<String> fn) {
     List<LogicalExpression> args = Lists.newArrayList();
     for (Integer i : call.getArgList()) {
-      args.add(new FieldReference(fn.get(i)));
+      args.add(FieldReference.getWithQuotedRef(fn.get(i)));
     }
 
     // for count(1).

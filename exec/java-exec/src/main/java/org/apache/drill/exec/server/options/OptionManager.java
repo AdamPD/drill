@@ -17,26 +17,95 @@
  */
 package org.apache.drill.exec.server.options;
 
-import org.apache.calcite.sql.SqlLiteral;
+import org.apache.drill.exec.server.options.OptionValue.OptionType;
 
+/**
+ * Manager for Drill {@link OptionValue options}. Implementations must be case-insensitive to the name of an option.
+ */
 public interface OptionManager extends Iterable<OptionValue> {
-  public OptionValue getOption(String name);
-  public void setOption(OptionValue value) throws SetOptionException;
-  public void setOption(String name, SqlLiteral literal, OptionValue.OptionType type) throws SetOptionException;
-  public OptionAdmin getAdmin();
-  public OptionManager getSystemManager();
-  public OptionList getOptionList();
-  public OptionValue getDefault(final String name);
 
-  public boolean getOption(TypeValidators.BooleanValidator validator);
-  public double getOption(TypeValidators.DoubleValidator validator);
-  public long getOption(TypeValidators.LongValidator validator);
-  public String getOption(TypeValidators.StringValidator validator);
+  /**
+   * Sets an option value.
+   *
+   * @param value option value
+   * @throws org.apache.drill.common.exceptions.UserException message to describe error with value
+   */
+  void setOption(OptionValue value);
 
-  public interface OptionAdmin {
-    public void registerOptionType(OptionValidator validator);
-    public OptionValidator getValidator(String name);
-    public void validate(OptionValue v) throws SetOptionException;
-    public OptionValue validate(String name, SqlLiteral value, OptionValue.OptionType optionType) throws SetOptionException;
-  }
+  /**
+   * Deletes the option. Unfortunately, the type is required given the fallback structure of option managers.
+   * See {@link FallbackOptionManager}.
+   *
+   * If the option name is valid (exists in {@link SystemOptionManager#VALIDATORS}),
+   * but the option was not set within this manager, calling this method should be a no-op.
+   *
+   * @param name option name
+   * @param type option type
+   * @throws org.apache.drill.common.exceptions.UserException message to describe error with value
+   */
+  void deleteOption(String name, OptionType type);
+
+  /**
+   * Deletes all options. Unfortunately, the type is required given the fallback structure of option managers.
+   * See {@link FallbackOptionManager}.
+   *
+   * If no options are set, calling this method should be no-op.
+   *
+   * @param type option type
+   * @throws org.apache.drill.common.exceptions.UserException message to describe error with value
+   */
+  void deleteAllOptions(OptionType type);
+
+  /**
+   * Gets the option value for the given option name.
+   *
+   * This interface also provides convenient methods to get typed option values:
+   * {@link #getOption(TypeValidators.BooleanValidator validator)},
+   * {@link #getOption(TypeValidators.DoubleValidator validator)},
+   * {@link #getOption(TypeValidators.LongValidator validator)}, and
+   * {@link #getOption(TypeValidators.StringValidator validator)}.
+   *
+   * @param name option name
+   * @return the option value, null if the option does not exist
+   */
+  OptionValue getOption(String name);
+
+  /**
+   * Gets the boolean value (from the option value) for the given boolean validator.
+   *
+   * @param validator the boolean validator
+   * @return the boolean value
+   */
+  boolean getOption(TypeValidators.BooleanValidator validator);
+
+  /**
+   * Gets the double value (from the option value) for the given double validator.
+   *
+   * @param validator the double validator
+   * @return the double value
+   */
+  double getOption(TypeValidators.DoubleValidator validator);
+
+  /**
+   * Gets the long value (from the option value) for the given long validator.
+   *
+   * @param validator the long validator
+   * @return the long value
+   */
+  long getOption(TypeValidators.LongValidator validator);
+
+  /**
+   * Gets the string value (from the option value) for the given string validator.
+   *
+   * @param validator the string validator
+   * @return the string value
+   */
+  String getOption(TypeValidators.StringValidator validator);
+
+  /**
+   * Gets the list of options managed this manager.
+   *
+   * @return the list of options
+   */
+  OptionList getOptionList();
 }

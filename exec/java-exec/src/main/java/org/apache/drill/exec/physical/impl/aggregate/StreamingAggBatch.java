@@ -23,12 +23,14 @@ import org.apache.drill.common.exceptions.DrillRuntimeException;
 import org.apache.drill.common.exceptions.UserException;
 import org.apache.drill.common.expression.ErrorCollector;
 import org.apache.drill.common.expression.ErrorCollectorImpl;
+import org.apache.drill.common.expression.IfExpression;
 import org.apache.drill.common.expression.LogicalExpression;
 import org.apache.drill.common.logical.data.NamedExpression;
 import org.apache.drill.common.types.TypeProtos;
 import org.apache.drill.exec.compile.sig.GeneratorMapping;
 import org.apache.drill.exec.compile.sig.MappingSet;
 import org.apache.drill.exec.exception.ClassTransformationException;
+import org.apache.drill.exec.exception.OutOfMemoryException;
 import org.apache.drill.exec.exception.SchemaChangeException;
 import org.apache.drill.exec.expr.ClassGenerator;
 import org.apache.drill.exec.expr.ClassGenerator.HoldingContainer;
@@ -38,7 +40,6 @@ import org.apache.drill.exec.expr.HoldingContainerExpression;
 import org.apache.drill.exec.expr.TypeHelper;
 import org.apache.drill.exec.expr.ValueVectorWriteExpression;
 import org.apache.drill.exec.expr.fn.FunctionGenerationHelper;
-import org.apache.drill.exec.memory.OutOfMemoryException;
 import org.apache.drill.exec.ops.FragmentContext;
 import org.apache.drill.exec.physical.config.StreamingAggregate;
 import org.apache.drill.exec.physical.impl.aggregate.StreamingAggregator.AggOutcome;
@@ -113,7 +114,7 @@ public class StreamingAggBatch extends AbstractRecordBatch<StreamingAggregate> {
     if (!createAggregator()) {
       state = BatchState.DONE;
     }
-    for (VectorWrapper w : container) {
+    for (final VectorWrapper<?> w : container) {
       w.getValueVector().allocateNew();
     }
   }
@@ -206,8 +207,8 @@ public class StreamingAggBatch extends AbstractRecordBatch<StreamingAggregate> {
    */
   private void constructSpecialBatch() {
     int exprIndex = 0;
-    for (VectorWrapper vw: container) {
-      ValueVector vv = vw.getValueVector();
+    for (final VectorWrapper<?> vw: container) {
+      final ValueVector vv = vw.getValueVector();
       AllocationHelper.allocateNew(vv, SPECIAL_BATCH_COUNT);
       vv.getMutator().setValueCount(SPECIAL_BATCH_COUNT);
       if (vv.getField().getType().getMode() == TypeProtos.DataMode.REQUIRED) {
@@ -265,21 +266,24 @@ public class StreamingAggBatch extends AbstractRecordBatch<StreamingAggregate> {
 
     ErrorCollector collector = new ErrorCollectorImpl();
 
-    for (int i =0; i < keyExprs.length; i++) {
-      NamedExpression ne = popConfig.getKeys()[i];
+    for (int i = 0; i < keyExprs.length; i++) {
+      final NamedExpression ne = popConfig.getKeys()[i];
       final LogicalExpression expr = ExpressionTreeMaterializer.materialize(ne.getExpr(), incoming, collector,context.getFunctionRegistry() );
       if (expr == null) {
         continue;
       }
       keyExprs[i] = expr;
       final MaterializedField outputField = MaterializedField.create(ne.getRef(), expr.getMajorType());
-      ValueVector vector = TypeHelper.getNewVector(outputField, oContext.getAllocator());
+      final ValueVector vector = TypeHelper.getNewVector(outputField, oContext.getAllocator());
       keyOutputIds[i] = container.add(vector);
     }
 
-    for (int i =0; i < valueExprs.length; i++) {
-      NamedExpression ne = popConfig.getExprs()[i];
+    for (int i = 0; i < valueExprs.length; i++) {
+      final NamedExpression ne = popConfig.getExprs()[i];
       final LogicalExpression expr = ExpressionTreeMaterializer.materialize(ne.getExpr(), incoming, collector, context.getFunctionRegistry());
+      if (expr instanceof IfExpression) {
+        throw UserException.unsupportedError(new UnsupportedOperationException("Union type not supported in aggregate functions")).build(logger);
+      }
       if (expr == null) {
         continue;
       }
@@ -315,17 +319,17 @@ public class StreamingAggBatch extends AbstractRecordBatch<StreamingAggregate> {
 
   private void setupIsSame(ClassGenerator<StreamingAggregator> cg, LogicalExpression[] keyExprs) {
     cg.setMappingSet(IS_SAME_I1);
-    for (LogicalExpression expr : keyExprs) {
+    for (final LogicalExpression expr : keyExprs) {
       // first, we rewrite the evaluation stack for each side of the comparison.
       cg.setMappingSet(IS_SAME_I1);
-      HoldingContainer first = cg.addExpr(expr, false);
+      final HoldingContainer first = cg.addExpr(expr, false);
       cg.setMappingSet(IS_SAME_I2);
-      HoldingContainer second = cg.addExpr(expr, false);
+      final HoldingContainer second = cg.addExpr(expr, false);
 
-      LogicalExpression fh =
+      final LogicalExpression fh =
           FunctionGenerationHelper
           .getOrderingComparatorNullsHigh(first, second, context.getFunctionRegistry());
-      HoldingContainer out = cg.addExpr(fh, false);
+      final HoldingContainer out = cg.addExpr(fh, false);
       cg.getEvalBlock()._if(out.getValue().ne(JExpr.lit(0)))._then()._return(JExpr.FALSE);
     }
     cg.getEvalBlock()._return(JExpr.TRUE);
@@ -338,17 +342,17 @@ public class StreamingAggBatch extends AbstractRecordBatch<StreamingAggregate> {
 
   private void setupIsSameApart(ClassGenerator<StreamingAggregator> cg, LogicalExpression[] keyExprs) {
     cg.setMappingSet(ISA_B1);
-    for (LogicalExpression expr : keyExprs) {
+    for (final LogicalExpression expr : keyExprs) {
       // first, we rewrite the evaluation stack for each side of the comparison.
       cg.setMappingSet(ISA_B1);
-      HoldingContainer first = cg.addExpr(expr, false);
+      final HoldingContainer first = cg.addExpr(expr, false);
       cg.setMappingSet(ISA_B2);
-      HoldingContainer second = cg.addExpr(expr, false);
+      final HoldingContainer second = cg.addExpr(expr, false);
 
-      LogicalExpression fh =
+      final LogicalExpression fh =
           FunctionGenerationHelper
           .getOrderingComparatorNullsHigh(first, second, context.getFunctionRegistry());
-      HoldingContainer out = cg.addExpr(fh, false);
+      final HoldingContainer out = cg.addExpr(fh, false);
       cg.getEvalBlock()._if(out.getValue().ne(JExpr.lit(0)))._then()._return(JExpr.FALSE);
     }
     cg.getEvalBlock()._return(JExpr.TRUE);
@@ -360,8 +364,8 @@ public class StreamingAggBatch extends AbstractRecordBatch<StreamingAggregate> {
 
   private void addRecordValues(ClassGenerator<StreamingAggregator> cg, LogicalExpression[] valueExprs) {
     cg.setMappingSet(EVAL);
-    for (LogicalExpression ex : valueExprs) {
-      HoldingContainer hc = cg.addExpr(ex);
+    for (final LogicalExpression ex : valueExprs) {
+      final HoldingContainer hc = cg.addExpr(ex);
     }
   }
 
@@ -369,8 +373,8 @@ public class StreamingAggBatch extends AbstractRecordBatch<StreamingAggregate> {
 
   private void outputRecordKeys(ClassGenerator<StreamingAggregator> cg, TypedFieldId[] keyOutputIds, LogicalExpression[] keyExprs) {
     cg.setMappingSet(RECORD_KEYS);
-    for (int i =0; i < keyExprs.length; i++) {
-      HoldingContainer hc = cg.addExpr(new ValueVectorWriteExpression(keyOutputIds[i], keyExprs[i], true));
+    for (int i = 0; i < keyExprs.length; i++) {
+      final HoldingContainer hc = cg.addExpr(new ValueVectorWriteExpression(keyOutputIds[i], keyExprs[i], true));
     }
   }
 
@@ -383,15 +387,14 @@ public class StreamingAggBatch extends AbstractRecordBatch<StreamingAggregate> {
   private void outputRecordKeysPrev(ClassGenerator<StreamingAggregator> cg, TypedFieldId[] keyOutputIds, LogicalExpression[] keyExprs) {
     cg.setMappingSet(RECORD_KEYS_PREV);
 
-    for (int i =0; i < keyExprs.length; i++) {
+    for (int i = 0; i < keyExprs.length; i++) {
       // IMPORTANT: there is an implicit assertion here that the TypedFieldIds for the previous batch and the current batch are the same.  This is possible because InternalBatch guarantees this.
       logger.debug("Writing out expr {}", keyExprs[i]);
       cg.rotateBlock();
       cg.setMappingSet(RECORD_KEYS_PREV);
-      HoldingContainer innerExpression = cg.addExpr(keyExprs[i], false);
+      final HoldingContainer innerExpression = cg.addExpr(keyExprs[i], false);
       cg.setMappingSet(RECORD_KEYS_PREV_OUT);
-      HoldingContainer outerExpression = cg.addExpr(new ValueVectorWriteExpression(keyOutputIds[i], new HoldingContainerExpression(innerExpression), true), false);
-
+      final HoldingContainer outerExpression = cg.addExpr(new ValueVectorWriteExpression(keyOutputIds[i], new HoldingContainerExpression(innerExpression), true), false);
     }
   }
 
@@ -428,5 +431,4 @@ public class StreamingAggBatch extends AbstractRecordBatch<StreamingAggregate> {
   protected void killIncoming(boolean sendUpstream) {
     incoming.kill(sendUpstream);
   }
-
 }

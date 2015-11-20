@@ -17,23 +17,25 @@
  */
 package org.apache.drill.exec.physical.base;
 
-import com.google.common.collect.Lists;
-import org.apache.drill.common.config.CommonConstants;
-import org.apache.drill.common.config.DrillConfig;
-import org.apache.drill.common.util.PathScanner;
+import java.util.List;
+import java.util.Set;
+
+import org.apache.drill.common.scanner.persistence.ScanResult;
 import org.apache.drill.exec.physical.MinorFragmentEndpoint;
 import org.apache.drill.exec.proto.CoordinationProtos.DrillbitEndpoint;
 
-import java.util.List;
+import com.google.common.collect.Lists;
 
 public class PhysicalOperatorUtil {
-  static final org.slf4j.Logger logger = org.slf4j.LoggerFactory.getLogger(PhysicalOperatorUtil.class);
+  private static final org.slf4j.Logger logger = org.slf4j.LoggerFactory.getLogger(PhysicalOperatorUtil.class);
 
-  private PhysicalOperatorUtil(){}
 
-  public synchronized static Class<?>[] getSubTypes(DrillConfig config){
-    Class<?>[] ops = PathScanner.scanForImplementationsArr(PhysicalOperator.class, config.getStringList(CommonConstants.PHYSICAL_OPERATOR_SCAN_PACKAGES));
-    logger.debug("Adding Physical Operator sub types: {}", ((Object) ops) );
+  private PhysicalOperatorUtil() {}
+
+  public static Set<Class<? extends PhysicalOperator>> getSubTypes(ScanResult classpathScan) {
+    final Set<Class<? extends PhysicalOperator>> ops = classpathScan.getImplementations(PhysicalOperator.class);
+    logger.debug("Found {} physical operator classes: {}.", ops.size(),
+                 ops);
     return ops;
   }
 

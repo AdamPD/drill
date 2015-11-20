@@ -21,12 +21,15 @@ import static org.junit.Assert.assertEquals;
 
 import java.nio.file.Files;
 import java.nio.file.Paths;
+import java.util.List;
 import java.util.regex.Matcher;
 import java.util.regex.Pattern;
 
 import org.apache.drill.BaseTestQuery;
 import org.apache.drill.common.util.TestTools;
 import org.apache.drill.exec.ExecConstants;
+import org.apache.drill.exec.rpc.user.QueryDataBatch;
+import org.junit.Assert;
 import org.junit.Test;
 
 public class TestExtendedTypes extends BaseTestQuery {
@@ -55,6 +58,36 @@ public class TestExtendedTypes extends BaseTestQuery {
       final byte[] newData = Files.readAllBytes(Paths.get(BaseTestQuery.getDfsTestTmpSchemaLocation() + '/' + newTable
           + "/0_0_0.json"));
       assertEquals(new String(originalData), new String(newData));
+    } finally {
+      testNoResult(String.format("ALTER SESSION SET `%s` = '%s'",
+          ExecConstants.OUTPUT_FORMAT_VALIDATOR.getOptionName(),
+          ExecConstants.OUTPUT_FORMAT_VALIDATOR.getDefault().getValue()));
+      testNoResult(String.format("ALTER SESSION SET `%s` = %s",
+          ExecConstants.JSON_EXTENDED_TYPES.getOptionName(),
+          ExecConstants.JSON_EXTENDED_TYPES.getDefault().getValue()));
+    }
+  }
+
+  @Test
+  public void testMongoExtendedTypes() throws Exception {
+
+    final String originalFile = "${WORKING_PATH}/src/test/resources/vector/complex/mongo_extended.json".replaceAll(
+        Pattern.quote("${WORKING_PATH}"),
+        Matcher.quoteReplacement(TestTools.getWorkingPath()));
+
+    try {
+      testNoResult(String.format("ALTER SESSION SET `%s` = 'json'", ExecConstants.OUTPUT_FORMAT_VALIDATOR.getOptionName()));
+      testNoResult(String.format("ALTER SESSION SET `%s` = true", ExecConstants.JSON_EXTENDED_TYPES.getOptionName()));
+
+      int actualRecordCount = testSql(String.format("select * from dfs.`%s`", originalFile));
+      assertEquals(
+          String.format(
+              "Received unexpected number of rows in output: expected=%d, received=%s",
+              1, actualRecordCount), 1, actualRecordCount);
+      List<QueryDataBatch> resultList = testSqlWithResults(String.format("select * from dfs.`%s`", originalFile));
+      String actual = getResultString(resultList, ",");
+      String expected = "drill_timestamp_millies,bin,bin1\n2015-07-07T03:59:43.488,drill,drill\n";
+      Assert.assertEquals(expected, actual);
     } finally {
       testNoResult(String.format("ALTER SESSION SET `%s` = '%s'",
           ExecConstants.OUTPUT_FORMAT_VALIDATOR.getOptionName(),

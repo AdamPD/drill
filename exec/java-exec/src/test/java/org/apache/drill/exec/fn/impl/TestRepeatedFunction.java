@@ -19,17 +19,16 @@ package org.apache.drill.exec.fn.impl;
 
 import static org.junit.Assert.assertEquals;
 import static org.junit.Assert.assertTrue;
-import mockit.Injectable;
-import mockit.NonStrictExpectations;
 
 import org.apache.drill.common.config.DrillConfig;
 import org.apache.drill.common.expression.ExpressionPosition;
 import org.apache.drill.common.expression.SchemaPath;
+import org.apache.drill.common.scanner.ClassPathScanner;
 import org.apache.drill.common.util.FileUtils;
 import org.apache.drill.exec.ExecTest;
-import org.apache.drill.exec.compile.CodeCompiler;
+import org.apache.drill.exec.compile.CodeCompilerTestFactory;
 import org.apache.drill.exec.expr.fn.FunctionImplementationRegistry;
-import org.apache.drill.exec.memory.TopLevelAllocator;
+import org.apache.drill.exec.memory.RootAllocatorFactory;
 import org.apache.drill.exec.ops.FragmentContext;
 import org.apache.drill.exec.physical.PhysicalPlan;
 import org.apache.drill.exec.physical.base.FragmentRoot;
@@ -37,8 +36,8 @@ import org.apache.drill.exec.physical.impl.ImplCreator;
 import org.apache.drill.exec.physical.impl.OperatorCreatorRegistry;
 import org.apache.drill.exec.physical.impl.SimpleRootExec;
 import org.apache.drill.exec.planner.PhysicalPlanReader;
+import org.apache.drill.exec.planner.PhysicalPlanReaderTestFactory;
 import org.apache.drill.exec.proto.BitControl.PlanFragment;
-import org.apache.drill.exec.proto.CoordinationProtos;
 import org.apache.drill.exec.rpc.user.UserServer.UserClientConnection;
 import org.apache.drill.exec.server.DrillbitContext;
 import org.apache.drill.exec.vector.BitVector;
@@ -49,43 +48,42 @@ import com.codahale.metrics.MetricRegistry;
 import com.google.common.base.Charsets;
 import com.google.common.io.Files;
 
-public class TestRepeatedFunction extends ExecTest{
-  static final org.slf4j.Logger logger = org.slf4j.LoggerFactory.getLogger(TestRepeatedFunction.class);
-  DrillConfig c = DrillConfig.create();
+import mockit.Injectable;
+import mockit.NonStrictExpectations;
 
+public class TestRepeatedFunction extends ExecTest{
+  //private static final org.slf4j.Logger logger = org.slf4j.LoggerFactory.getLogger(TestRepeatedFunction.class);
+  private final DrillConfig c = DrillConfig.create();
 
   @Test
-  public void testRepeated(@Injectable final DrillbitContext bitContext, @Injectable UserClientConnection connection) throws Throwable{
+  public void testRepeated(@Injectable final DrillbitContext bitContext, @Injectable UserClientConnection connection) throws Throwable {
 //    System.out.println(System.getProperty("java.class.path"));
-
-
-    new NonStrictExpectations(){{
+    new NonStrictExpectations() {{
       bitContext.getMetrics(); result = new MetricRegistry();
-      bitContext.getAllocator(); result = new TopLevelAllocator();
-      bitContext.getOperatorCreatorRegistry(); result = new OperatorCreatorRegistry(c);
+      bitContext.getAllocator(); result = RootAllocatorFactory.newRoot(c);
+      bitContext.getOperatorCreatorRegistry(); result = new OperatorCreatorRegistry(ClassPathScanner.fromPrescan(c));
       bitContext.getConfig(); result = c;
-      bitContext.getCompiler(); result = CodeCompiler.getTestCompiler(c);
+      bitContext.getCompiler(); result = CodeCompilerTestFactory.getTestCompiler(c);
     }};
 
-
-    PhysicalPlanReader reader = new PhysicalPlanReader(c, c.getMapper(), CoordinationProtos.DrillbitEndpoint.getDefaultInstance());
-    PhysicalPlan plan = reader.readPhysicalPlan(Files.toString(FileUtils.getResourceAsFile("/physical_repeated_1.json"), Charsets.UTF_8));
-    FunctionImplementationRegistry registry = new FunctionImplementationRegistry(c);
-    FragmentContext context = new FragmentContext(bitContext, PlanFragment.getDefaultInstance(), connection, registry);
-    SimpleRootExec exec = new SimpleRootExec(ImplCreator.getExec(context, (FragmentRoot) plan.getSortedOperators(false).iterator().next()));
+    final PhysicalPlanReader reader = PhysicalPlanReaderTestFactory.defaultPhysicalPlanReader(c);
+    final PhysicalPlan plan = reader.readPhysicalPlan(Files.toString(FileUtils.getResourceAsFile("/physical_repeated_1.json"), Charsets.UTF_8));
+    final FunctionImplementationRegistry registry = new FunctionImplementationRegistry(c);
+    final FragmentContext context = new FragmentContext(bitContext, PlanFragment.getDefaultInstance(), connection, registry);
+    final SimpleRootExec exec = new SimpleRootExec(ImplCreator.getExec(context, (FragmentRoot) plan.getSortedOperators(false).iterator().next()));
 
     boolean oneIsOne = false;
     int size = 0;
-    int[] sizes = {1,2,0,6};
+    final int[] sizes = {1, 2, 0, 6};
 
-    while(exec.next()){
-      IntVector c1 = exec.getValueVectorById(new SchemaPath("cnt", ExpressionPosition.UNKNOWN), IntVector.class);
-      BitVector c2 = exec.getValueVectorById(new SchemaPath("has_min", ExpressionPosition.UNKNOWN), BitVector.class);
+    while(exec.next()) {
+      final IntVector c1 = exec.getValueVectorById(new SchemaPath("cnt", ExpressionPosition.UNKNOWN), IntVector.class);
+      final BitVector c2 = exec.getValueVectorById(new SchemaPath("has_min", ExpressionPosition.UNKNOWN), BitVector.class);
 
-      for(int i =0; i < exec.getRecordCount(); i++){
-        int curSize = sizes[size % sizes.length];
+      for(int i = 0; i < exec.getRecordCount(); i++) {
+        final int curSize = sizes[size % sizes.length];
         assertEquals(curSize, c1.getAccessor().get(i));
-        switch(curSize){
+        switch(curSize) {
         case 1:
           assertEquals(oneIsOne, 1 == c2.getAccessor().get(i));
           oneIsOne = !oneIsOne;
@@ -104,11 +102,9 @@ public class TestRepeatedFunction extends ExecTest{
       }
     }
 
-    if(context.getFailureCause() != null){
+    if(context.getFailureCause() != null) {
       throw context.getFailureCause();
     }
     assertTrue(!context.isFailed());
-
   }
-
 }

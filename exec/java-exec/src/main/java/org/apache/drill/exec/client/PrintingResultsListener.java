@@ -17,61 +17,55 @@
  */
 package org.apache.drill.exec.client;
 
-import io.netty.buffer.DrillBuf;
-
-import java.util.concurrent.CountDownLatch;
 import java.util.concurrent.TimeUnit;
 import java.util.concurrent.atomic.AtomicInteger;
 
+import org.apache.drill.common.DrillAutoCloseables;
 import org.apache.drill.common.config.DrillConfig;
 import org.apache.drill.common.exceptions.UserException;
 import org.apache.drill.exec.client.QuerySubmitter.Format;
 import org.apache.drill.exec.exception.SchemaChangeException;
 import org.apache.drill.exec.memory.BufferAllocator;
-import org.apache.drill.exec.memory.TopLevelAllocator;
+import org.apache.drill.exec.memory.RootAllocatorFactory;
 import org.apache.drill.exec.proto.UserBitShared.QueryData;
 import org.apache.drill.exec.proto.UserBitShared.QueryId;
 import org.apache.drill.exec.proto.UserBitShared.QueryResult.QueryState;
 import org.apache.drill.exec.record.RecordBatchLoader;
-import org.apache.drill.exec.rpc.user.ConnectionThrottle;
+import org.apache.drill.exec.rpc.ConnectionThrottle;
 import org.apache.drill.exec.rpc.user.QueryDataBatch;
 import org.apache.drill.exec.rpc.user.UserResultsListener;
 import org.apache.drill.exec.util.VectorUtil;
 
 import com.google.common.base.Stopwatch;
 
+import io.netty.buffer.DrillBuf;
+
 public class PrintingResultsListener implements UserResultsListener {
   private static final org.slf4j.Logger logger = org.slf4j.LoggerFactory.getLogger(PrintingResultsListener.class);
 
-  AtomicInteger count = new AtomicInteger();
-  private CountDownLatch latch = new CountDownLatch(1);
-  RecordBatchLoader loader;
-  Format format;
-  int    columnWidth;
-  BufferAllocator allocator;
-  volatile UserException exception;
-  QueryId queryId;
-  Stopwatch w = new Stopwatch();
+  private final AtomicInteger count = new AtomicInteger();
+  private final Stopwatch w = new Stopwatch();
+  private final RecordBatchLoader loader;
+  private final Format format;
+  private final int columnWidth;
+  private final BufferAllocator allocator;
 
   public PrintingResultsListener(DrillConfig config, Format format, int columnWidth) {
-    this.allocator = new TopLevelAllocator(config);
-    loader = new RecordBatchLoader(allocator);
+    this.allocator = RootAllocatorFactory.newRoot(config);
+    this.loader = new RecordBatchLoader(allocator);
     this.format = format;
     this.columnWidth = columnWidth;
   }
 
   @Override
   public void submissionFailed(UserException ex) {
-    exception = ex;
     System.out.println("Exception (no rows returned): " + ex + ".  Returned in " + w.elapsed(TimeUnit.MILLISECONDS)
         + "ms.");
-    latch.countDown();
   }
 
   @Override
   public void queryCompleted(QueryState state) {
-    allocator.close();
-    latch.countDown();
+    DrillAutoCloseables.closeNoChecked(allocator);
     System.out.println("Total rows returned : " + count.get() + ".  Returned in " + w.elapsed(TimeUnit.MILLISECONDS)
         + "ms.");
   }
@@ -108,22 +102,8 @@ public class PrintingResultsListener implements UserResultsListener {
     result.release();
   }
 
-  public int await() throws Exception {
-    latch.await();
-    if (exception != null) {
-      throw exception;
-    }
-    return count.get();
-  }
-
-  public QueryId getQueryId() {
-    return queryId;
-  }
-
   @Override
   public void queryIdArrived(QueryId queryId) {
     w.start();
-    this.queryId = queryId;
   }
-
 }

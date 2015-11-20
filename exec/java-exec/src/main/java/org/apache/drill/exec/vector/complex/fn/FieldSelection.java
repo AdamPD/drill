@@ -42,7 +42,7 @@ class FieldSelection {
 
   private final Map<String, FieldSelection> children;
   private final Map<String, FieldSelection> childrenInsensitive;
-  private final ValidityMode mode;
+  private ValidityMode mode;
 
   private FieldSelection(){
     this(new HashMap<String, FieldSelection>(), ValidityMode.CHECK_CHILDREN);
@@ -59,6 +59,15 @@ class FieldSelection {
     this.mode = mode;
   }
 
+  @Override
+  public String toString() {
+    return
+        super.toString()
+        + "[mode = " + mode
+        + ", children = " + children
+        + ", childrenInsensitive = " + childrenInsensitive + "]";
+  }
+
   /**
    * Create a new tree that has all leaves fixed to support full depth validity.
    */
@@ -70,7 +79,7 @@ class FieldSelection {
       for(Entry<String, FieldSelection> e : children.entrySet()){
         newMap.put(e.getKey(), e.getValue().fixNodes());
       }
-      return new FieldSelection(newMap, ValidityMode.CHECK_CHILDREN);
+      return new FieldSelection(newMap, mode);
     }
   }
 
@@ -87,8 +96,12 @@ class FieldSelection {
 
   private void add(PathSegment segment){
     if(segment.isNamed()){
+      boolean lastPath = segment.isLastPath();
       FieldSelection child = addChild(segment.getNameSegment().getPath());
-      if(!segment.isLastPath()){
+      if (lastPath) {
+        child.setAlwaysValid();
+      }
+      if (!lastPath && !child.isAlwaysValid()) {
         child.add(segment.getChild());
       }
     }
@@ -96,6 +109,14 @@ class FieldSelection {
 
   public boolean isNeverValid(){
     return mode == ValidityMode.NEVER_VALID;
+  }
+
+  private void setAlwaysValid() {
+    mode = ValidityMode.ALWAYS_VALID;
+  }
+
+  public boolean isAlwaysValid() {
+    return mode == ValidityMode.ALWAYS_VALID;
   }
 
   public FieldSelection getChild(String name){

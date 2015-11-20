@@ -20,8 +20,8 @@ package org.apache.drill.exec.physical.impl;
 import java.util.List;
 
 import org.apache.drill.common.exceptions.ExecutionSetupException;
-import org.apache.drill.exec.memory.OutOfMemoryException;
-import org.apache.drill.exec.memory.OutOfMemoryRuntimeException;
+import org.apache.drill.exec.exception.OutOfMemoryException;
+import org.apache.drill.exec.exception.OutOfMemoryException;
 import org.apache.drill.exec.ops.AccountingUserConnection;
 import org.apache.drill.exec.ops.FragmentContext;
 import org.apache.drill.exec.ops.MetricDef;
@@ -35,22 +35,24 @@ import org.apache.drill.exec.record.RecordBatch;
 import org.apache.drill.exec.record.RecordBatch.IterOutcome;
 
 import com.google.common.base.Preconditions;
+
 import org.apache.drill.exec.testing.ControlsInjector;
 import org.apache.drill.exec.testing.ControlsInjectorFactory;
 
-public class ScreenCreator implements RootCreator<Screen>{
-  private static final org.slf4j.Logger logger = org.slf4j.LoggerFactory.getLogger(ScreenCreator.class);
+public class ScreenCreator implements RootCreator<Screen> {
+  //private static final org.slf4j.Logger logger = org.slf4j.LoggerFactory.getLogger(ScreenCreator.class);
   private static final ControlsInjector injector = ControlsInjectorFactory.getInjector(ScreenCreator.class);
 
   @Override
-  public RootExec getRoot(FragmentContext context, Screen config, List<RecordBatch> children) throws ExecutionSetupException {
+  public RootExec getRoot(FragmentContext context, Screen config, List<RecordBatch> children)
+      throws ExecutionSetupException {
     Preconditions.checkNotNull(children);
     Preconditions.checkArgument(children.size() == 1);
     return new ScreenRoot(context, children.iterator().next(), config);
   }
 
-
-  static class ScreenRoot extends BaseRootExec {
+  public static class ScreenRoot extends BaseRootExec {
+    private static final org.slf4j.Logger logger = org.slf4j.LoggerFactory.getLogger(ScreenRoot.class);
     private final RecordBatch incoming;
     private final FragmentContext context;
     private final AccountingUserConnection userConnection;
@@ -71,7 +73,7 @@ public class ScreenCreator implements RootCreator<Screen>{
       super(context, config);
       this.context = context;
       this.incoming = incoming;
-      this.userConnection = context.getUserDataTunnel();
+      userConnection = context.getUserDataTunnel();
     }
 
     @Override
@@ -80,17 +82,17 @@ public class ScreenCreator implements RootCreator<Screen>{
       logger.trace("Screen Outcome {}", outcome);
       switch (outcome) {
       case OUT_OF_MEMORY:
-        throw new OutOfMemoryRuntimeException();
+        throw new OutOfMemoryException();
       case STOP:
         return false;
       case NONE:
         if (firstBatch) {
           // this is the only data message sent to the client and may contain the schema
           QueryWritableBatch batch;
-          QueryData header = QueryData.newBuilder() //
-            .setQueryId(context.getHandle().getQueryId()) //
-            .setRowCount(0) //
-            .setDef(RecordBatchDef.getDefaultInstance()) //
+          QueryData header = QueryData.newBuilder()
+            .setQueryId(context.getHandle().getQueryId())
+            .setRowCount(0)
+            .setDef(RecordBatchDef.getDefaultInstance())
             .build();
           batch = new QueryWritableBatch(header);
 
@@ -109,7 +111,7 @@ public class ScreenCreator implements RootCreator<Screen>{
         //$FALL-THROUGH$
       case OK:
         injector.injectPause(context.getExecutionControls(), "sending-data", logger);
-        QueryWritableBatch batch = materializer.convertNext();
+        final QueryWritableBatch batch = materializer.convertNext();
         updateStats(batch);
         stats.startWait();
         try {
@@ -133,13 +135,10 @@ public class ScreenCreator implements RootCreator<Screen>{
       return incoming;
     }
 
-
     @Override
     public void close() throws Exception {
       injector.injectPause(context.getExecutionControls(), "send-complete", logger);
       super.close();
     }
   }
-
-
 }

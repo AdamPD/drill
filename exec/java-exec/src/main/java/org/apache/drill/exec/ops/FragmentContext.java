@@ -22,26 +22,27 @@ import io.netty.buffer.DrillBuf;
 import java.io.IOException;
 import java.util.List;
 import java.util.Map;
+import java.util.concurrent.Executor;
 
 import org.apache.calcite.schema.SchemaPlus;
-
 import org.apache.drill.common.config.DrillConfig;
 import org.apache.drill.common.exceptions.ExecutionSetupException;
 import org.apache.drill.common.exceptions.UserException;
 import org.apache.drill.exec.ExecConstants;
 import org.apache.drill.exec.exception.ClassTransformationException;
+import org.apache.drill.exec.exception.OutOfMemoryException;
 import org.apache.drill.exec.expr.ClassGenerator;
 import org.apache.drill.exec.expr.CodeGenerator;
 import org.apache.drill.exec.expr.fn.FunctionImplementationRegistry;
 import org.apache.drill.exec.memory.BufferAllocator;
-import org.apache.drill.exec.memory.OutOfMemoryException;
+import org.apache.drill.exec.memory.LimitConsumer;
 import org.apache.drill.exec.physical.base.PhysicalOperator;
-import org.apache.drill.exec.memory.OutOfMemoryRuntimeException;
 import org.apache.drill.exec.planner.physical.PlannerSettings;
 import org.apache.drill.exec.proto.BitControl.PlanFragment;
 import org.apache.drill.exec.proto.CoordinationProtos.DrillbitEndpoint;
 import org.apache.drill.exec.proto.ExecProtos.FragmentHandle;
 import org.apache.drill.exec.proto.GeneralRPCProtos.Ack;
+import org.apache.drill.exec.proto.helper.QueryIdHelper;
 import org.apache.drill.exec.rpc.RpcException;
 import org.apache.drill.exec.rpc.RpcOutcomeListener;
 import org.apache.drill.exec.rpc.control.ControlTunnel;
@@ -83,6 +84,7 @@ public class FragmentContext implements AutoCloseable, UdfUtilities {
   private final BufferManager bufferManager;
   private ExecutorState executorState;
   private final ExecutionControls executionControls;
+
 
   private final SendingAccountor sendingAccountor = new SendingAccountor();
   private final Consumer<RpcException> exceptionConsumer = new Consumer<RpcException>() {
@@ -145,7 +147,7 @@ public class FragmentContext implements AutoCloseable, UdfUtilities {
       list = new OptionList();
     } else {
       try {
-        list = dbContext.getConfig().getMapper().readValue(fragment.getOptionsJson(), OptionList.class);
+        list = dbContext.getLpPersistence().getMapper().readValue(fragment.getOptionsJson(), OptionList.class);
       } catch (final Exception e) {
         throw new ExecutionSetupException("Failure while reading plan options.", e);
       }
@@ -157,9 +159,10 @@ public class FragmentContext implements AutoCloseable, UdfUtilities {
     // Add the fragment context to the root allocator.
     // The QueryManager will call the root allocator to recalculate all the memory limits for all the fragments
     try {
-      allocator = context.getAllocator().getChildAllocator(this, fragment.getMemInitial(), fragment.getMemMax(), true);
+      allocator = context.getAllocator().getChildAllocator(new AsLimitConsumer(), fragment.getMemInitial(),
+          fragment.getMemMax(), true);
       Preconditions.checkNotNull(allocator, "Unable to acuqire allocator");
-    } catch(final OutOfMemoryException | OutOfMemoryRuntimeException e) {
+    } catch (final OutOfMemoryException e) {
       throw UserException.memoryError(e)
         .addContext("Fragment", getHandle().getMajorFragmentId() + ":" + getHandle().getMinorFragmentId())
         .build(logger);
@@ -168,7 +171,32 @@ public class FragmentContext implements AutoCloseable, UdfUtilities {
     }
 
     stats = new FragmentStats(allocator, dbContext.getMetrics(), fragment.getAssignment());
-    bufferManager = new BufferManager(this.allocator, this);
+    bufferManager = new BufferManagerImpl(this.allocator);
+  }
+
+  private class AsLimitConsumer implements LimitConsumer {
+    final String identifier = QueryIdHelper.getFragmentId(fragment.getHandle());
+
+    @Override
+    public String getIdentifier() {
+      return identifier;
+    }
+
+    @Override
+    public long getAllocated() {
+      return allocator.getAllocatedMemory();
+    }
+
+    @Override
+    public long getLimit() {
+      return allocator.getLimit();
+    }
+
+    @Override
+    public void setLimit(long limit) {
+      allocator.setLimit(limit);
+    }
+
   }
 
   /**
@@ -269,6 +297,9 @@ public class FragmentContext implements AutoCloseable, UdfUtilities {
     return frag;
   }
 
+  public LimitConsumer asLimitConsumer() {
+    return new AsLimitConsumer();
+  }
 
 
   /**
@@ -286,7 +317,8 @@ public class FragmentContext implements AutoCloseable, UdfUtilities {
   public BufferAllocator getNewChildAllocator(final long initialReservation,
                                               final long maximumReservation,
                                               final boolean applyFragmentLimit) throws OutOfMemoryException {
-    return allocator.getChildAllocator(this, initialReservation, maximumReservation, applyFragmentLimit);
+    return allocator.getChildAllocator(new AsLimitConsumer(), initialReservation, maximumReservation,
+        applyFragmentLimit);
   }
 
   public <T> T getImplementationClass(final ClassGenerator<T> cg)
@@ -364,7 +396,7 @@ public class FragmentContext implements AutoCloseable, UdfUtilities {
   }
 
   public void setFragmentLimit(final long limit) {
-    allocator.setFragmentLimit(limit);
+    allocator.setLimit(limit);
   }
 
   public ExecutionControls getExecutionControls() {
@@ -427,6 +459,10 @@ public class FragmentContext implements AutoCloseable, UdfUtilities {
     throw new UnsupportedOperationException(String.format("The partition explorer interface can only be used " +
         "in functions that can be evaluated at planning time. Make sure that the %s configuration " +
         "option is set to true.", PlannerSettings.CONSTANT_FOLDING.getOptionName()));
+  }
+
+  public Executor getExecutor(){
+    return context.getExecutor();
   }
 
   /**

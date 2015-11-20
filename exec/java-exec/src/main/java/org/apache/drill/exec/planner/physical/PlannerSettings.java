@@ -19,6 +19,7 @@ package org.apache.drill.exec.planner.physical;
 
 import org.apache.drill.exec.ExecConstants;
 import org.apache.drill.exec.expr.fn.FunctionImplementationRegistry;
+import org.apache.drill.exec.ops.QueryContext;
 import org.apache.drill.exec.server.options.OptionManager;
 import org.apache.drill.exec.server.options.OptionValidator;
 import org.apache.drill.exec.server.options.TypeValidators.BooleanValidator;
@@ -37,6 +38,13 @@ public class PlannerSettings implements Context{
 
   public static final int MAX_BROADCAST_THRESHOLD = Integer.MAX_VALUE;
   public static final int DEFAULT_IDENTIFIER_MAX_LENGTH = 1024;
+
+  // initial off heap memory allocation (1M)
+  private static final long INITIAL_OFF_HEAP_ALLOCATION_IN_BYTES = 1024 * 1024;
+  // default off heap memory for planning (256M)
+  private static final long DEFAULT_MAX_OFF_HEAP_ALLOCATION_IN_BYTES = 256 * 1024 * 1024;
+  // max off heap memory for planning (16G)
+  private static final long MAX_OFF_HEAP_ALLOCATION_IN_BYTES = 16l * 1024 * 1024 * 1024;
 
   public static final OptionValidator CONSTANT_FOLDING = new BooleanValidator("planner.enable_constant_folding", true);
   public static final OptionValidator EXCHANGE = new BooleanValidator("planner.disable_exchanges", false);
@@ -64,7 +72,10 @@ public class PlannerSettings implements Context{
   public static final OptionValidator HASH_JOIN_SWAP_MARGIN_FACTOR = new RangeDoubleValidator("planner.join.hash_join_swap_margin_factor", 0, 100, 10d);
   public static final String ENABLE_DECIMAL_DATA_TYPE_KEY = "planner.enable_decimal_data_type";
   public static final OptionValidator ENABLE_DECIMAL_DATA_TYPE = new BooleanValidator(ENABLE_DECIMAL_DATA_TYPE_KEY, false);
-  public static final OptionValidator HEP_JOIN_OPT = new BooleanValidator("planner.enable_hep_join_opt", true);
+  public static final OptionValidator HEP_OPT = new BooleanValidator("planner.enable_hep_opt", true);
+  public static final OptionValidator HEP_PARTITION_PRUNING = new BooleanValidator("planner.enable_hep_partition_pruning", true);
+  public static final OptionValidator PLANNER_MEMORY_LIMIT = new RangeLongValidator("planner.memory_limit",
+      INITIAL_OFF_HEAP_ALLOCATION_IN_BYTES, MAX_OFF_HEAP_ALLOCATION_IN_BYTES, DEFAULT_MAX_OFF_HEAP_ALLOCATION_IN_BYTES);
 
   public static final OptionValidator IDENTIFIER_MAX_LENGTH =
       new RangeLongValidator("planner.identifier_max_length", 128 /* A minimum length is needed because option names are identifiers themselves */,
@@ -162,7 +173,9 @@ public class PlannerSettings implements Context{
     return options.getOption(HASH_JOIN_SWAP.getOptionName()).bool_val;
   }
 
-  public boolean isHepJoinOptEnabled() { return options.getOption(HEP_JOIN_OPT.getOptionName()).bool_val;}
+  public boolean isHepPartitionPruningEnabled() { return options.getOption(HEP_PARTITION_PRUNING.getOptionName()).bool_val;}
+
+  public boolean isHepOptEnabled() { return options.getOption(HEP_OPT.getOptionName()).bool_val;}
 
   public double getHashJoinSwapMarginFactor() {
     return options.getOption(HASH_JOIN_SWAP_MARGIN_FACTOR.getOptionName()).float_val / 100d;
@@ -186,6 +199,14 @@ public class PlannerSettings implements Context{
 
   public long getIdentifierMaxLength(){
     return options.getOption(IDENTIFIER_MAX_LENGTH.getOptionName()).num_val;
+  }
+
+  public long getPlanningMemoryLimit() {
+    return options.getOption(PLANNER_MEMORY_LIMIT.getOptionName()).num_val;
+  }
+
+  public static long getInitialPlanningMemorySize() {
+    return INITIAL_OFF_HEAP_ALLOCATION_IN_BYTES;
   }
 
   @Override

@@ -52,7 +52,7 @@ import com.mongodb.client.MongoCursor;
 import com.mongodb.client.MongoDatabase;
 
 public class MongoRecordReader extends AbstractRecordReader {
-  static final Logger logger = LoggerFactory.getLogger(MongoRecordReader.class);
+  private static final Logger logger = LoggerFactory.getLogger(MongoRecordReader.class);
 
   private MongoCollection<Document> collection;
   private MongoCursor<Document> cursor;
@@ -70,6 +70,7 @@ public class MongoRecordReader extends AbstractRecordReader {
 
   private final boolean enableAllTextMode;
   private final boolean readNumbersAsDouble;
+  private boolean unionEnabled;
 
   public MongoRecordReader(
       MongoSubScan.MongoSubScanSpec subScanSpec,
@@ -98,10 +99,12 @@ public class MongoRecordReader extends AbstractRecordReader {
     if (!isStarQuery()) {
       for (SchemaPath column : projectedColumns ) {
         String fieldName = column.getRootSegment().getPath();
-        transformed.add(SchemaPath.getSimplePath(fieldName));
+        transformed.add(column);
         this.fields.put(fieldName, Integer.valueOf(1));
       }
     } else {
+      // Tale all the fields including the _id
+      this.fields.remove(DrillMongoConstants.ID);
       transformed.add(AbstractRecordReader.STAR_COLUMN);
     }
     return transformed;
@@ -138,12 +141,13 @@ public class MongoRecordReader extends AbstractRecordReader {
     MongoClient client = plugin.getClient(addresses);
     MongoDatabase db = client.getDatabase(subScanSpec.getDbName());
     collection = db.getCollection(subScanSpec.getCollectionName());
+    this.unionEnabled = fragmentContext.getOptions().getOption(ExecConstants.ENABLE_UNION_TYPE);
   }
 
   @Override
   public void setup(OperatorContext context, OutputMutator output) throws ExecutionSetupException {
     this.operatorContext = context;
-    this.writer = new VectorContainerWriter(output);
+    this.writer = new VectorContainerWriter(output, unionEnabled);
     this.jsonReader = new JsonReader(fragmentContext.getManagedBuffer(), Lists.newArrayList(getColumns()), enableAllTextMode, false, readNumbersAsDouble);
 
   }
@@ -187,7 +191,7 @@ public class MongoRecordReader extends AbstractRecordReader {
   }
 
   @Override
-  public void cleanup() {
+  public void close() {
   }
 
 

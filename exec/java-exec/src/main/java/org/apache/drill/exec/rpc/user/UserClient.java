@@ -20,6 +20,8 @@ package org.apache.drill.exec.rpc.user;
 import io.netty.buffer.ByteBuf;
 import io.netty.channel.EventLoopGroup;
 
+import java.util.concurrent.Executor;
+
 import org.apache.drill.common.config.DrillConfig;
 import org.apache.drill.exec.memory.BufferAllocator;
 import org.apache.drill.exec.proto.CoordinationProtos.DrillbitEndpoint;
@@ -36,6 +38,7 @@ import org.apache.drill.exec.proto.UserProtos.UserProperties;
 import org.apache.drill.exec.proto.UserProtos.UserToBitHandshake;
 import org.apache.drill.exec.rpc.Acks;
 import org.apache.drill.exec.rpc.BasicClientWithConnection;
+import org.apache.drill.exec.rpc.ConnectionThrottle;
 import org.apache.drill.exec.rpc.OutOfMemoryHandler;
 import org.apache.drill.exec.rpc.ProtobufLengthDecoder;
 import org.apache.drill.exec.rpc.Response;
@@ -48,13 +51,12 @@ public class UserClient extends BasicClientWithConnection<RpcType, UserToBitHand
   private static final org.slf4j.Logger logger = org.slf4j.LoggerFactory.getLogger(UserClient.class);
 
   private final QueryResultHandler queryResultHandler = new QueryResultHandler();
-
   private boolean supportComplexTypes = true;
 
   public UserClient(DrillConfig config, boolean supportComplexTypes, BufferAllocator alloc,
-      EventLoopGroup eventLoopGroup) {
+      EventLoopGroup eventLoopGroup, Executor eventExecutor) {
     super(
-        UserRpcConfig.getMapping(config),
+        UserRpcConfig.getMapping(config, eventExecutor),
         alloc,
         eventLoopGroup,
         RpcType.HANDSHAKE,
@@ -68,8 +70,8 @@ public class UserClient extends BasicClientWithConnection<RpcType, UserToBitHand
     send(queryResultHandler.getWrappedListener(connection, resultsListener), RpcType.RUN_QUERY, query, QueryId.class);
   }
 
-  public void connect(RpcConnectionHandler<ServerConnection> handler, DrillbitEndpoint endpoint, UserProperties props, UserBitShared.UserCredentials credentials)
-      throws RpcException {
+  public void connect(RpcConnectionHandler<ServerConnection> handler, DrillbitEndpoint endpoint,
+      UserProperties props, UserBitShared.UserCredentials credentials) {
     UserToBitHandshake.Builder hsBuilder = UserToBitHandshake.newBuilder()
         .setRpcVersion(UserRpcConfig.RPC_VERSION)
         .setSupportListening(true)
@@ -113,7 +115,6 @@ public class UserClient extends BasicClientWithConnection<RpcType, UserToBitHand
     default:
       throw new RpcException(String.format("Unknown Rpc Type %d. ", rpcType));
     }
-
   }
 
   @Override
@@ -135,5 +136,4 @@ public class UserClient extends BasicClientWithConnection<RpcType, UserToBitHand
   public ProtobufLengthDecoder getDecoder(BufferAllocator allocator) {
     return new UserProtobufLengthDecoder(allocator, OutOfMemoryHandler.DEFAULT_INSTANCE);
   }
-
 }

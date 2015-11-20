@@ -22,14 +22,14 @@ import org.apache.drill.exec.physical.impl.OutputMutator;
 import org.apache.drill.exec.server.options.OptionManager;
 import org.apache.drill.exec.vector.complex.writer.BaseWriter.ComplexWriter;
 
-import parquet.io.api.GroupConverter;
-import parquet.io.api.RecordMaterializer;
-import parquet.schema.MessageType;
+import org.apache.parquet.io.api.GroupConverter;
+import org.apache.parquet.io.api.RecordMaterializer;
+import org.apache.parquet.schema.MessageType;
 
 import java.util.Collection;
 import java.util.List;
 
-public class DrillParquetRecordMaterializer extends RecordMaterializer<Boolean> {
+public class DrillParquetRecordMaterializer extends RecordMaterializer<Void> {
 
   public DrillParquetGroupConverter root;
   private ComplexWriter complexWriter;
@@ -45,7 +45,7 @@ public class DrillParquetRecordMaterializer extends RecordMaterializer<Boolean> 
   }
 
   @Override
-  public Boolean getCurrentRecord() {
+  public Void getCurrentRecord() {
     return true;
   }
 

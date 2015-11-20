@@ -38,6 +38,7 @@ import org.slf4j.Logger;
  * @see org.apache.drill.exec.proto.UserBitShared.DrillPBError.ErrorType
  */
 public class UserException extends DrillRuntimeException {
+  private static final org.slf4j.Logger logger = org.slf4j.LoggerFactory.getLogger(UserException.class);
 
   public static final String MEMORY_ERROR_MSG = "One or more nodes ran out of memory while executing the query.";
 
@@ -419,6 +420,16 @@ public class UserException extends DrillRuntimeException {
     }
 
     /**
+     * add a string line to the bottom of the context
+     * @param value string line
+     * @return this builder
+     */
+    public Builder addContext(final String value, Object... args) {
+      context.add(String.format(value, args));
+      return this;
+    }
+
+    /**
      * add a string value to the bottom of the context
      *
      * @param name context name
@@ -533,6 +544,18 @@ public class UserException extends DrillRuntimeException {
       }
 
       return newException;
+    }
+
+    /**
+     * Builds a user exception or returns the wrapped one.
+     *
+     * @return user exception
+     * @deprecated Use {@link #build(Logger)} instead. If the error is a system error, the error message is logged to
+     * this {@link UserException#logger}.
+     */
+    @Deprecated
+    public UserException build() {
+      return build(logger);
     }
   }
 

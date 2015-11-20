@@ -23,6 +23,8 @@ import java.util.Arrays;
 import java.util.List;
 import java.util.regex.Pattern;
 
+import org.apache.drill.exec.planner.logical.DrillTable;
+import org.apache.drill.exec.planner.logical.DynamicDrillTable;
 import org.apache.hadoop.conf.Configuration;
 import org.apache.hadoop.fs.FSDataInputStream;
 import org.apache.hadoop.fs.FileStatus;
@@ -71,21 +73,27 @@ public class BasicFormatMatcher extends FormatMatcher{
   }
 
   @Override
-  public FormatSelection isReadable(DrillFileSystem fs, FileSelection selection) throws IOException {
-    if (isReadable(fs, selection.getFirstPath(fs))) {
+  public DrillTable isReadable(DrillFileSystem fs,
+      FileSelection selection, FileSystemPlugin fsPlugin,
+      String storageEngineName, String userName) throws IOException {
+    if (isFileReadable(fs, selection.getFirstPath(fs))) {
       if (plugin.getName() != null) {
         NamedFormatPluginConfig namedConfig = new NamedFormatPluginConfig();
         namedConfig.name = plugin.getName();
-        return new FormatSelection(namedConfig, selection);
+        return new DynamicDrillTable(fsPlugin, storageEngineName, userName, new FormatSelection(namedConfig, selection));
       } else {
-        return new FormatSelection(plugin.getConfig(), selection);
+        return new DynamicDrillTable(fsPlugin, storageEngineName, userName, new FormatSelection(plugin.getConfig(), selection));
       }
     }
     return null;
   }
 
-  protected final boolean isReadable(DrillFileSystem fs, FileStatus status) throws IOException {
-    CompressionCodec codec = null;
+  /*
+   * Function returns true if the file extension matches the pattern
+   */
+  @Override
+  public boolean isFileReadable(DrillFileSystem fs, FileStatus status) throws IOException {
+  CompressionCodec codec = null;
     if (compressible) {
       codec = codecFactory.getCodec(status.getPath());
     }
@@ -110,7 +118,6 @@ public class BasicFormatMatcher extends FormatMatcher{
     }
     return false;
   }
-
 
   @Override
   @JsonIgnore

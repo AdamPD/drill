@@ -18,12 +18,13 @@
 package org.apache.drill.exec.vector.complex.writer;
 
 import java.io.ByteArrayOutputStream;
-import java.io.IOException;
 
+import org.apache.drill.common.DrillAutoCloseables;
+import org.apache.drill.common.config.DrillConfig;
 import org.apache.drill.exec.expr.holders.BigIntHolder;
 import org.apache.drill.exec.expr.holders.IntHolder;
 import org.apache.drill.exec.memory.BufferAllocator;
-import org.apache.drill.exec.memory.TopLevelAllocator;
+import org.apache.drill.exec.memory.RootAllocatorFactory;
 import org.apache.drill.exec.vector.complex.MapVector;
 import org.apache.drill.exec.vector.complex.fn.JsonWriter;
 import org.apache.drill.exec.vector.complex.impl.ComplexWriterImpl;
@@ -41,16 +42,17 @@ import com.google.common.base.Charsets;
 public class TestRepeated {
   // private static final org.slf4j.Logger logger = org.slf4j.LoggerFactory.getLogger(TestRepeated.class);
 
+  private static final DrillConfig drillConfig = DrillConfig.create();
   private static BufferAllocator allocator;
 
   @BeforeClass
   public static void setupAllocator() {
-    allocator = new TopLevelAllocator();
+    allocator = RootAllocatorFactory.newRoot(drillConfig);
   }
 
   @AfterClass
   public static void destroyAllocator() {
-    allocator.close();
+    DrillAutoCloseables.closeNoChecked(allocator);
   }
 //
 //  @Test
@@ -112,7 +114,7 @@ public class TestRepeated {
 //  }
 
   @Test
-  public void listOfList() throws IOException {
+  public void listOfList() throws Exception {
     /**
      * We're going to try to create an object that looks like:
      *
@@ -130,19 +132,19 @@ public class TestRepeated {
      *
      */
 
-    final MapVector v = new MapVector("", allocator, null);
-    final ComplexWriterImpl writer = new ComplexWriterImpl("col", v);
+    final MapVector mapVector = new MapVector("", allocator, null);
+    final ComplexWriterImpl writer = new ComplexWriterImpl("col", mapVector);
     writer.allocate();
 
     {
       final MapWriter map = writer.rootAsMap();
       final ListWriter list = map.list("a");
-      list.start();
+      list.startList();
 
       final ListWriter innerList = list.list();
       final IntWriter innerInt = innerList.integer();
 
-      innerList.start();
+      innerList.startList();
 
       final IntHolder holder = new IntHolder();
 
@@ -153,16 +155,16 @@ public class TestRepeated {
       holder.value = 3;
       innerInt.write(holder);
 
-      innerList.end();
-      innerList.start();
+      innerList.endList();
+      innerList.startList();
 
       holder.value = 4;
       innerInt.write(holder);
       holder.value = 5;
       innerInt.write(holder);
 
-      innerList.end();
-      list.end();
+      innerList.endList();
+      list.endList();
 
       final IntWriter numCol = map.integer("nums");
       holder.value = 14;
@@ -190,12 +192,12 @@ public class TestRepeated {
 
       final MapWriter map = writer.rootAsMap();
       final ListWriter list = map.list("a");
-      list.start();
+      list.startList();
 
       final ListWriter innerList = list.list();
       final IntWriter innerInt = innerList.integer();
 
-      innerList.start();
+      innerList.startList();
 
       final IntHolder holder = new IntHolder();
 
@@ -206,16 +208,16 @@ public class TestRepeated {
       holder.value = -3;
       innerInt.write(holder);
 
-      innerList.end();
-      innerList.start();
+      innerList.endList();
+      innerList.startList();
 
       holder.value = -4;
       innerInt.write(holder);
       holder.value = -5;
       innerInt.write(holder);
 
-      innerList.end();
-      list.end();
+      innerList.endList();
+      list.endList();
 
       final IntWriter numCol = map.integer("nums");
       holder.value = -28;
@@ -240,12 +242,12 @@ public class TestRepeated {
 
     final ObjectWriter ow = new ObjectMapper().writer().withDefaultPrettyPrinter();
 
-    System.out.println("Map of Object[0]: " + ow.writeValueAsString(v.getAccessor().getObject(0)));
-    System.out.println("Map of Object[1]: " + ow.writeValueAsString(v.getAccessor().getObject(1)));
+    System.out.println("Map of Object[0]: " + ow.writeValueAsString(mapVector.getAccessor().getObject(0)));
+    System.out.println("Map of Object[1]: " + ow.writeValueAsString(mapVector.getAccessor().getObject(1)));
 
     final ByteArrayOutputStream stream = new ByteArrayOutputStream();
     final JsonWriter jsonWriter = new JsonWriter(stream, true, true);
-    final FieldReader reader = v.getChild("col", MapVector.class).getReader();
+    final FieldReader reader = mapVector.getChild("col", MapVector.class).getReader();
     reader.setPosition(0);
     jsonWriter.write(reader);
     reader.setPosition(1);
@@ -253,6 +255,6 @@ public class TestRepeated {
     System.out.print("Json Read: ");
     System.out.println(new String(stream.toByteArray(), Charsets.UTF_8));
 
-    writer.clear();
+    writer.close();
   }
 }

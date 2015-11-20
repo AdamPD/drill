@@ -78,6 +78,21 @@ public class TestBugFixes extends BaseTestQuery {
     }
   }
 
+  /**
+   * This test is not checking results because the bug fixed only appears with functions taking no arguments.
+   * I could alternatively use something like the now() function, but this still would be hard to write
+   * result verification for. The important aspect of the test is that it verifies that the previous IOOB
+   * does not occur. The various no-argument functions should be verified in other ways.
+   */
+  @Test
+  public void Drill3484() throws Exception {
+    try {
+      test("alter SYSTEM set `drill.exec.functions.cast_empty_string_to_null` = true;");
+      test("select random() from sys.drillbits");
+    } finally {
+      test("alter SYSTEM set `drill.exec.functions.cast_empty_string_to_null` = false;");
+    }
+  }
 
   @Test (expected = UserException.class)
   // Should be "Failure while parsing sql. Node [rel#26:Subset#6.LOGICAL.ANY([]).[]] could not be implemented;".
@@ -94,6 +109,39 @@ public class TestBugFixes extends BaseTestQuery {
   @Test
   public void testDRILL1337_LocalRightFilterLeftOutJoin() throws Exception {
     test("select * from cp.`tpch/nation.parquet` n left outer join cp.`tpch/region.parquet` r on n.n_regionkey = r.r_regionkey and r.r_name not like '%ASIA' order by r.r_name;");
+  }
+
+  @Test
+  public void testDRILL2361_AggColumnAliasWithDots() throws Exception {
+    testBuilder()
+      .sqlQuery("select count(*) as `test.alias` from cp.`employee.json`")
+      .unOrdered()
+      .baselineColumns("`test.alias`")
+      .baselineValues(1155L)
+      .build().run();
+  }
+
+  @Test
+  public void testDRILL2361_SortColumnAliasWithDots() throws Exception {
+    testBuilder()
+            .sqlQuery("select o_custkey as `x.y.z` from cp.`tpch/orders.parquet` where o_orderkey < 5 order by `x.y.z`")
+            .unOrdered()
+            .baselineColumns("`x.y.z`")
+            .baselineValues(370)
+            .baselineValues(781)
+            .baselineValues(1234)
+            .baselineValues(1369)
+            .build().run();
+  }
+
+  @Test
+  public void testDRILL2361_JoinColumnAliasWithDots() throws Exception {
+    testBuilder()
+            .sqlQuery("select count(*) as cnt from (select o_custkey as `x.y` from cp.`tpch/orders.parquet`) o inner join cp.`tpch/customer.parquet` c on o.`x.y` = c.c_custkey")
+            .unOrdered()
+            .baselineColumns("cnt")
+            .baselineValues(15000L)
+            .build().run();
   }
 
 }

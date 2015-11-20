@@ -25,7 +25,7 @@ import org.apache.drill.common.exceptions.ExecutionSetupException;
 import org.apache.drill.common.exceptions.UserException;
 import org.apache.drill.common.expression.SchemaPath;
 import org.apache.drill.exec.ExecConstants;
-import org.apache.drill.exec.memory.OutOfMemoryException;
+import org.apache.drill.exec.exception.OutOfMemoryException;
 import org.apache.drill.exec.ops.FragmentContext;
 import org.apache.drill.exec.ops.OperatorContext;
 import org.apache.drill.exec.physical.impl.OutputMutator;
@@ -57,16 +57,16 @@ public class JSONRecordReader extends AbstractRecordReader {
   private int recordCount;
   private long runningRecordCount = 0;
   private final FragmentContext fragmentContext;
-  private OperatorContext operatorContext;
   private final boolean enableAllTextMode;
   private final boolean readNumbersAsDouble;
+  private final boolean unionEnabled;
 
   /**
    * Create a JSON Record Reader that uses a file based input stream.
    * @param fragmentContext
    * @param inputPath
    * @param fileSystem
-   * @param columns
+   * @param columns  pathnames of columns/subfields to read
    * @throws OutOfMemoryException
    */
   public JSONRecordReader(final FragmentContext fragmentContext, final String inputPath, final DrillFileSystem fileSystem,
@@ -79,16 +79,17 @@ public class JSONRecordReader extends AbstractRecordReader {
    * @param fragmentContext
    * @param embeddedContent
    * @param fileSystem
-   * @param columns
+   * @param columns  pathnames of columns/subfields to read
    * @throws OutOfMemoryException
    */
-  public JSONRecordReader(final FragmentContext fragmentContext, final JsonNode embeddedContent, final DrillFileSystem fileSystem,
-      final List<SchemaPath> columns) throws OutOfMemoryException {
+  public JSONRecordReader(final FragmentContext fragmentContext, final JsonNode embeddedContent,
+      final DrillFileSystem fileSystem, final List<SchemaPath> columns) throws OutOfMemoryException {
     this(fragmentContext, null, embeddedContent, fileSystem, columns);
   }
 
-  private JSONRecordReader(final FragmentContext fragmentContext, final String inputPath, final JsonNode embeddedContent, final DrillFileSystem fileSystem,
-                          final List<SchemaPath> columns) throws OutOfMemoryException {
+  private JSONRecordReader(final FragmentContext fragmentContext, final String inputPath,
+      final JsonNode embeddedContent, final DrillFileSystem fileSystem,
+      final List<SchemaPath> columns) {
 
     Preconditions.checkArgument(
         (inputPath == null && embeddedContent != null) ||
@@ -96,9 +97,9 @@ public class JSONRecordReader extends AbstractRecordReader {
         "One of inputPath or embeddedContent must be set but not both."
         );
 
-    if(inputPath != null){
+    if(inputPath != null) {
       this.hadoopPath = new Path(inputPath);
-    }else{
+    } else {
       this.embeddedContent = embeddedContent;
     }
 
@@ -108,18 +109,26 @@ public class JSONRecordReader extends AbstractRecordReader {
     // only enable all text mode if we aren't using embedded content mode.
     this.enableAllTextMode = embeddedContent == null && fragmentContext.getOptions().getOption(ExecConstants.JSON_READER_ALL_TEXT_MODE_VALIDATOR);
     this.readNumbersAsDouble = fragmentContext.getOptions().getOption(ExecConstants.JSON_READ_NUMBERS_AS_DOUBLE).bool_val;
+    this.unionEnabled = fragmentContext.getOptions().getOption(ExecConstants.ENABLE_UNION_TYPE);
     setColumns(columns);
   }
 
   @Override
+  public String toString() {
+    return super.toString()
+        + "[hadoopPath = " + hadoopPath
+        + ", recordCount = " + recordCount
+        + ", runningRecordCount = " + runningRecordCount + ", ...]";
+  }
+
+  @Override
   public void setup(final OperatorContext context, final OutputMutator output) throws ExecutionSetupException {
-    this.operatorContext = context;
     try{
       if (hadoopPath != null) {
         this.stream = fileSystem.openPossiblyCompressedStream(hadoopPath);
       }
 
-      this.writer = new VectorContainerWriter(output);
+      this.writer = new VectorContainerWriter(output, unionEnabled);
       if (isSkipQuery()) {
         this.jsonReader = new CountingJsonReader(fragmentContext.getManagedBuffer());
       } else {
@@ -131,7 +140,7 @@ public class JSONRecordReader extends AbstractRecordReader {
     }
   }
 
-  private void setupParser() throws IOException{
+  private void setupParser() throws IOException {
     if(hadoopPath != null){
       jsonReader.setSource(stream);
     }else{
@@ -155,8 +164,11 @@ public class JSONRecordReader extends AbstractRecordReader {
     if (columnNr > 0) {
       exceptionBuilder.pushContext("Column ", columnNr);
     }
-    exceptionBuilder.pushContext("Record ", currentRecordNumberInFile())
-            .pushContext("File ", hadoopPath.toUri().getPath());
+
+    if (hadoopPath != null) {
+      exceptionBuilder.pushContext("Record ", currentRecordNumberInFile())
+          .pushContext("File ", hadoopPath.toUri().getPath());
+    }
 
     throw exceptionBuilder.build(logger);
   }
@@ -174,11 +186,11 @@ public class JSONRecordReader extends AbstractRecordReader {
     ReadState write = null;
 //    Stopwatch p = new Stopwatch().start();
     try{
-      outside: while(recordCount < BaseValueVector.INITIAL_VALUE_ALLOCATION){
+      outside: while(recordCount < BaseValueVector.INITIAL_VALUE_ALLOCATION) {
         writer.setPosition(recordCount);
         write = jsonReader.write(writer);
 
-        if(write == ReadState.WRITE_SUCCEED){
+        if(write == ReadState.WRITE_SUCCEED) {
 //          logger.debug("Wrote record.");
           recordCount++;
         }else{
@@ -195,7 +207,6 @@ public class JSONRecordReader extends AbstractRecordReader {
 //      System.out.println(String.format("Wrote %d records in %dms.", recordCount, p.elapsed(TimeUnit.MILLISECONDS)));
 
       updateRunningCount();
-
       return recordCount;
 
     } catch (final Exception e) {
@@ -210,14 +221,9 @@ public class JSONRecordReader extends AbstractRecordReader {
   }
 
   @Override
-  public void cleanup() {
-    try {
-      if(stream != null){
-        stream.close();
-      }
-    } catch (final IOException e) {
-      logger.warn("Failure while closing stream.", e);
+  public void close() throws Exception {
+    if(stream != null) {
+      stream.close();
     }
   }
-
 }

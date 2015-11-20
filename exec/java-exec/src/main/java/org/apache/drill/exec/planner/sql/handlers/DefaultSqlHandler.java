@@ -21,15 +21,18 @@ import java.io.IOException;
 import java.util.ArrayList;
 import java.util.Collection;
 import java.util.List;
+import java.util.Set;
 
+import com.google.common.collect.ImmutableSet;
 import org.apache.calcite.plan.RelOptPlanner;
+import org.apache.calcite.plan.RelOptRule;
 import org.apache.calcite.plan.RelOptUtil;
 import org.apache.calcite.plan.RelTraitSet;
-import org.apache.calcite.plan.hep.HepPlanner;
-import org.apache.calcite.rel.RelNode;
 import org.apache.calcite.plan.hep.HepMatchOrder;
+import org.apache.calcite.plan.hep.HepPlanner;
 import org.apache.calcite.plan.hep.HepProgram;
 import org.apache.calcite.plan.hep.HepProgramBuilder;
+import org.apache.calcite.rel.RelNode;
 import org.apache.calcite.rel.RelShuttleImpl;
 import org.apache.calcite.rel.core.Join;
 import org.apache.calcite.rel.core.Project;
@@ -65,14 +68,20 @@ import org.apache.drill.exec.physical.PhysicalPlan;
 import org.apache.drill.exec.physical.base.AbstractPhysicalVisitor;
 import org.apache.drill.exec.physical.base.PhysicalOperator;
 import org.apache.drill.exec.physical.impl.join.JoinUtils;
+import org.apache.drill.exec.planner.common.DrillRelOptUtil;
 import org.apache.drill.exec.planner.cost.DrillDefaultRelMetadataProvider;
 import org.apache.drill.exec.planner.logical.DrillJoinRel;
+import org.apache.drill.exec.planner.logical.DrillMergeProjectRule;
 import org.apache.drill.exec.planner.logical.DrillProjectRel;
+import org.apache.drill.exec.planner.logical.DrillPushProjectPastFilterRule;
 import org.apache.drill.exec.planner.logical.DrillRel;
 import org.apache.drill.exec.planner.logical.DrillRelFactories;
+import org.apache.drill.exec.planner.logical.DrillRuleSets;
 import org.apache.drill.exec.planner.logical.DrillScreenRel;
 import org.apache.drill.exec.planner.logical.DrillStoreRel;
 import org.apache.drill.exec.planner.logical.PreProcessLogicalRel;
+import org.apache.drill.exec.planner.logical.partition.ParquetPruneScanRule;
+import org.apache.drill.exec.planner.logical.partition.PruneScanRule;
 import org.apache.drill.exec.planner.physical.DrillDistributionTrait;
 import org.apache.drill.exec.planner.physical.PhysicalPlanCreator;
 import org.apache.drill.exec.planner.physical.PlannerSettings;
@@ -98,11 +107,11 @@ import org.apache.drill.exec.util.Pointer;
 import org.apache.drill.exec.work.foreman.ForemanSetupException;
 import org.apache.drill.exec.work.foreman.SqlUnsupportedException;
 import org.apache.drill.exec.work.foreman.UnsupportedRelOperatorException;
+import org.slf4j.Logger;
 
 import com.fasterxml.jackson.core.JsonProcessingException;
 import com.google.common.base.Preconditions;
 import com.google.common.collect.Lists;
-import org.slf4j.Logger;
 
 public class DefaultSqlHandler extends AbstractSqlHandler {
   private static final org.slf4j.Logger logger = org.slf4j.LoggerFactory.getLogger(DefaultSqlHandler.class);
@@ -147,7 +156,7 @@ public class DefaultSqlHandler extends AbstractSqlHandler {
 
   protected void log(final String name, final PhysicalPlan plan, final Logger logger) throws JsonProcessingException {
     if (logger.isDebugEnabled()) {
-      String planText = plan.unparse(context.getConfig().getMapper().writer());
+      String planText = plan.unparse(context.getLpPersistence().getMapper().writer());
       logger.debug(name + " : \n" + planText);
     }
   }
@@ -206,11 +215,7 @@ public class DefaultSqlHandler extends AbstractSqlHandler {
     try {
       final DrillRel convertedRelNode;
 
-      if (! context.getPlannerSettings().isHepJoinOptEnabled()) {
-        convertedRelNode = (DrillRel) logicalPlanningVolcano(relNode);
-      } else {
-        convertedRelNode = (DrillRel) logicalPlanningVolcanoAndLopt(relNode);
-      }
+      convertedRelNode = (DrillRel) doLogicalPlanning(relNode);
 
       if (convertedRelNode instanceof DrillStoreRel) {
         throw new UnsupportedOperationException();
@@ -247,18 +252,34 @@ public class DefaultSqlHandler extends AbstractSqlHandler {
     final DrillRel convertedRelNode = convertToDrel(relNode);
 
     // Put a non-trivial topProject to ensure the final output field name is preserved, when necessary.
-    DrillRel topPreservedNameProj = addRenamedProject((DrillRel) convertedRelNode, validatedRowType);
+    DrillRel topPreservedNameProj = addRenamedProject(convertedRelNode, validatedRowType);
     return new DrillScreenRel(topPreservedNameProj.getCluster(), topPreservedNameProj.getTraitSet(),
         topPreservedNameProj);
   }
 
+  /**
+   * A shuttle designed to finalize all RelNodes.
+   */
+  private static class PrelFinalizer extends RelShuttleImpl {
+
+    @Override
+    public RelNode visit(RelNode other) {
+      if (other instanceof PrelFinalizable) {
+        return ((PrelFinalizable) other).finalizeRel();
+      } else {
+        return super.visit(other);
+      }
+    }
+
+  }
 
   protected Prel convertToPrel(RelNode drel) throws RelConversionException, SqlUnsupportedException {
     Preconditions.checkArgument(drel.getConvention() == DrillRel.DRILL_LOGICAL);
     RelTraitSet traits = drel.getTraitSet().plus(Prel.DRILL_PHYSICAL).plus(DrillDistributionTrait.SINGLETON);
     Prel phyRelNode;
     try {
-      phyRelNode = (Prel) planner.transform(DrillSqlWorker.PHYSICAL_MEM_RULES, traits, drel);
+      final RelNode relNode = planner.transform(DrillSqlWorker.PHYSICAL_MEM_RULES, traits, drel);
+      phyRelNode = (Prel) relNode.accept(new PrelFinalizer());
     } catch (RelOptPlanner.CannotPlanException ex) {
       logger.error(ex.getMessage());
 
@@ -280,7 +301,8 @@ public class DefaultSqlHandler extends AbstractSqlHandler {
       queryOptions.setOption(OptionValue.createBoolean(OptionValue.OptionType.QUERY, PlannerSettings.HASHAGG.getOptionName(), false));
 
       try {
-        phyRelNode = (Prel) planner.transform(DrillSqlWorker.PHYSICAL_MEM_RULES, traits, drel);
+        final RelNode relNode = planner.transform(DrillSqlWorker.PHYSICAL_MEM_RULES, traits, drel);
+        phyRelNode = (Prel) relNode.accept(new PrelFinalizer());
       } catch (RelOptPlanner.CannotPlanException ex) {
         logger.error(ex.getMessage());
 
@@ -321,12 +343,12 @@ public class DefaultSqlHandler extends AbstractSqlHandler {
     /*
      * 1.2) Break up all expressions with complex outputs into their own project operations
      */
-    phyRelNode = ((Prel) phyRelNode).accept(new SplitUpComplexExpressions(planner.getTypeFactory(), context.getDrillOperatorTable(), context.getPlannerSettings().functionImplementationRegistry), null);
+    phyRelNode = phyRelNode.accept(new SplitUpComplexExpressions(planner.getTypeFactory(), context.getDrillOperatorTable(), context.getPlannerSettings().functionImplementationRegistry), null);
 
     /*
      * 1.3) Projections that contain reference to flatten are rewritten as Flatten operators followed by Project
      */
-    phyRelNode = ((Prel) phyRelNode).accept(new RewriteProjectToFlatten(planner.getTypeFactory(), context.getDrillOperatorTable()), null);
+    phyRelNode = phyRelNode.accept(new RewriteProjectToFlatten(planner.getTypeFactory(), context.getDrillOperatorTable()), null);
 
     /*
      * 2.)
@@ -446,10 +468,21 @@ public class DefaultSqlHandler extends AbstractSqlHandler {
   }
 
   private RelNode convertToRel(SqlNode node) throws RelConversionException {
-    RelNode convertedNode = planner.convert(node);
+    final RelNode convertedNode = planner.convert(node);
+
+    final RelMetadataProvider provider = convertedNode.getCluster().getMetadataProvider();
+
+    // Register RelMetadataProvider with HepPlanner.
+    final List<RelMetadataProvider> list = Lists.newArrayList(provider);
+    hepPlanner.registerMetadataProviders(list);
+    final RelMetadataProvider cachingMetaDataProvider = new CachingRelMetadataProvider(ChainedRelMetadataProvider.of(list), hepPlanner);
+    convertedNode.accept(new MetaDataProviderModifier(cachingMetaDataProvider));
+
+    // HepPlanner is specifically used for Window Function planning only.
     hepPlanner.setRoot(convertedNode);
     RelNode rel = hepPlanner.findBestExp();
 
+    rel.accept(new MetaDataProviderModifier(provider));
     return rel;
   }
 
@@ -492,7 +525,7 @@ public class DefaultSqlHandler extends AbstractSqlHandler {
     DrillProjectRel topProj = DrillProjectRel.create(rel.getCluster(), rel.getTraitSet(), rel, projections, newRowType);
 
     // Add a final non-trivial Project to get the validatedRowType, if child is not project.
-    if (rel instanceof Project && ProjectRemoveRule.isTrivial(topProj, true)) {
+    if (rel instanceof Project && DrillRelOptUtil.isTrivialProject(topProj, true)) {
       return rel;
     } else{
       return topProj;
@@ -500,55 +533,56 @@ public class DefaultSqlHandler extends AbstractSqlHandler {
   }
 
 
-  private RelNode logicalPlanningVolcano(RelNode relNode) throws RelConversionException, SqlUnsupportedException {
-    return planner.transform(DrillSqlWorker.LOGICAL_RULES, relNode.getTraitSet().plus(DrillRel.DRILL_LOGICAL), relNode);
+  private RelNode doLogicalPlanning(RelNode relNode) throws RelConversionException, SqlUnsupportedException {
+    if (! context.getPlannerSettings().isHepOptEnabled()) {
+      return planner.transform(DrillSqlWorker.LOGICAL_RULES, relNode.getTraitSet().plus(DrillRel.DRILL_LOGICAL), relNode);
+    } else {
+      RelNode convertedRelNode = null;
+      if (context.getPlannerSettings().isHepPartitionPruningEnabled()) {
+        convertedRelNode = planner.transform(DrillSqlWorker.LOGICAL_HEP_JOIN__PP_RULES, relNode.getTraitSet().plus(DrillRel.DRILL_LOGICAL), relNode);
+        log("VolcanoRel", convertedRelNode, logger);
+
+        // Partition pruning .
+        ImmutableSet<RelOptRule> pruneScanRules = ImmutableSet.<RelOptRule>builder()
+            .addAll(DrillRuleSets.getPruneScanRules(context))
+            .build();
+
+        convertedRelNode = doHepPlan(convertedRelNode, pruneScanRules, HepMatchOrder.BOTTOM_UP);
+      } else {
+        convertedRelNode = planner.transform(DrillSqlWorker.LOGICAL_HEP_JOIN_RULES, relNode.getTraitSet().plus(DrillRel.DRILL_LOGICAL), relNode);
+        log("VolcanoRel", convertedRelNode, logger);
+      }
+
+      // Join order planning with LOPT rule
+      ImmutableSet<RelOptRule> joinOrderRules = ImmutableSet.<RelOptRule>builder()
+          .add(
+              DrillRuleSets.DRILL_JOIN_TO_MULTIJOIN_RULE,
+              DrillRuleSets.DRILL_LOPT_OPTIMIZE_JOIN_RULE,
+              ProjectRemoveRule.INSTANCE)
+          .build();
+
+      final RelNode loptNode = doHepPlan(convertedRelNode, joinOrderRules, HepMatchOrder.BOTTOM_UP);
+
+      log("HepRel", loptNode, logger);
+
+      return loptNode;
+    }
   }
 
   /**
-   * Do logical planning using both VolcanoPlanner and LOPT HepPlanner.
-   * @param relNode
-   * @return
-   * @throws RelConversionException
-   * @throws SqlUnsupportedException
+   * Use HepPlanner to apply optimization rules to RelNode tree.
+   * @return : the root node for optimized plan.
    */
-  private RelNode logicalPlanningVolcanoAndLopt(RelNode relNode) throws RelConversionException, SqlUnsupportedException {
-
-    final RelNode convertedRelNode = planner.transform(DrillSqlWorker.LOGICAL_CONVERT_RULES, relNode.getTraitSet().plus(DrillRel.DRILL_LOGICAL), relNode);
-    log("VolCalciteRel", convertedRelNode, logger);
-
-    final RelNode loptNode = getLoptJoinOrderTree(
-        convertedRelNode,
-        DrillJoinRel.class,
-        DrillRelFactories.DRILL_LOGICAL_JOIN_FACTORY,
-        DrillRelFactories.DRILL_LOGICAL_FILTER_FACTORY,
-        DrillRelFactories.DRILL_LOGICAL_PROJECT_FACTORY);
-
-    log("HepCalciteRel", loptNode, logger);
-
-    return loptNode;
-  }
-
-
-  /**
-   * Appy Join Order Optimizations using Hep Planner.
-   */
-  private RelNode getLoptJoinOrderTree(RelNode root,
-                                      Class<? extends Join> joinClass,
-                                             RelFactories.JoinFactory joinFactory,
-                                             RelFactories.FilterFactory filterFactory,
-                                             RelFactories.ProjectFactory projectFactory) {
+  private RelNode doHepPlan(RelNode root, Set<RelOptRule> rules, HepMatchOrder matchOrder) {
     final HepProgramBuilder hepPgmBldr = new HepProgramBuilder()
-        .addMatchOrder(HepMatchOrder.BOTTOM_UP)
-        .addRuleInstance(new JoinToMultiJoinRule(joinClass))
-        .addRuleInstance(new LoptOptimizeJoinRule(joinFactory, projectFactory, filterFactory))
-        .addRuleInstance(ProjectRemoveRule.INSTANCE);
-        // .addRuleInstance(new ProjectMergeRule(true, projectFactory));
+        .addMatchOrder(matchOrder);
 
-        // .addRuleInstance(DrillMergeProjectRule.getInstance(true, projectFactory, this.context.getFunctionRegistry()));
-
+    for (final RelOptRule rule : rules) {
+      hepPgmBldr.addRuleInstance(rule);
+    }
 
     final HepProgram hepPgm = hepPgmBldr.build();
-    final HepPlanner hepPlanner = new HepPlanner(hepPgm);
+    final HepPlanner hepPlanner = new HepPlanner(hepPgm, context.getPlannerSettings());
 
     final List<RelMetadataProvider> list = Lists.newArrayList();
     list.add(DrillDefaultRelMetadataProvider.INSTANCE);
@@ -564,7 +598,6 @@ public class DefaultSqlHandler extends AbstractSqlHandler {
 
     return calciteOptimizedPlan;
   }
-
 
   public static class MetaDataProviderModifier extends RelShuttleImpl {
     private final RelMetadataProvider metadataProvider;

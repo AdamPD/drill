@@ -20,7 +20,6 @@ package org.apache.drill.exec.memory;
 
 
 import static org.junit.Assert.fail;
-
 import io.netty.buffer.DrillBuf;
 
 import java.util.Iterator;
@@ -29,7 +28,7 @@ import java.util.Properties;
 
 import org.apache.drill.common.config.DrillConfig;
 import org.apache.drill.common.util.FileUtils;
-import org.apache.drill.exec.ExecConstants;
+import org.apache.drill.exec.exception.OutOfMemoryException;
 import org.apache.drill.exec.expr.fn.FunctionImplementationRegistry;
 import org.apache.drill.exec.ops.FragmentContext;
 import org.apache.drill.exec.ops.OpProfileDef;
@@ -38,29 +37,53 @@ import org.apache.drill.exec.ops.OperatorStats;
 import org.apache.drill.exec.physical.PhysicalPlan;
 import org.apache.drill.exec.physical.base.PhysicalOperator;
 import org.apache.drill.exec.planner.PhysicalPlanReader;
+import org.apache.drill.exec.planner.PhysicalPlanReaderTestFactory;
 import org.apache.drill.exec.proto.BitControl;
-import org.apache.drill.exec.proto.CoordinationProtos;
 import org.apache.drill.exec.proto.UserBitShared;
 import org.apache.drill.exec.server.Drillbit;
 import org.apache.drill.exec.server.DrillbitContext;
 import org.apache.drill.exec.server.RemoteServiceSet;
 import org.apache.drill.exec.store.StoragePluginRegistry;
+import org.apache.drill.test.DrillTest;
 import org.junit.Test;
 
 import com.google.common.base.Charsets;
 import com.google.common.io.Files;
 
-public class TestAllocators {
+public class TestAllocators extends DrillTest {
 
   private static final Properties TEST_CONFIGURATIONS = new Properties() {
     {
-      put(ExecConstants.TOP_LEVEL_MAX_ALLOC, "14000000");
-      put(ExecConstants.ENABLE_FRAGMENT_MEMORY_LIMIT, "true");
-      put(ExecConstants.FRAGMENT_MEM_OVERCOMMIT_FACTOR, "1.1");
+      put(TopLevelAllocator.TOP_LEVEL_MAX_ALLOC, "14000000");
+      put(AccountorImpl.ENABLE_FRAGMENT_MEMORY_LIMIT, "true");
+      put(AccountorImpl.FRAGMENT_MEM_OVERCOMMIT_FACTOR, "1.1");
     }
   };
 
   private final static String planFile="/physical_allocator_test.json";
+
+  @Test
+  public void testTransfer() throws Exception {
+    final Properties props = new Properties() {
+      {
+        put(TopLevelAllocator.TOP_LEVEL_MAX_ALLOC, "1000000");
+        put(TopLevelAllocator.ERROR_ON_MEMORY_LEAK, "true");
+      }
+    };
+    final DrillConfig config = DrillConfig.create(props);
+    BufferAllocator a = RootAllocatorFactory.newRoot(config);
+    BufferAllocator b = RootAllocatorFactory.newRoot(config);
+
+    DrillBuf buf1 = a.buffer(1_000_000);
+    DrillBuf buf2 = b.buffer(1_000);
+    b.takeOwnership(buf1);
+
+    buf1.release();
+    buf2.release();
+
+    a.close();
+    b.close();
+  }
 
   @Test
   public void testAllocators() throws Exception {
@@ -86,7 +109,7 @@ public class TestAllocators {
     FragmentContext fragmentContext2 = new FragmentContext(bitContext, pf2, null, functionRegistry);
 
     // Get a few physical operators. Easiest way is to read a physical plan.
-    PhysicalPlanReader planReader = new PhysicalPlanReader(config, config.getMapper(), CoordinationProtos.DrillbitEndpoint.getDefaultInstance(), storageRegistry);
+    PhysicalPlanReader planReader = PhysicalPlanReaderTestFactory.defaultPhysicalPlanReader(bitContext, storageRegistry);
     PhysicalPlan plan = planReader.readPhysicalPlan(Files.toString(FileUtils.getResourceAsFile(planFile), Charsets.UTF_8));
     List<PhysicalOperator> physicalOperators = plan.getSortedOperators();
     Iterator<PhysicalOperator> physicalOperatorIterator = physicalOperators.iterator();
@@ -105,7 +128,7 @@ public class TestAllocators {
     //Use some bogus operator type to create a new operator context.
     def = new OpProfileDef(physicalOperator1.getOperatorId(), UserBitShared.CoreOperatorType.MOCK_SUB_SCAN_VALUE,
         OperatorContext.getChildCount(physicalOperator1));
-    stats = fragmentContext1.getStats().getOperatorStats(def, fragmentContext1.getAllocator());
+    stats = fragmentContext1.getStats().newOperatorStats(def, fragmentContext1.getAllocator());
 
 
     // Add a couple of Operator Contexts
@@ -120,7 +143,7 @@ public class TestAllocators {
 
     def = new OpProfileDef(physicalOperator4.getOperatorId(), UserBitShared.CoreOperatorType.TEXT_WRITER_VALUE,
         OperatorContext.getChildCount(physicalOperator4));
-    stats = fragmentContext2.getStats().getOperatorStats(def, fragmentContext2.getAllocator());
+    stats = fragmentContext2.getStats().newOperatorStats(def, fragmentContext2.getAllocator());
     OperatorContext oContext22 = fragmentContext2.newOperatorContext(physicalOperator4, stats, true);
     DrillBuf b22=oContext22.getAllocator().buffer(2000000);
 
@@ -134,7 +157,7 @@ public class TestAllocators {
     // New fragment starts an operator that allocates an amount within the limit
     def = new OpProfileDef(physicalOperator5.getOperatorId(), UserBitShared.CoreOperatorType.UNION_VALUE,
         OperatorContext.getChildCount(physicalOperator5));
-    stats = fragmentContext3.getStats().getOperatorStats(def, fragmentContext3.getAllocator());
+    stats = fragmentContext3.getStats().newOperatorStats(def, fragmentContext3.getAllocator());
     OperatorContext oContext31 = fragmentContext3.newOperatorContext(physicalOperator5, stats, true);
 
     DrillBuf b31a = oContext31.getAllocator().buffer(200000);
@@ -147,7 +170,7 @@ public class TestAllocators {
     try {
       oContext31.getAllocator().buffer(4400000);
       fail("Fragment 3 should fail to allocate buffer");
-    } catch (OutOfMemoryRuntimeException e) {
+    } catch (OutOfMemoryException e) {
       // expected
     }
 
@@ -156,7 +179,7 @@ public class TestAllocators {
     try {
       DrillBuf b32 = oContext32.getAllocator().buffer(4400000);
       b32.release();
-    } catch (OutOfMemoryRuntimeException e) {
+    } catch (OutOfMemoryException e) {
       fail("Fragment 3 failed to allocate buffer");
     } finally {
       closeOp(oContext32);

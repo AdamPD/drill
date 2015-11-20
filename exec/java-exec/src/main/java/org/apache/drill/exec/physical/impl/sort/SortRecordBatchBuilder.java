@@ -19,10 +19,16 @@ package org.apache.drill.exec.physical.impl.sort;
 
 import java.util.ArrayList;
 import java.util.List;
+import java.util.Set;
 
+import com.google.common.collect.Sets;
 import io.netty.buffer.DrillBuf;
 import org.apache.drill.common.exceptions.DrillRuntimeException;
+import org.apache.drill.common.types.TypeProtos.DataMode;
+import org.apache.drill.common.types.TypeProtos.MajorType;
+import org.apache.drill.common.types.TypeProtos.MinorType;
 import org.apache.drill.exec.exception.SchemaChangeException;
+import org.apache.drill.exec.expr.TypeHelper;
 import org.apache.drill.exec.memory.BufferAllocator;
 import org.apache.drill.exec.memory.BufferAllocator.PreAllocator;
 import org.apache.drill.exec.ops.FragmentContext;
@@ -38,6 +44,7 @@ import org.apache.drill.exec.vector.ValueVector;
 
 import com.google.common.collect.ArrayListMultimap;
 import com.google.common.collect.Lists;
+import org.apache.drill.exec.vector.complex.UnionVector;
 
 public class SortRecordBatchBuilder implements AutoCloseable {
   static final org.slf4j.Logger logger = org.slf4j.LoggerFactory.getLogger(SortRecordBatchBuilder.class);
@@ -45,15 +52,14 @@ public class SortRecordBatchBuilder implements AutoCloseable {
   private final ArrayListMultimap<BatchSchema, RecordBatchData> batches = ArrayListMultimap.create();
 
   private int recordCount;
-  private long runningBytes;
   private long runningBatches;
-  private final long maxBytes;
   private SelectionVector4 sv4;
+  private BufferAllocator allocator;
   final PreAllocator svAllocator;
   private boolean svAllocatorUsed = false;
 
-  public SortRecordBatchBuilder(BufferAllocator a, long maxBytes) {
-    this.maxBytes = maxBytes;
+  public SortRecordBatchBuilder(BufferAllocator a) {
+    this.allocator = a;
     this.svAllocator = a.getNewPreAllocator();
   }
 
@@ -84,10 +90,7 @@ public class SortRecordBatchBuilder implements AutoCloseable {
     if (batchBytes == 0 && batches.size() > 0) {
       return true;
     }
-    if (batchBytes + runningBytes > maxBytes) {
-      return false; // enough data memory.
-    }
-    if (runningBatches+1 > Character.MAX_VALUE) {
+    if (runningBatches >= Character.MAX_VALUE) {
       return false; // allowed in batch.
     }
     if (!svAllocator.preAllocate(batch.getRecordCount()*4)) {
@@ -96,7 +99,7 @@ public class SortRecordBatchBuilder implements AutoCloseable {
 
 
     RecordBatchData bd = new RecordBatchData(batch);
-    runningBytes += batchBytes;
+    runningBatches++;
     batches.put(batch.getSchema(), bd);
     recordCount += bd.getRecordCount();
     return true;
@@ -108,14 +111,8 @@ public class SortRecordBatchBuilder implements AutoCloseable {
       return;
     }
 
-    if(batchBytes + runningBytes > maxBytes) {
-      final String errMsg = String.format("Adding this batch causes the total size to exceed max allowed size. " +
-          "Current runningBytes %d, Incoming batchBytes %d. maxBytes %d", runningBytes, batchBytes, maxBytes);
-      logger.error(errMsg);
-      throw new DrillRuntimeException(errMsg);
-    }
     if(runningBatches >= Character.MAX_VALUE) {
-      final String errMsg = String.format("Tried to add more than %d number of batches.", Character.MAX_VALUE);
+      final String errMsg = String.format("Tried to add more than %d number of batches.", (int) Character.MAX_VALUE);
       logger.error(errMsg);
       throw new DrillRuntimeException(errMsg);
     }
@@ -135,7 +132,7 @@ public class SortRecordBatchBuilder implements AutoCloseable {
       }
       return;
     }
-    runningBytes += batchBytes;
+    runningBatches++;
     batches.put(rbd.getContainer().getSchema(), rbd);
     recordCount += rbd.getRecordCount();
   }

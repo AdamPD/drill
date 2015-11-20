@@ -17,15 +17,15 @@
  */
 package org.apache.drill.exec.record;
 
+import org.apache.drill.exec.exception.OutOfMemoryException;
 import org.apache.drill.exec.exception.SchemaChangeException;
-import org.apache.drill.exec.memory.OutOfMemoryException;
 import org.apache.drill.exec.ops.FragmentContext;
 import org.apache.drill.exec.physical.base.PhysicalOperator;
 import org.apache.drill.exec.record.BatchSchema.SelectionVectorMode;
 import org.apache.drill.exec.vector.SchemaChangeCallBack;
 
 public abstract class AbstractSingleRecordBatch<T extends PhysicalOperator> extends AbstractRecordBatch<T> {
-  final org.slf4j.Logger logger = org.slf4j.LoggerFactory.getLogger(this.getClass());
+  private static final org.slf4j.Logger logger = org.slf4j.LoggerFactory.getLogger(new Object() {}.getClass().getEnclosingClass());
 
   protected final RecordBatch incoming;
   protected boolean outOfMemory = false;
@@ -51,7 +51,7 @@ public abstract class AbstractSingleRecordBatch<T extends PhysicalOperator> exte
     IterOutcome upstream = next(incoming);
     if (state != BatchState.FIRST && upstream == IterOutcome.OK && incoming.getRecordCount() == 0) {
       do {
-        for (VectorWrapper w : incoming) {
+        for (final VectorWrapper<?> w : incoming) {
           w.clear();
         }
       } while ((upstream = next(incoming)) == IterOutcome.OK && incoming.getRecordCount() == 0);
@@ -104,7 +104,7 @@ public abstract class AbstractSingleRecordBatch<T extends PhysicalOperator> exte
       }
 
       // Check if schema has changed
-      if (callBack.getSchemaChange()) {
+      if (callBack.getSchemaChangedAndReset()) {
         return IterOutcome.OK_NEW_SCHEMA;
       }
 
@@ -118,9 +118,9 @@ public abstract class AbstractSingleRecordBatch<T extends PhysicalOperator> exte
   public BatchSchema getSchema() {
     if (container.hasSchema()) {
       return container.getSchema();
-    } else {
-      return null;
     }
+
+    return null;
   }
 
   protected abstract boolean setupNewSchema() throws SchemaChangeException;

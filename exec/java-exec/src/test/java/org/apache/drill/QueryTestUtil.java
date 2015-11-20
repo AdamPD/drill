@@ -22,14 +22,17 @@ import java.util.Properties;
 import java.util.regex.Matcher;
 import java.util.regex.Pattern;
 
+import org.apache.drill.BaseTestQuery.SilentListener;
 import org.apache.drill.common.config.DrillConfig;
 import org.apache.drill.common.util.TestTools;
 import org.apache.drill.exec.ExecConstants;
 import org.apache.drill.exec.client.DrillClient;
 import org.apache.drill.exec.client.PrintingResultsListener;
 import org.apache.drill.exec.client.QuerySubmitter.Format;
+import org.apache.drill.exec.exception.OutOfMemoryException;
 import org.apache.drill.exec.proto.UserBitShared.QueryType;
 import org.apache.drill.exec.rpc.RpcException;
+import org.apache.drill.exec.rpc.user.AwaitableUserResultsListener;
 import org.apache.drill.exec.rpc.user.QueryDataBatch;
 import org.apache.drill.exec.rpc.user.UserResultsListener;
 import org.apache.drill.exec.server.RemoteServiceSet;
@@ -39,6 +42,9 @@ import org.apache.drill.exec.util.VectorUtil;
  * Utilities useful for tests that issue SQL queries.
  */
 public class QueryTestUtil {
+
+  public static final String TEST_QUERY_PRINTING_SILENT = "drill.test.query.printing.silent";
+
   /**
    * Constructor. All methods are static.
    */
@@ -56,7 +62,7 @@ public class QueryTestUtil {
    * @throws RpcException if there is a problem setting up the client
    */
   public static DrillClient createClient(final DrillConfig drillConfig, final RemoteServiceSet remoteServiceSet,
-      final int maxWidth, final Properties props) throws RpcException {
+      final int maxWidth, final Properties props) throws RpcException, OutOfMemoryException {
     final DrillClient drillClient = new DrillClient(drillConfig, remoteServiceSet.getCoordinator());
     drillClient.connect(props);
 
@@ -100,8 +106,13 @@ public class QueryTestUtil {
   public static int testRunAndPrint(
       final DrillClient drillClient, final QueryType type, final String queryString) throws Exception {
     final String query = normalizeQuery(queryString);
-    PrintingResultsListener resultListener =
-        new PrintingResultsListener(drillClient.getConfig(), Format.TSV, VectorUtil.DEFAULT_COLUMN_WIDTH);
+    DrillConfig config = drillClient.getConfig();
+    AwaitableUserResultsListener resultListener =
+        new AwaitableUserResultsListener(
+            config.getBoolean(TEST_QUERY_PRINTING_SILENT) ?
+                new SilentListener() :
+                new PrintingResultsListener(config, Format.TSV, VectorUtil.DEFAULT_COLUMN_WIDTH)
+        );
     drillClient.runQuery(type, query, resultListener);
     return resultListener.await();
   }

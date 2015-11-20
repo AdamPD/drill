@@ -41,7 +41,7 @@ import org.apache.drill.common.util.FileUtils;
 import org.apache.drill.exec.exception.SchemaChangeException;
 import org.apache.drill.exec.expr.fn.FunctionImplementationRegistry;
 import org.apache.drill.exec.memory.BufferAllocator;
-import org.apache.drill.exec.memory.TopLevelAllocator;
+import org.apache.drill.exec.memory.RootAllocatorFactory;
 import org.apache.drill.exec.ops.FragmentContext;
 import org.apache.drill.exec.physical.impl.OutputMutator;
 import org.apache.drill.exec.proto.BitControl;
@@ -55,6 +55,7 @@ import org.apache.drill.exec.server.DrillbitContext;
 import org.apache.drill.exec.store.CachedSingleFileSystem;
 import org.apache.drill.exec.store.TestOutputMutator;
 import org.apache.drill.exec.store.parquet.columnreaders.ParquetRecordReader;
+import org.apache.drill.exec.util.CallBack;
 import org.apache.drill.exec.vector.BigIntVector;
 import org.apache.drill.exec.vector.NullableBigIntVector;
 import org.apache.drill.exec.vector.ValueVector;
@@ -62,18 +63,19 @@ import org.apache.hadoop.conf.Configuration;
 import org.apache.hadoop.fs.FileSystem;
 import org.apache.hadoop.fs.Path;
 import org.apache.hadoop.io.Text;
+import org.apache.parquet.hadoop.CodecFactory;
 import org.junit.BeforeClass;
 import org.junit.Ignore;
 import org.junit.Test;
 
-import parquet.bytes.BytesInput;
-import parquet.column.page.DataPageV1;
-import parquet.column.page.PageReadStore;
-import parquet.column.page.PageReader;
-import parquet.hadoop.Footer;
-import parquet.hadoop.ParquetFileReader;
-import parquet.hadoop.metadata.ParquetMetadata;
-import parquet.schema.MessageType;
+import org.apache.parquet.bytes.BytesInput;
+import org.apache.parquet.column.page.DataPageV1;
+import org.apache.parquet.column.page.PageReadStore;
+import org.apache.parquet.column.page.PageReader;
+import org.apache.parquet.hadoop.Footer;
+import org.apache.parquet.hadoop.ParquetFileReader;
+import org.apache.parquet.hadoop.metadata.ParquetMetadata;
+import org.apache.parquet.schema.MessageType;
 
 import com.google.common.base.Charsets;
 import com.google.common.base.Stopwatch;
@@ -363,7 +365,12 @@ public class ParquetRecordReaderTest extends BaseTestQuery {
     public DrillBuf getManagedBuffer() {
       return allocator.buffer(255);
     }
-  }
+
+   @Override
+   public CallBack getCallBack() {
+     return null;
+   }
+ }
 
   private void validateFooters(final List<Footer> metadata) {
     logger.debug(metadata.toString());
@@ -380,7 +387,6 @@ public class ParquetRecordReaderTest extends BaseTestQuery {
     }
   }
 
-
   private void validateContains(MessageType schema, PageReadStore pages, String[] path, int values, BytesInput bytes)
       throws IOException {
     PageReader pageReader = pages.getPageReader(schema.getColumnDescription(path));
@@ -388,7 +394,6 @@ public class ParquetRecordReaderTest extends BaseTestQuery {
     assertEquals(values, page.getValueCount());
     assertArrayEquals(bytes.toByteArray(), page.getBytes().toByteArray());
   }
-
 
   @Test
   public void testMultipleRowGroups() throws Exception {
@@ -538,7 +543,7 @@ public class ParquetRecordReaderTest extends BaseTestQuery {
     testParquetFullEngineEventBased(false, false, "/parquet/parquet_scan_screen_read_entry_replace.json", readEntries,
         "unused, no file is generated", 1, props, QueryType.LOGICAL);
 
-    fields = new HashMap();
+    fields = new HashMap<>();
     props = new ParquetTestProperties(1, 100000, DEFAULT_BYTES_PER_PAGE, fields);
     TestFileGenerator.populatePigTPCHSupplierFields(props);
     readEntries = "\"/tmp/tpc-h/supplier\"";
@@ -596,18 +601,13 @@ public class ParquetRecordReaderTest extends BaseTestQuery {
     testParquetFullEngineEventBased(true, false, "/parquet/parquet_selective_column_read.json", null, "/tmp/test.parquet", 1, props, QueryType.PHYSICAL);
   }
 
-  public static void main(String[] args) throws Exception {
-    // TODO - not sure why this has a main method, test below can be run directly
-    //new ParquetRecordReaderTest().testPerformance();
-  }
-
   @Test
   @Ignore
   public void testPerformance(@Injectable final DrillbitContext bitContext,
                               @Injectable UserServer.UserClientConnection connection) throws Exception {
-    DrillConfig c = DrillConfig.create();
-    FunctionImplementationRegistry registry = new FunctionImplementationRegistry(c);
-    FragmentContext context = new FragmentContext(bitContext, BitControl.PlanFragment.getDefaultInstance(), connection, registry);
+    final DrillConfig c = DrillConfig.create();
+    final FunctionImplementationRegistry registry = new FunctionImplementationRegistry(c);
+    final FragmentContext context = new FragmentContext(bitContext, BitControl.PlanFragment.getDefaultInstance(), connection, registry);
 
 //    new NonStrictExpectations() {
 //      {
@@ -636,10 +636,11 @@ public class ParquetRecordReaderTest extends BaseTestQuery {
     int totalRowCount = 0;
 
     final FileSystem fs = new CachedSingleFileSystem(fileName);
-    final BufferAllocator allocator = new TopLevelAllocator();
+    final BufferAllocator allocator = RootAllocatorFactory.newRoot(c);
     for(int i = 0; i < 25; i++) {
       final ParquetRecordReader rr = new ParquetRecordReader(context, 256000, fileName, 0, fs,
-          new DirectCodecFactory(dfsConfig, allocator), f.getParquetMetadata(), columns);
+          CodecFactory.createDirectCodecFactory(dfsConfig, new ParquetDirectByteBufferAllocator(allocator), 0),
+          f.getParquetMetadata(), columns);
       final TestOutputMutator mutator = new TestOutputMutator(allocator);
       rr.setup(null, mutator);
       final Stopwatch watch = new Stopwatch();
@@ -650,7 +651,7 @@ public class ParquetRecordReaderTest extends BaseTestQuery {
         totalRowCount += rowCount;
       }
       System.out.println(String.format("Time completed: %s. ", watch.elapsed(TimeUnit.MILLISECONDS)));
-      rr.cleanup();
+      rr.close();
     }
 
     allocator.close();

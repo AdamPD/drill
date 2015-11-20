@@ -19,8 +19,8 @@ package org.apache.drill.exec.physical.impl.broadcastsender;
 
 import java.util.List;
 
-import org.apache.drill.exec.memory.OutOfMemoryException;
-import org.apache.drill.exec.memory.OutOfMemoryRuntimeException;
+import org.apache.drill.exec.exception.OutOfMemoryException;
+import org.apache.drill.exec.exception.OutOfMemoryException;
 import org.apache.drill.exec.ops.AccountingDataTunnel;
 import org.apache.drill.exec.ops.FragmentContext;
 import org.apache.drill.exec.ops.MetricDef;
@@ -41,8 +41,7 @@ import com.google.common.collect.ArrayListMultimap;
  * to all nodes is cheaper than merging and computing all the joins in the same node.
  */
 public class BroadcastSenderRootExec extends BaseRootExec {
-  static final org.slf4j.Logger logger = org.slf4j.LoggerFactory.getLogger(BroadcastSenderRootExec.class);
-  private final FragmentContext context;
+  private static final org.slf4j.Logger logger = org.slf4j.LoggerFactory.getLogger(BroadcastSenderRootExec.class);
   private final BroadcastSender config;
   private final int[][] receivingMinorFragments;
   private final AccountingDataTunnel[] tunnels;
@@ -64,7 +63,6 @@ public class BroadcastSenderRootExec extends BaseRootExec {
                                  BroadcastSender config) throws OutOfMemoryException {
     super(context, context.newOperatorContext(config, null, false), config);
     this.ok = true;
-    this.context = context;
     this.incoming = incoming;
     this.config = config;
     this.handle = context.getHandle();
@@ -80,7 +78,7 @@ public class BroadcastSenderRootExec extends BaseRootExec {
 
     this.tunnels = new AccountingDataTunnel[destCount];
     this.receivingMinorFragments = new int[destCount][];
-    for(DrillbitEndpoint ep : dests.keySet()){
+    for(final DrillbitEndpoint ep : dests.keySet()){
       List<Integer> minorsList= dests.get(ep);
       int[] minorsArray = new int[minorsList.size()];
       int x = 0;
@@ -99,7 +97,7 @@ public class BroadcastSenderRootExec extends BaseRootExec {
     logger.debug("Outcome of sender next {}", out);
     switch(out){
       case OUT_OF_MEMORY:
-        throw new OutOfMemoryRuntimeException();
+        throw new OutOfMemoryException();
       case STOP:
       case NONE:
         for (int i = 0; i < tunnels.length; ++i) {
@@ -154,5 +152,4 @@ public class BroadcastSenderRootExec extends BaseRootExec {
     stats.setLongStat(Metric.N_RECEIVERS, tunnels.length);
     stats.addLongStat(Metric.BYTES_SENT, writableBatch.getByteCount());
   }
-
 }

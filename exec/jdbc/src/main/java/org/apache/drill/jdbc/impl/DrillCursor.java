@@ -18,12 +18,16 @@
 package org.apache.drill.jdbc.impl;
 
 import java.sql.SQLException;
+import java.sql.ResultSet;
+
+import java.util.ArrayList;
 import java.util.Calendar;
 import java.util.List;
 
 import net.hydromatic.avatica.ArrayImpl.Factory;
 import net.hydromatic.avatica.ColumnMetaData;
 import net.hydromatic.avatica.Cursor;
+import net.hydromatic.avatica.AvaticaResultSet;
 
 import org.apache.drill.common.exceptions.DrillRuntimeException;
 import org.apache.drill.common.exceptions.UserException;
@@ -31,6 +35,7 @@ import org.apache.drill.exec.exception.SchemaChangeException;
 import org.apache.drill.exec.record.BatchSchema;
 import org.apache.drill.exec.record.RecordBatchLoader;
 import org.apache.drill.exec.rpc.user.QueryDataBatch;
+import org.apache.drill.exec.store.ischema.InfoSchemaConstants;
 import org.slf4j.Logger;
 import static org.slf4j.LoggerFactory.getLogger;
 
@@ -38,7 +43,8 @@ import static org.slf4j.LoggerFactory.getLogger;
 class DrillCursor implements Cursor {
   private static final Logger logger = getLogger( DrillCursor.class );
 
-  private static final String UNKNOWN = "--UNKNOWN--";
+  /** JDBC-specified string for unknown catalog, schema, and table names. */
+  private static final String UNKNOWN_NAME_STRING = "";
 
   /** The associated {@link java.sql.ResultSet} implementation. */
   private final DrillResultSetImpl resultSet;
@@ -63,17 +69,17 @@ class DrillCursor implements Cursor {
   private boolean afterFirstBatch = false;
 
   /**
-   * Whether the next call to this.next() should just return {@code true} rather
-   * than calling nextRowInternally() to try to advance to the next
-   * record.
+   * Whether the next call to {@code this.}{@link #next()} should just return
+   * {@code true} rather than calling {@link #nextRowInternally()} to try to
+   * advance to the next record.
    * <p>
-   *   Currently, can be true only for first call to next().
+   *   Currently, can be true only for first call to {@link #next()}.
    * </p>
    * <p>
-   *   (Relates to loadInitialSchema()'s calling nextRowInternally()
-   *   one "extra" time
-   *   (extra relative to number of ResultSet.next() calls) at the beginning to
-   *   get first batch and schema before Statement.execute...(...) even returns.
+   *   (Relates to {@link #loadInitialSchema()}'s calling
+   *   {@link #nextRowInternally()} one "extra" time (extra relative to number
+   *   of {@link ResultSet#next()} calls) at the beginning to get first batch
+   *   and schema before {@code Statement.execute...(...)} even returns.)
    * </p>
    */
   private boolean returnTrueForNextCallToNext = false;
@@ -104,6 +110,10 @@ class DrillCursor implements Cursor {
     return currentRecordNumber;
   }
 
+  // (Overly restrictive Avatica uses List<Accessor> instead of List<? extends
+  // Accessor>, so accessors/DrillAccessorList can't be of type
+  // List<AvaticaDrillSqlAccessor>, and we have to cast from Accessor to
+  // AvaticaDrillSqlAccessor in updateColumns().)
   @Override
   public List<Accessor> createAccessors(List<ColumnMetaData> types,
                                         Calendar localCalendar, Factory factory) {
@@ -111,9 +121,31 @@ class DrillCursor implements Cursor {
     return accessors;
   }
 
+  /**
+   * Updates column accessors and metadata from current record batch.
+   */
   private void updateColumns() {
+    // First update accessors and schema from batch:
     accessors.generateAccessors(this, currentBatchHolder);
-    columnMetaDataList.updateColumnMetaData(UNKNOWN, UNKNOWN, UNKNOWN, schema);
+
+    // Extract Java types from accessors for metadata's getColumnClassName:
+    final List<Class<?>> getObjectClasses = new ArrayList<>();
+    // (Can't use modern for loop because, for some incompletely clear reason,
+    // DrillAccessorList blocks iterator() (throwing exception).)
+    for ( int ax = 0; ax < accessors.size(); ax++ ) {
+      final AvaticaDrillSqlAccessor accessor =
+          (AvaticaDrillSqlAccessor) accessors.get( ax );
+      getObjectClasses.add( accessor.getObjectClass() );
+    }
+
+    // Update metadata for result set.
+    columnMetaDataList.updateColumnMetaData(
+        InfoSchemaConstants.IS_CATALOG_NAME,
+        UNKNOWN_NAME_STRING,  // schema name
+        UNKNOWN_NAME_STRING,  // table name
+        schema,
+        getObjectClasses );
+
     if (getResultSet().changeListener != null) {
       getResultSet().changeListener.schemaChanged(schema);
     }
@@ -180,8 +212,9 @@ class DrillCursor implements Cursor {
           afterLastRow = true;
           return false;
         } else {
-          // Got next (or first) batch--reset record offset to beginning,
-          // assimilate schema if changed, ... ???
+          // Got next (or first) batch--reset record offset to beginning;
+          // assimilate schema if changed; set up return value for first call
+          // to next().
 
           currentRecordNumber = 0;
 
@@ -235,7 +268,7 @@ class DrillCursor implements Cursor {
    * Advances to first batch to load schema data into result set metadata.
    * <p>
    *   To be called once from {@link DrillResultSetImpl#execute()} before
-   *   {@link next()} is called from {@link AvaticaResultSet#next()}.
+   *   {@link #next()} is called from {@link AvaticaResultSet#next()}.
    * <p>
    */
   void loadInitialSchema() throws SQLException {
@@ -284,6 +317,7 @@ class DrillCursor implements Cursor {
       return true;
     }
     else {
+      accessors.clearLastColumnIndexedInRow();
       return nextRowInternally();
     }
   }

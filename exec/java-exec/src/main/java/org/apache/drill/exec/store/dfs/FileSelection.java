@@ -21,9 +21,12 @@ import java.io.IOException;
 import java.net.URI;
 import java.util.Collections;
 import java.util.List;
+import java.util.concurrent.TimeUnit;
 
+import com.google.common.base.Stopwatch;
 import org.apache.commons.lang3.ArrayUtils;
 import org.apache.commons.lang3.StringUtils;
+import org.apache.drill.exec.store.parquet.Metadata.ParquetTableMetadata_v1;
 import org.apache.hadoop.fs.FileStatus;
 import org.apache.hadoop.fs.Path;
 
@@ -44,6 +47,10 @@ public class FileSelection {
   public List<String> files;
   public String selectionRoot;
 
+  // this is a temporary location for the reference to Parquet metadata
+  // TODO: ideally this should be in a Parquet specific derived class.
+  private ParquetTableMetadata_v1 parquetMeta = null;
+
   public FileSelection() {
   }
 
@@ -60,6 +67,13 @@ public class FileSelection {
     this(statuses, null);
   }
 
+  public FileSelection(List<String> files, String selectionRoot,
+      ParquetTableMetadata_v1 meta) {
+    this.files = files;
+    this.selectionRoot = selectionRoot;
+    this.parquetMeta = meta;
+  }
+
   public FileSelection(List<FileStatus> statuses, String selectionRoot) {
     this.statuses = statuses;
     this.files = Lists.newArrayList();
@@ -69,10 +83,18 @@ public class FileSelection {
     this.selectionRoot = selectionRoot;
   }
 
+  public FileSelection(List<String> files, String selectionRoot,
+                       ParquetTableMetadata_v1 meta, List<FileStatus> statuses) {
+    this.files = files;
+    this.selectionRoot = selectionRoot;
+    this.parquetMeta = meta;
+    this.statuses = statuses;
+  }
+
   public boolean containsDirectories(DrillFileSystem fs) throws IOException {
     init(fs);
     for (FileStatus p : statuses) {
-      if (p.isDir()) {
+      if (p.isDirectory()) {
         return true;
       }
     }
@@ -80,10 +102,12 @@ public class FileSelection {
   }
 
   public FileSelection minusDirectories(DrillFileSystem fs) throws IOException {
+    Stopwatch timer = new Stopwatch();
+    timer.start();
     init(fs);
     List<FileStatus> newList = Lists.newArrayList();
     for (FileStatus p : statuses) {
-      if (p.isDir()) {
+      if (p.isDirectory()) {
         List<FileStatus> statuses = fs.list(true, p.getPath());
         for (FileStatus s : statuses) {
           newList.add(s);
@@ -92,6 +116,8 @@ public class FileSelection {
         newList.add(p);
       }
     }
+    logger.info("FileSelection.minusDirectories() took {} ms, numFiles: {}",
+        timer.elapsed(TimeUnit.MILLISECONDS), newList.size());
     return new FileSelection(newList, selectionRoot);
   }
 
@@ -115,17 +141,31 @@ public class FileSelection {
   }
 
   private void init(DrillFileSystem fs) throws IOException {
+    Stopwatch timer = new Stopwatch();
+    timer.start();
     if (files != null && statuses == null) {
       statuses = Lists.newArrayList();
       for (String p : files) {
         statuses.add(fs.getFileStatus(new Path(p)));
       }
     }
+    logger.info("FileSelection.init() took {} ms, numFiles: {}",
+        timer.elapsed(TimeUnit.MILLISECONDS), statuses == null ? 0 : statuses.size());
   }
 
   public List<FileStatus> getFileStatusList(DrillFileSystem fs) throws IOException {
     init(fs);
     return statuses;
+  }
+
+  /**
+   * Return the parquet table metadata that may have been read
+   * from a metadata cache file during creation of this file selection.
+   * It will always be null for non-parquet files and null for cases
+   * where no metadata cache was created.
+   */
+  public ParquetTableMetadata_v1 getParquetMetadata() {
+    return parquetMeta;
   }
 
   private static String commonPath(FileStatus... paths) {

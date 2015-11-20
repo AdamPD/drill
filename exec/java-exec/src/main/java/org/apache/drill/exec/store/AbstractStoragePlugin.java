@@ -21,13 +21,18 @@ import java.io.IOException;
 import java.util.List;
 import java.util.Set;
 
+import org.apache.calcite.plan.RelOptRule;
 import org.apache.drill.common.JSONOptions;
 import org.apache.drill.common.expression.SchemaPath;
+import org.apache.drill.exec.ops.OptimizerRulesContext;
 import org.apache.drill.exec.ops.QueryContext;
 import org.apache.drill.exec.physical.base.AbstractGroupScan;
 
 import com.google.common.collect.ImmutableSet;
 
+/** Abstract class for StorePlugin implementations.
+ * See StoragePlugin for description of the interface intent and its methods.
+ */
 public abstract class AbstractStoragePlugin implements StoragePlugin{
   static final org.slf4j.Logger logger = org.slf4j.LoggerFactory.getLogger(AbstractStoragePlugin.class);
 
@@ -45,7 +50,7 @@ public abstract class AbstractStoragePlugin implements StoragePlugin{
   }
 
   @Override
-  public Set<StoragePluginOptimizerRule> getOptimizerRules(QueryContext context) {
+  public Set<? extends RelOptRule> getOptimizerRules(OptimizerRulesContext optimizerRulesContext) {
     return ImmutableSet.of();
   }
 
@@ -58,4 +63,13 @@ public abstract class AbstractStoragePlugin implements StoragePlugin{
   public AbstractGroupScan getPhysicalScan(String userName, JSONOptions selection, List<SchemaPath> columns) throws IOException {
     throw new UnsupportedOperationException();
   }
+
+  @Override
+  public void start() throws IOException {
+  }
+
+  @Override
+  public void close() throws Exception {
+  }
+
 }

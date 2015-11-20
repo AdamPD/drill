@@ -17,12 +17,11 @@
  */
 package org.apache.drill.exec.fn.impl;
 
-
 import org.apache.drill.BaseTestQuery;
+import org.apache.drill.common.types.TypeProtos;
 import org.apache.drill.common.util.FileUtils;
+import org.joda.time.DateTime;
 import org.junit.Test;
-
-import java.util.Date;
 
 public class TestCastFunctions extends BaseTestQuery {
 
@@ -52,4 +51,32 @@ public class TestCastFunctions extends BaseTestQuery {
       .build().run();
   }
 
+  @Test // DRILL-2808
+  public void testCastByConstantFolding() throws Exception {
+    final String query = "SELECT count(DISTINCT employee_id) as col1, " +
+        "count((to_number(date_diff(now(), cast(birth_date AS date)),'####'))) as col2 \n" +
+        "FROM cp.`employee.json`";
+
+    testBuilder()
+        .sqlQuery(query)
+        .ordered()
+        .baselineColumns("col1", "col2")
+        .baselineValues(1155l, 1155l)
+        .build()
+        .run();
+  }
+
+  @Test // DRILL-3769
+  public void testToDateForTimeStamp() throws Exception {
+    final String query = "select to_date(to_timestamp(-1)) as col \n" +
+        "from (values(1))";
+
+    testBuilder()
+        .sqlQuery(query)
+        .ordered()
+        .baselineColumns("col")
+        .baselineValues(new DateTime(1969, 12, 31, 0, 0))
+        .build()
+        .run();
+  }
 }

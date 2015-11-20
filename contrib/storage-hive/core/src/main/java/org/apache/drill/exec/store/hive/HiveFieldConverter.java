@@ -65,6 +65,8 @@ import org.joda.time.DateTimeZone;
 
 import com.google.common.collect.Maps;
 
+import static org.apache.drill.exec.store.hive.HiveUtilities.throwUnsupportedHiveDataTypeError;
+
 public abstract class HiveFieldConverter {
 
   public abstract void setSafeValue(ObjectInspector oi, Object hiveFieldValue, ValueVector outputVV, int outputIndex);
@@ -119,7 +121,7 @@ public abstract class HiveFieldConverter {
           }
         }
 
-        HiveRecordReader.throwUnsupportedHiveDataTypeError(pCat.toString());
+        throwUnsupportedHiveDataTypeError(pCat.toString());
         break;
 
       case LIST:
@@ -127,7 +129,7 @@ public abstract class HiveFieldConverter {
       case STRUCT:
       case UNION:
       default:
-        HiveRecordReader.throwUnsupportedHiveDataTypeError(typeInfo.getCategory().toString());
+        throwUnsupportedHiveDataTypeError(typeInfo.getCategory().toString());
     }
 
     return null;
@@ -189,7 +191,7 @@ public abstract class HiveFieldConverter {
     public Decimal28(int precision, int scale, FragmentContext context) {
       holder.scale = scale;
       holder.precision = precision;
-      holder.buffer = context.getManagedBuffer(Decimal28SparseHolder.nDecimalDigits * DecimalUtility.integerSize);
+      holder.buffer = context.getManagedBuffer(Decimal28SparseHolder.nDecimalDigits * DecimalUtility.INTEGER_SIZE);
       holder.start = 0;
     }
 
@@ -208,7 +210,7 @@ public abstract class HiveFieldConverter {
     public Decimal38(int precision, int scale, FragmentContext context) {
       holder.scale = scale;
       holder.precision = precision;
-      holder.buffer = context.getManagedBuffer(Decimal38SparseHolder.nDecimalDigits * DecimalUtility.integerSize);
+      holder.buffer = context.getManagedBuffer(Decimal38SparseHolder.nDecimalDigits * DecimalUtility.INTEGER_SIZE);
       holder.start = 0;
     }
 

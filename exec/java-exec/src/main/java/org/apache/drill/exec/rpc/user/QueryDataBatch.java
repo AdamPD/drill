@@ -19,20 +19,23 @@ package org.apache.drill.exec.rpc.user;
 
 import io.netty.buffer.DrillBuf;
 
+import java.util.concurrent.atomic.AtomicBoolean;
+
 import org.apache.drill.exec.proto.UserBitShared.QueryData;
 
 public class QueryDataBatch {
-//  private static final org.slf4j.Logger logger = org.slf4j.LoggerFactory.getLogger(QueryResultBatch.class);
+  // private static final org.slf4j.Logger logger = org.slf4j.LoggerFactory.getLogger(QueryDataBatch.class);
 
   private final QueryData header;
   private final DrillBuf data;
+  private final AtomicBoolean released = new AtomicBoolean(false);
 
   public QueryDataBatch(QueryData header, DrillBuf data) {
-//    logger.debug("New Result Batch with header {} and data {}", header, data);
+    // logger.debug("New Result Batch with header {} and data {}", header, data);
     this.header = header;
     this.data = data;
     if (this.data != null) {
-      data.retain();
+      data.retain(1);
     }
   }
 
@@ -49,8 +52,12 @@ public class QueryDataBatch {
   }
 
   public void release() {
+    if (!released.compareAndSet(false, true)) {
+      throw new IllegalStateException("QueryDataBatch was released twice.");
+    }
+
     if (data != null) {
-      data.release();
+      data.release(1);
     }
   }
 
@@ -58,5 +65,4 @@ public class QueryDataBatch {
   public String toString() {
     return "QueryResultBatch [header=" + header + ", data=" + data + "]";
   }
-
 }

@@ -23,6 +23,7 @@ import static org.junit.Assert.assertEquals;
 import static org.junit.Assert.assertNull;
 import static org.junit.Assert.assertTrue;
 
+import java.io.BufferedOutputStream;
 import java.io.File;
 import java.io.FileInputStream;
 import java.io.FileOutputStream;
@@ -31,6 +32,7 @@ import java.io.PrintWriter;
 import java.util.List;
 import java.util.zip.GZIPOutputStream;
 
+import com.google.common.base.Joiner;
 import org.apache.drill.BaseTestQuery;
 import org.apache.drill.common.expression.SchemaPath;
 import org.apache.drill.common.util.FileUtils;
@@ -58,8 +60,53 @@ public class TestJsonReader extends BaseTestQuery {
   public TemporaryFolder folder = new TemporaryFolder();
 
   @Test
+  public void testEmptyList() throws Exception {
+    String root = FileUtils.getResourceAsFile("/store/json/emptyLists").toURI().toString();
+    String query = String.format("select count(a[0]) as ct from dfs_test.`%s`", root, root);
+
+    testBuilder()
+        .sqlQuery(query)
+        .ordered()
+        .baselineColumns("ct")
+        .baselineValues(6l)
+        .build()
+        .run();
+  }
+
+  @Test
   public void schemaChange() throws Exception {
     test("select b from dfs.`${WORKING_PATH}/src/test/resources/vector/complex/writer/schemaChange/`");
+  }
+
+  @Test
+  public void testFieldSelectionBug() throws Exception {
+    try {
+      testBuilder()
+          .sqlQuery("select t.field_4.inner_3 as col_1, t.field_4 as col_2 from cp.`store/json/schema_change_int_to_string.json` t")
+          .unOrdered()
+          .optionSettingQueriesForTestQuery("alter session set `store.json.all_text_mode` = true")
+          .baselineColumns("col_1", "col_2")
+          .baselineValues(
+              mapOf(),
+              mapOf(
+                  "inner_1", listOf(),
+                  "inner_3", mapOf()))
+          .baselineValues(
+              mapOf("inner_object_field_1", "2"),
+              mapOf(
+                  "inner_1", listOf("1", "2", "3"),
+                  "inner_2", "3",
+                  "inner_3", mapOf("inner_object_field_1", "2")))
+          .baselineValues(
+              mapOf(),
+              mapOf(
+                  "inner_1", listOf("4", "5", "6"),
+                  "inner_2", "3",
+                  "inner_3", mapOf()))
+          .go();
+    } finally {
+      test("alter session set `store.json.all_text_mode` = false");
+    }
   }
 
   @Test
@@ -73,6 +120,7 @@ public class TestJsonReader extends BaseTestQuery {
         .baselineValues(listOf(testVal))
         .go();
 
+    test("select flatten(config) as flat from cp.`/store/json/null_list_v2.json`");
     testBuilder()
         .sqlQuery("select flatten(config) as flat from cp.`/store/json/null_list_v2.json`")
         .ordered()
@@ -296,6 +344,22 @@ public class TestJsonReader extends BaseTestQuery {
     batchLoader.clear();
   }
 
+  @Test
+  public void testJsonDirectoryWithEmptyFile() throws Exception {
+    String root = FileUtils.getResourceAsFile("/store/json/jsonDirectoryWithEmpyFile").toURI().toString();
+
+    String queryRightEmpty = String.format(
+        "select * from dfs_test.`%s`", root);
+
+    testBuilder()
+        .sqlQuery(queryRightEmpty)
+        .unOrdered()
+        .baselineColumns("a")
+        .baselineValues(1l)
+        .build()
+        .run();
+  }
+
   private void testExistentColumns(RecordBatchLoader batchLoader) throws SchemaChangeException {
     VectorWrapper<?> vw = batchLoader.getValueAccessorById(
         RepeatedBigIntVector.class, //
@@ -330,5 +394,207 @@ public class TestJsonReader extends BaseTestQuery {
     assertEquals("[4,5,6]", vw.getValueVector().getAccessor().getObject(2).toString());
   }
 
+  @Test
+  public void testSelectStarWithUnionType() throws Exception {
+    try {
+      String query = "select * from cp.`jsoninput/union/a.json`";
+      testBuilder()
+              .sqlQuery(query)
+              .ordered()
+              .optionSettingQueriesForTestQuery("alter session set `exec.enable_union_type` = true")
+              .baselineColumns("field1", "field2")
+              .baselineValues(
+                      1L, 1.2
+              )
+              .baselineValues(
+                      listOf(2L), 1.2
+              )
+              .baselineValues(
+                      mapOf("inner1", 3L, "inner2", 4L), listOf(3L, 4.0, "5")
+              )
+              .baselineValues(
+                      mapOf("inner1", 3L,
+                              "inner2", listOf(
+                                      mapOf(
+                                              "innerInner1", 1L,
+                                              "innerInner2",
+                                              listOf(
+                                                      3L,
+                                                      "a"
+                                              )
+                                      )
+                              )
+                      ),
+                      listOf(
+                              mapOf("inner3", 7L),
+                              4.0,
+                              "5",
+                              mapOf("inner4", 9L),
+                              listOf(
+                                      mapOf(
+                                              "inner5", 10L,
+                                              "inner6", 11L
+                                      ),
+                                      mapOf(
+                                              "inner5", 12L,
+                                              "inner7", 13L
+                                      )
+                              )
+                      )
+              ).go();
+    } finally {
+      testNoResult("alter session set `exec.enable_union_type` = false");
+    }
+  }
 
+  @Test
+  public void testSelectFromListWithCase() throws Exception {
+    String query = "select a, typeOf(a) `type` from " +
+            "(select case when is_list(field2) then field2[4][1].inner7 end a " +
+            "from cp.`jsoninput/union/a.json`) where a is not null";
+    try {
+      testBuilder()
+              .sqlQuery(query)
+              .ordered()
+              .optionSettingQueriesForTestQuery("alter session set `exec.enable_union_type` = true")
+              .baselineColumns("a", "type")
+              .baselineValues(13L, "BIGINT")
+              .go();
+    } finally {
+      testNoResult("alter session set `exec.enable_union_type` = false");
+    }
+  }
+
+  @Test
+  public void testTypeCase() throws Exception {
+    String query = "select case when is_bigint(field1) " +
+            "then field1 when is_list(field1) then field1[0] " +
+            "when is_map(field1) then t.field1.inner1 end f1 from cp.`jsoninput/union/a.json` t";
+    try {
+      testBuilder()
+              .sqlQuery(query)
+              .ordered()
+              .optionSettingQueriesForTestQuery("alter session set `exec.enable_union_type` = true")
+              .baselineColumns("f1")
+              .baselineValues(1L)
+              .baselineValues(2L)
+              .baselineValues(3L)
+              .baselineValues(3L)
+              .go();
+    } finally {
+      testNoResult("alter session set `exec.enable_union_type` = false");
+    }
+  }
+
+  @Test
+  public void testSumWithTypeCase() throws Exception {
+    String query = "select sum(cast(f1 as bigint)) sum_f1 from " +
+            "(select case when is_bigint(field1) then field1 " +
+            "when is_list(field1) then field1[0] when is_map(field1) then t.field1.inner1 end f1 " +
+            "from cp.`jsoninput/union/a.json` t)";
+    try {
+      testBuilder()
+              .sqlQuery(query)
+              .ordered()
+              .optionSettingQueriesForTestQuery("alter session set `exec.enable_union_type` = true")
+              .baselineColumns("sum_f1")
+              .baselineValues(9L)
+              .go();
+    } finally {
+      testNoResult("alter session set `exec.enable_union_type` = false");
+    }
+  }
+
+  @Test
+  public void testUnionExpressionMaterialization() throws Exception {
+    String query = "select a + b c from cp.`jsoninput/union/b.json`";
+    try {
+      testBuilder()
+              .sqlQuery(query)
+              .ordered()
+              .optionSettingQueriesForTestQuery("alter session set `exec.enable_union_type` = true")
+              .baselineColumns("c")
+              .baselineValues(3L)
+              .baselineValues(7.0)
+              .baselineValues(11.0)
+              .go();
+    } finally {
+      testNoResult("alter session set `exec.enable_union_type` = false");
+    }
+  }
+
+  @Test
+  public void testSumMultipleBatches() throws Exception {
+    String dfs_temp = getDfsTestTmpSchemaLocation();
+    File table_dir = new File(dfs_temp, "multi_batch");
+    table_dir.mkdir();
+    BufferedOutputStream os = new BufferedOutputStream(new FileOutputStream(new File(table_dir, "a.json")));
+    for (int i = 0; i < 10000; i++) {
+      os.write("{ type : \"map\", data : { a : 1 } }\n".getBytes());
+      os.write("{ type : \"bigint\", data : 1 }\n".getBytes());
+    }
+    os.flush();
+    os.close();
+    String query = "select sum(cast(case when `type` = 'map' then t.data.a else data end as bigint)) `sum` from dfs_test.tmp.multi_batch t";
+    try {
+      testBuilder()
+              .sqlQuery(query)
+              .ordered()
+              .optionSettingQueriesForTestQuery("alter session set `exec.enable_union_type` = true")
+              .baselineColumns("sum")
+              .baselineValues(20000L)
+              .go();
+    } finally {
+      testNoResult("alter session set `exec.enable_union_type` = false");
+    }
+  }
+
+  @Test
+  public void testSumFilesWithDifferentSchema() throws Exception {
+    String dfs_temp = getDfsTestTmpSchemaLocation();
+    File table_dir = new File(dfs_temp, "multi_file");
+    table_dir.mkdir();
+    BufferedOutputStream os = new BufferedOutputStream(new FileOutputStream(new File(table_dir, "a.json")));
+    for (int i = 0; i < 10000; i++) {
+      os.write("{ type : \"map\", data : { a : 1 } }\n".getBytes());
+    }
+    os.flush();
+    os.close();
+    os = new BufferedOutputStream(new FileOutputStream(new File(table_dir, "b.json")));
+    for (int i = 0; i < 10000; i++) {
+      os.write("{ type : \"bigint\", data : 1 }\n".getBytes());
+    }
+    os.flush();
+    os.close();
+    String query = "select sum(cast(case when `type` = 'map' then t.data.a else data end as bigint)) `sum` from dfs_test.tmp.multi_file t";
+    try {
+      testBuilder()
+              .sqlQuery(query)
+              .ordered()
+              .optionSettingQueriesForTestQuery("alter session set `exec.enable_union_type` = true")
+              .baselineColumns("sum")
+              .baselineValues(20000L)
+              .go();
+    } finally {
+      testNoResult("alter session set `exec.enable_union_type` = false");
+    }
+  }
+
+  @Test
+  public void drill_4032() throws Exception {
+    String dfs_temp = getDfsTestTmpSchemaLocation();
+    File table_dir = new File(dfs_temp, "drill_4032");
+    table_dir.mkdir();
+    BufferedOutputStream os = new BufferedOutputStream(new FileOutputStream(new File(table_dir, "a.json")));
+    os.write("{\"col1\": \"val1\",\"col2\": null}".getBytes());
+    os.write("{\"col1\": \"val1\",\"col2\": {\"col3\":\"abc\", \"col4\":\"xyz\"}}".getBytes());
+    os.flush();
+    os.close();
+    os = new BufferedOutputStream(new FileOutputStream(new File(table_dir, "b.json")));
+    os.write("{\"col1\": \"val1\",\"col2\": null}".getBytes());
+    os.write("{\"col1\": \"val1\",\"col2\": null}".getBytes());
+    os.flush();
+    os.close();
+    testNoResult("select t.col2.col3 from dfs_test.tmp.drill_4032 t");
+  }
 }

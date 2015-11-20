@@ -17,32 +17,39 @@
  */
 package org.apache.drill;
 
+import static org.hamcrest.core.StringContains.containsString;
+import static org.junit.Assert.assertNotNull;
+import static org.junit.Assert.assertThat;
+import static org.junit.Assert.fail;
+
 import java.io.File;
 import java.io.IOException;
 import java.io.PrintWriter;
 import java.net.URL;
 import java.util.List;
 import java.util.Properties;
-import java.util.concurrent.CountDownLatch;
 import java.util.concurrent.atomic.AtomicInteger;
 
-import com.google.common.io.Files;
 import org.apache.drill.common.config.DrillConfig;
 import org.apache.drill.common.exceptions.UserException;
+import org.apache.drill.common.scanner.ClassPathScanner;
+import org.apache.drill.common.scanner.persistence.ScanResult;
 import org.apache.drill.exec.ExecConstants;
 import org.apache.drill.exec.ExecTest;
 import org.apache.drill.exec.client.DrillClient;
 import org.apache.drill.exec.exception.SchemaChangeException;
 import org.apache.drill.exec.memory.BufferAllocator;
-import org.apache.drill.exec.memory.TopLevelAllocator;
+import org.apache.drill.exec.memory.RootAllocatorFactory;
 import org.apache.drill.exec.proto.UserBitShared;
 import org.apache.drill.exec.proto.UserBitShared.QueryId;
 import org.apache.drill.exec.proto.UserBitShared.QueryResult.QueryState;
 import org.apache.drill.exec.proto.UserBitShared.QueryType;
 import org.apache.drill.exec.record.RecordBatchLoader;
-import org.apache.drill.exec.rpc.user.ConnectionThrottle;
+import org.apache.drill.exec.rpc.ConnectionThrottle;
+import org.apache.drill.exec.rpc.user.AwaitableUserResultsListener;
 import org.apache.drill.exec.rpc.user.QueryDataBatch;
 import org.apache.drill.exec.rpc.user.UserResultsListener;
+import org.apache.drill.exec.rpc.user.UserSession;
 import org.apache.drill.exec.server.Drillbit;
 import org.apache.drill.exec.server.DrillbitContext;
 import org.apache.drill.exec.server.RemoteServiceSet;
@@ -57,12 +64,8 @@ import org.junit.runner.Description;
 
 import com.google.common.base.Charsets;
 import com.google.common.base.Preconditions;
+import com.google.common.io.Files;
 import com.google.common.io.Resources;
-
-import static org.hamcrest.core.StringContains.containsString;
-import static org.junit.Assert.assertNotNull;
-import static org.junit.Assert.assertThat;
-import static org.junit.Assert.fail;
 
 public class BaseTestQuery extends ExecTest {
   private static final org.slf4j.Logger logger = org.slf4j.LoggerFactory.getLogger(BaseTestQuery.class);
@@ -111,10 +114,16 @@ public class BaseTestQuery extends ExecTest {
 
   private int[] columnWidths = new int[] { 8 };
 
+  private static ScanResult classpathScan;
+
   @BeforeClass
   public static void setupDefaultTestCluster() throws Exception {
     config = DrillConfig.create(TEST_CONFIGURATIONS);
+    classpathScan = ClassPathScanner.fromPrescan(config);
     openClient();
+    // turns on the verbose errors in tests
+    // sever side stacktraces are added to the message before sending back to the client
+    test("ALTER SESSION SET `exec.errors.verbose` = true");
   }
 
   protected static void updateTestCluster(int newDrillbitCount, DrillConfig newConfig) {
@@ -166,7 +175,7 @@ public class BaseTestQuery extends ExecTest {
   }
 
   private static void openClient() throws Exception {
-    allocator = new TopLevelAllocator(config);
+    allocator = RootAllocatorFactory.newRoot(config);
     if (config.hasPath(ENABLE_FULL_CACHE) && config.getBoolean(ENABLE_FULL_CACHE)) {
       serviceSet = RemoteServiceSet.getServiceSetWithFullCache(config, allocator);
     } else {
@@ -177,7 +186,7 @@ public class BaseTestQuery extends ExecTest {
 
     bits = new Drillbit[drillbitCount];
     for(int i = 0; i < drillbitCount; i++) {
-      bits[i] = new Drillbit(config, serviceSet);
+      bits[i] = new Drillbit(config, serviceSet, classpathScan);
       bits[i].run();
 
       final StoragePluginRegistry pluginRegistry = bits[i].getContext().getStorage();
@@ -210,8 +219,20 @@ public class BaseTestQuery extends ExecTest {
    * @param user
    */
   public static void updateClient(String user) throws Exception {
+    updateClient(user, null);
+  }
+
+  /*
+   * Close the current <i>client</i> and open a new client for the given user and password credentials. Tests
+   * executed after this method call use the new <i>client</i>.
+   * @param user
+   */
+  public static void updateClient(final String user, final String password) throws Exception {
     final Properties props = new Properties();
-    props.setProperty("user", user);
+    props.setProperty(UserSession.USER, user);
+    if (password != null) {
+      props.setProperty(UserSession.PASSWORD, password);
+    }
     updateClient(props);
   }
 
@@ -228,13 +249,13 @@ public class BaseTestQuery extends ExecTest {
   }
 
   @AfterClass
-  public static void closeClient() throws IOException, InterruptedException {
+  public static void closeClient() throws IOException {
     if (client != null) {
       client.close();
     }
 
     if (bits != null) {
-      for(Drillbit bit : bits) {
+      for(final Drillbit bit : bits) {
         if (bit != null) {
           bit.close();
         }
@@ -256,9 +277,9 @@ public class BaseTestQuery extends ExecTest {
   }
 
   protected static void runSQL(String sql) throws Exception {
-    SilentListener listener = new SilentListener();
+    final AwaitableUserResultsListener listener = new AwaitableUserResultsListener(new SilentListener());
     testWithListener(QueryType.SQL, sql, listener);
-    listener.waitForCompletion();
+    listener.await();
   }
 
   protected static List<QueryDataBatch> testSqlWithResults(String sql) throws Exception{
@@ -286,7 +307,7 @@ public class BaseTestQuery extends ExecTest {
     QueryTestUtil.testWithListener(client, type, query, resultListener);
   }
 
-  protected static void testNoResult(String query, Object... args) throws Exception {
+  public static void testNoResult(String query, Object... args) throws Exception {
     testNoResult(1, query, args);
   }
 
@@ -294,8 +315,8 @@ public class BaseTestQuery extends ExecTest {
     query = String.format(query, args);
     logger.debug("Running query:\n--------------\n" + query);
     for (int i = 0; i < interation; i++) {
-      List<QueryDataBatch> results = client.runQuery(QueryType.SQL, query);
-      for (QueryDataBatch queryDataBatch : results) {
+      final List<QueryDataBatch> results = client.runQuery(QueryType.SQL, query);
+      for (final QueryDataBatch queryDataBatch : results) {
         queryDataBatch.release();
       }
     }
@@ -366,7 +387,7 @@ public class BaseTestQuery extends ExecTest {
   }
 
   public static String getFile(String resource) throws IOException{
-    URL url = Resources.getResource(resource);
+    final URL url = Resources.getResource(resource);
     if (url == null) {
       throw new IOException(String.format("Unable to find path %s.", resource));
     }
@@ -376,13 +397,13 @@ public class BaseTestQuery extends ExecTest {
   /**
    * Copy the resource (ex. file on classpath) to a physical file on FileSystem.
    * @param resource
-   * @return
+   * @return the file path
    * @throws IOException
    */
   public static String getPhysicalFileFromResource(final String resource) throws IOException {
     final File file = File.createTempFile("tempfile", ".txt");
     file.deleteOnExit();
-    PrintWriter printWriter = new PrintWriter(file);
+    final PrintWriter printWriter = new PrintWriter(file);
     printWriter.write(BaseTestQuery.getFile(resource));
     printWriter.close();
 
@@ -395,7 +416,7 @@ public class BaseTestQuery extends ExecTest {
    * @return Full path including temp parent directory and given directory name.
    */
   public static String getTempDir(final String dirName) {
-    File dir = Files.createTempDir();
+    final File dir = Files.createTempDir();
     dir.deleteOnExit();
 
     return dir.getAbsolutePath() + File.separator + dirName;
@@ -410,27 +431,22 @@ public class BaseTestQuery extends ExecTest {
     }
   }
 
-  private static class SilentListener implements UserResultsListener {
-    private volatile UserException exception;
-    private AtomicInteger count = new AtomicInteger();
-    private CountDownLatch latch = new CountDownLatch(1);
+  public static class SilentListener implements UserResultsListener {
+    private final AtomicInteger count = new AtomicInteger();
 
     @Override
     public void submissionFailed(UserException ex) {
-      exception = ex;
-      System.out.println("Query failed: " + ex.getMessage());
-      latch.countDown();
+      logger.debug("Query failed: " + ex.getMessage());
     }
 
     @Override
     public void queryCompleted(QueryState state) {
-      System.out.println("Query completed successfully with row count: " + count.get());
-      latch.countDown();
+      logger.debug("Query completed successfully with row count: " + count.get());
     }
 
     @Override
     public void dataArrived(QueryDataBatch result, ConnectionThrottle throttle) {
-      int rows = result.getHeader().getRowCount();
+      final int rows = result.getHeader().getRowCount();
       if (result.getData() != null) {
         count.addAndGet(rows);
       }
@@ -440,13 +456,6 @@ public class BaseTestQuery extends ExecTest {
     @Override
     public void queryIdArrived(QueryId queryId) {}
 
-    public int waitForCompletion() throws Exception {
-      latch.await();
-      if (exception != null) {
-        throw exception;
-      }
-      return count.get();
-    }
   }
 
   protected void setColumnWidth(int columnWidth) {
@@ -459,15 +468,12 @@ public class BaseTestQuery extends ExecTest {
 
   protected int printResult(List<QueryDataBatch> results) throws SchemaChangeException {
     int rowCount = 0;
-    RecordBatchLoader loader = new RecordBatchLoader(getAllocator());
-    for(QueryDataBatch result : results) {
+    final RecordBatchLoader loader = new RecordBatchLoader(getAllocator());
+    for(final QueryDataBatch result : results) {
       rowCount += result.getHeader().getRowCount();
       loader.load(result.getHeader().getDef(), result.getData());
       // TODO:  Clean:  DRILL-2933:  That load(...) no longer throws
       // SchemaChangeException, so check/clean throw clause above.
-      if (loader.getRecordCount() <= 0) {
-        continue;
-      }
       VectorUtil.showVectorAccessibleContent(loader, columnWidths);
       loader.clear();
       result.release();
@@ -478,10 +484,10 @@ public class BaseTestQuery extends ExecTest {
 
   protected static String getResultString(List<QueryDataBatch> results, String delimiter)
       throws SchemaChangeException {
-    StringBuilder formattedResults = new StringBuilder();
+    final StringBuilder formattedResults = new StringBuilder();
     boolean includeHeader = true;
-    RecordBatchLoader loader = new RecordBatchLoader(getAllocator());
-    for(QueryDataBatch result : results) {
+    final RecordBatchLoader loader = new RecordBatchLoader(getAllocator());
+    for(final QueryDataBatch result : results) {
       loader.load(result.getHeader().getDef(), result.getData());
       if (loader.getRecordCount() <= 0) {
         continue;

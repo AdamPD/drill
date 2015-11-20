@@ -24,6 +24,7 @@ import org.apache.calcite.rel.RelNode;
 import org.apache.calcite.rex.RexNode;
 import org.apache.drill.common.expression.LogicalExpression;
 import org.apache.drill.exec.ExecConstants;
+import org.apache.drill.exec.ops.OptimizerRulesContext;
 import org.apache.drill.exec.ops.QueryContext;
 import org.apache.drill.exec.planner.logical.DrillOptiq;
 import org.apache.drill.exec.planner.logical.DrillParseContext;
@@ -37,7 +38,7 @@ import org.apache.drill.exec.store.StoragePluginOptimizerRule;
 import com.google.common.collect.ImmutableList;
 
 public abstract class ParquetPushDownFilter extends StoragePluginOptimizerRule {
-    public static final StoragePluginOptimizerRule getFilterOnProject(final QueryContext context){
+    public static final StoragePluginOptimizerRule getFilterOnProject(final OptimizerRulesContext context){
         return new ParquetPushDownFilter(
                 RelOptHelper.some(FilterPrel.class, RelOptHelper.some(ProjectPrel.class, RelOptHelper.any(ScanPrel.class))),
                 "ParquetPushDownFilter:Filter_On_Project", context) {
@@ -64,7 +65,7 @@ public abstract class ParquetPushDownFilter extends StoragePluginOptimizerRule {
         };
     }
 
-    public static final StoragePluginOptimizerRule getFilterOnScan(final QueryContext context){
+    public static final StoragePluginOptimizerRule getFilterOnScan(final OptimizerRulesContext context){
         return new ParquetPushDownFilter(
                 RelOptHelper.some(FilterPrel.class, RelOptHelper.any(ScanPrel.class)),
                 "ParquetPushDownFilter:Filter_On_Scan", context) {
@@ -90,11 +91,11 @@ public abstract class ParquetPushDownFilter extends StoragePluginOptimizerRule {
         };
     }
 
-    private final QueryContext context;
+    private final OptimizerRulesContext context;
     private final boolean useNewReader;
     protected final boolean enabled;
 
-    private ParquetPushDownFilter(RelOptRuleOperand operand, String id, QueryContext context) {
+    private ParquetPushDownFilter(RelOptRuleOperand operand, String id, OptimizerRulesContext context) {
         super(operand, id);
         this.context = context;
         this.enabled = context.getOptions().getOption(ExecConstants.PARQUET_ENABLE_PUSHDOWN_FILTER).bool_val;

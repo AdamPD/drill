@@ -48,7 +48,6 @@ class TableBuilder {
     width = columns.length;
 
     format.setMaximumFractionDigits(3);
-    format.setMinimumFractionDigits(3);
 
     sb.append("<table class=\"table table-bordered text-right\">\n<tr>");
     for (final String cn : columns) {
@@ -149,8 +148,7 @@ class TableBuilder {
     return "-";
   }
 
-  @Override
-  public String toString() {
+  public String build() {
     String rv;
     rv = sb.append("\n</table>").toString();
     sb = null;

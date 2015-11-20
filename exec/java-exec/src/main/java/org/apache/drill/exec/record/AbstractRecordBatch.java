@@ -22,23 +22,26 @@ import java.util.Iterator;
 import org.apache.drill.common.exceptions.DrillRuntimeException;
 import org.apache.drill.common.exceptions.UserException;
 import org.apache.drill.common.expression.SchemaPath;
+import org.apache.drill.exec.ExecConstants;
+import org.apache.drill.exec.exception.OutOfMemoryException;
 import org.apache.drill.exec.exception.SchemaChangeException;
-import org.apache.drill.exec.memory.OutOfMemoryException;
 import org.apache.drill.exec.ops.FragmentContext;
 import org.apache.drill.exec.ops.OperatorContext;
 import org.apache.drill.exec.ops.OperatorStats;
 import org.apache.drill.exec.physical.base.PhysicalOperator;
 import org.apache.drill.exec.record.selection.SelectionVector2;
 import org.apache.drill.exec.record.selection.SelectionVector4;
+import org.apache.drill.exec.server.options.OptionValue;
 
 public abstract class AbstractRecordBatch<T extends PhysicalOperator> implements CloseableRecordBatch {
-  final org.slf4j.Logger logger = org.slf4j.LoggerFactory.getLogger(this.getClass());
+  private static final org.slf4j.Logger logger = org.slf4j.LoggerFactory.getLogger(new Object() {}.getClass().getEnclosingClass());
 
   protected final VectorContainer container;
   protected final T popConfig;
   protected final FragmentContext context;
   protected final OperatorContext oContext;
   protected final OperatorStats stats;
+  protected final boolean unionTypeEnabled;
 
   protected BatchState state;
 
@@ -51,8 +54,7 @@ public abstract class AbstractRecordBatch<T extends PhysicalOperator> implements
   }
 
   protected AbstractRecordBatch(final T popConfig, final FragmentContext context, final boolean buildSchema,
-      final OperatorContext oContext) throws OutOfMemoryException {
-    super();
+      final OperatorContext oContext) {
     this.context = context;
     this.popConfig = popConfig;
     this.oContext = oContext;
@@ -63,15 +65,27 @@ public abstract class AbstractRecordBatch<T extends PhysicalOperator> implements
     } else {
       state = BatchState.FIRST;
     }
+    OptionValue option = context.getOptions().getOption(ExecConstants.ENABLE_UNION_TYPE.getOptionName());
+    if (option != null) {
+      unionTypeEnabled = option.bool_val;
+    } else {
+      unionTypeEnabled = false;
+    }
   }
 
   protected static enum BatchState {
-    BUILD_SCHEMA, // Need to build schema and return
-    FIRST, // This is still the first data batch
-    NOT_FIRST, // The first data batch has already been returned
-    STOP, // The query most likely failed, we need to propagate STOP to the root
-    OUT_OF_MEMORY, // Out of Memory while building the Schema...Ouch!
-    DONE // All work is done, no more data to be sent
+    /** Need to build schema and return. */
+    BUILD_SCHEMA,
+    /** This is still the first data batch. */
+    FIRST,
+    /** The first data batch has already been returned. */
+    NOT_FIRST,
+    /** The query most likely failed, we need to propagate STOP to the root. */
+    STOP,
+    /** Out of Memory while building the Schema...Ouch! */
+    OUT_OF_MEMORY,
+    /** All work is done, no more data to be sent. */
+    DONE
   }
 
   @Override
@@ -119,6 +133,7 @@ public abstract class AbstractRecordBatch<T extends PhysicalOperator> implements
     return next;
   }
 
+  @Override
   public final IterOutcome next() {
     try {
       stats.startProcessing();
@@ -174,10 +189,10 @@ public abstract class AbstractRecordBatch<T extends PhysicalOperator> implements
 
   protected abstract void killIncoming(boolean sendUpstream);
 
-  public void close(){
+  @Override
+  public void close() {
     container.clear();
   }
-
 
   @Override
   public SelectionVector2 getSelectionVector2() {
@@ -199,7 +214,6 @@ public abstract class AbstractRecordBatch<T extends PhysicalOperator> implements
     return container.getValueAccessorById(clazz, ids);
   }
 
-
   @Override
   public WritableBatch getWritableBatch() {
 //    logger.debug("Getting writable batch.");
@@ -212,5 +226,4 @@ public abstract class AbstractRecordBatch<T extends PhysicalOperator> implements
   public VectorContainer getOutgoingContainer() {
     throw new UnsupportedOperationException(String.format(" You should not call getOutgoingContainer() for class %s", this.getClass().getCanonicalName()));
   }
-
 }

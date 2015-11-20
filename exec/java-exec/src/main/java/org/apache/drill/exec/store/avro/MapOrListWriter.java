@@ -49,7 +49,7 @@ public class MapOrListWriter {
     if (map != null) {
       map.start();
     } else {
-      list.start();
+      list.startList();
     }
   }
 
@@ -57,13 +57,18 @@ public class MapOrListWriter {
     if (map != null) {
       map.end();
     } else {
-      list.end();
+      list.endList();
     }
   }
 
   MapOrListWriter map(final String name) {
     assert map != null;
     return new MapOrListWriter(map.map(name));
+  }
+
+  MapOrListWriter listoftmap(final String name) {
+    assert list != null;
+    return new MapOrListWriter(list.map());
   }
 
   MapOrListWriter list(final String name) {
@@ -73,6 +78,10 @@ public class MapOrListWriter {
 
   boolean isMapWriter() {
     return map != null;
+  }
+
+  boolean isListWriter() {
+    return list != null;
   }
 
   VarCharWriter varChar(final String name) {

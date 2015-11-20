@@ -17,8 +17,20 @@
  */
 package org.apache.drill.exec.planner;
 
+import org.apache.drill.common.expression.SchemaPath;
+import org.apache.drill.common.types.TypeProtos;
+import org.apache.drill.exec.physical.base.GroupScan;
+import org.apache.drill.exec.planner.physical.PlannerSettings;
+import org.apache.drill.exec.vector.ValueVector;
+
+import java.util.BitSet;
+import java.util.List;
+import java.util.Map;
+
 // Interface used to describe partitions. Currently used by file system based partitions and hive partitions
-public interface PartitionDescriptor {
+public interface PartitionDescriptor extends Iterable<List<PartitionLocation>> {
+
+  public static final int PARTITION_BATCH_SIZE = Character.MAX_VALUE;
 
   /* Get the hierarchy index of the given partition
    * For eg: if we have the partition laid out as follows
@@ -40,4 +52,26 @@ public interface PartitionDescriptor {
 
   // Maximum level of partition nesting/ hierarchy supported
   public int getMaxHierarchyLevel();
+
+  public GroupScan createNewGroupScan(List<String> newFiles) throws Exception;
+
+  /**
+   * Method creates an in memory representation of all the partitions. For each level of partitioning we
+   * will create a value vector which this method will populate for all the partitions with the values of the
+   * partitioning key
+   * @param vectors - Array of vectors in the container that need to be populated
+   * @param partitions - List of all the partitions that exist in the table
+   * @param partitionColumnBitSet - Partition columns selected in the query
+   * @param fieldNameMap - Maps field ordinal to the field name
+   */
+  void populatePartitionVectors(ValueVector[] vectors, List<PartitionLocation> partitions,
+                                BitSet partitionColumnBitSet, Map<Integer, String> fieldNameMap);
+
+  /**
+   * Method returns the Major type associated with the given column
+   * @param column - column whose type should be determined
+   * @param plannerSettings
+   * @return
+   */
+  TypeProtos.MajorType getVectorType(SchemaPath column, PlannerSettings plannerSettings);
 }

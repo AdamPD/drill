@@ -36,6 +36,7 @@ import org.apache.drill.QueryTestUtil;
 import org.apache.drill.SingleRowListener;
 import org.apache.drill.common.AutoCloseables;
 import org.apache.drill.common.concurrent.ExtendedLatch;
+import org.apache.drill.common.DrillAutoCloseables;
 import org.apache.drill.common.config.DrillConfig;
 import org.apache.drill.common.exceptions.UserException;
 import org.apache.drill.common.types.TypeProtos.MinorType;
@@ -46,7 +47,7 @@ import org.apache.drill.exec.client.DrillClient;
 import org.apache.drill.exec.exception.DrillbitStartupException;
 import org.apache.drill.exec.exception.SchemaChangeException;
 import org.apache.drill.exec.memory.BufferAllocator;
-import org.apache.drill.exec.memory.TopLevelAllocator;
+import org.apache.drill.exec.memory.RootAllocatorFactory;
 import org.apache.drill.exec.physical.impl.ScreenCreator;
 import org.apache.drill.exec.physical.impl.SingleSenderCreator.SingleSenderRootExec;
 import org.apache.drill.exec.physical.impl.mergereceiver.MergingRecordBatch;
@@ -67,9 +68,9 @@ import org.apache.drill.exec.record.BatchSchema;
 import org.apache.drill.exec.record.MaterializedField;
 import org.apache.drill.exec.record.RecordBatchLoader;
 import org.apache.drill.exec.record.VectorWrapper;
+import org.apache.drill.exec.rpc.ConnectionThrottle;
 import org.apache.drill.exec.rpc.DrillRpcFuture;
 import org.apache.drill.exec.rpc.RpcException;
-import org.apache.drill.exec.rpc.user.ConnectionThrottle;
 import org.apache.drill.exec.rpc.user.QueryDataBatch;
 import org.apache.drill.exec.rpc.user.UserResultsListener;
 import org.apache.drill.exec.store.pojo.PojoRecordReader;
@@ -119,7 +120,6 @@ public class TestDrillbitResilience extends DrillTest {
     }
 
     try {
-      @SuppressWarnings("resource")
       final Drillbit drillbit = Drillbit.start(zkHelper.getConfig(), remoteServiceSet);
       drillbits.put(name, drillbit);
     } catch (final DrillbitStartupException e) {
@@ -133,7 +133,6 @@ public class TestDrillbitResilience extends DrillTest {
    * @param name name of the drillbit
    */
   private static void stopDrillbit(final String name) {
-    @SuppressWarnings("resource")
     final Drillbit drillbit = drillbits.get(name);
     if (drillbit == null) {
       throw new IllegalStateException("No Drillbit named \"" + name + "\" found");
@@ -234,7 +233,7 @@ public class TestDrillbitResilience extends DrillTest {
    */
   private static void assertDrillbitsOk() {
       final SingleRowListener listener = new SingleRowListener() {
-          private final BufferAllocator bufferAllocator = new TopLevelAllocator(zkHelper.getConfig());
+          private final BufferAllocator bufferAllocator = RootAllocatorFactory.newRoot(zkHelper.getConfig());
           private final RecordBatchLoader loader = new RecordBatchLoader(bufferAllocator);
 
           @Override
@@ -273,7 +272,7 @@ public class TestDrillbitResilience extends DrillTest {
 
           @Override
           public void cleanup() {
-            bufferAllocator.close();
+            DrillAutoCloseables.closeNoChecked(bufferAllocator);
           }
         };
 
@@ -651,6 +650,7 @@ public class TestDrillbitResilience extends DrillTest {
 
   @Test // DRILL-2383: Cancellation TC 4: cancel after everything is completed and fetched
   @Repeat(count = NUM_RUNS)
+  @Ignore("DRILL-3967")
   public void cancelAfterEverythingIsCompleted() {
     final long before = countAllocatedMemory();
 
@@ -929,7 +929,7 @@ public class TestDrillbitResilience extends DrillTest {
   @Test // DRILL-3065
   public void failsAfterMSorterSorting() {
     final String query = "select n_name from cp.`tpch/nation.parquet` order by n_name";
-    Class<? extends Exception> typeOfException = RuntimeException.class;
+    final Class<? extends Exception> typeOfException = RuntimeException.class;
 
     final long before = countAllocatedMemory();
     final String controls = Controls.newBuilder()
@@ -944,7 +944,7 @@ public class TestDrillbitResilience extends DrillTest {
   @Test // DRILL-3085
   public void failsAfterMSorterSetup() {
     final String query = "select n_name from cp.`tpch/nation.parquet` order by n_name";
-    Class<? extends Exception> typeOfException = RuntimeException.class;
+    final Class<? extends Exception> typeOfException = RuntimeException.class;
 
     final long before = countAllocatedMemory();
     final String controls = Controls.newBuilder()

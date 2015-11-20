@@ -26,13 +26,13 @@ import org.apache.drill.common.expression.LogicalExpression;
 import org.apache.drill.common.logical.data.Order.Ordering;
 import org.apache.drill.exec.compile.sig.MappingSet;
 import org.apache.drill.exec.exception.ClassTransformationException;
+import org.apache.drill.exec.exception.OutOfMemoryException;
 import org.apache.drill.exec.exception.SchemaChangeException;
 import org.apache.drill.exec.expr.ClassGenerator;
 import org.apache.drill.exec.expr.ClassGenerator.HoldingContainer;
 import org.apache.drill.exec.expr.CodeGenerator;
 import org.apache.drill.exec.expr.ExpressionTreeMaterializer;
 import org.apache.drill.exec.expr.fn.FunctionGenerationHelper;
-import org.apache.drill.exec.memory.OutOfMemoryException;
 import org.apache.drill.exec.ops.FragmentContext;
 import org.apache.drill.exec.physical.config.Sort;
 import org.apache.drill.exec.record.AbstractRecordBatch;
@@ -54,8 +54,6 @@ public class SortBatch extends AbstractRecordBatch<Sort> {
   public final MappingSet leftMapping = new MappingSet("leftIndex", null, ClassGenerator.DEFAULT_CONSTANT_MAP, ClassGenerator.DEFAULT_SCALAR_MAP);
   public final MappingSet rightMapping = new MappingSet("rightIndex", null, ClassGenerator.DEFAULT_CONSTANT_MAP, ClassGenerator.DEFAULT_SCALAR_MAP);
 
-  private static long MAX_SORT_BYTES = 8l * 1024 * 1024 * 1024;
-
   private final RecordBatch incoming;
   private final SortRecordBatchBuilder builder;
   private Sorter sorter;
@@ -64,7 +62,7 @@ public class SortBatch extends AbstractRecordBatch<Sort> {
   public SortBatch(Sort popConfig, FragmentContext context, RecordBatch incoming) throws OutOfMemoryException {
     super(popConfig, context);
     this.incoming = incoming;
-    this.builder = new SortRecordBatchBuilder(oContext.getAllocator(), MAX_SORT_BYTES);
+    this.builder = new SortRecordBatchBuilder(oContext.getAllocator());
   }
 
   @Override
@@ -94,9 +92,9 @@ public class SortBatch extends AbstractRecordBatch<Sort> {
     if (schema != null) {
       if (getSelectionVector4().next()) {
         return IterOutcome.OK;
-      } else {
-        return IterOutcome.NONE;
       }
+
+      return IterOutcome.NONE;
     }
 
     try{
@@ -122,7 +120,7 @@ public class SortBatch extends AbstractRecordBatch<Sort> {
         case OK:
           if (!builder.add(incoming)) {
             throw new UnsupportedOperationException("Sort doesn't currently support doing an external sort.");
-          };
+          }
           break;
         default:
           throw new UnsupportedOperationException();

@@ -17,15 +17,24 @@
  */
 package org.apache.drill.exec.util;
 
-import com.google.common.base.Strings;
+import java.io.IOException;
+import java.security.PrivilegedExceptionAction;
+import java.util.Set;
+import java.util.concurrent.ExecutionException;
+import java.util.concurrent.TimeUnit;
+
 import org.apache.drill.common.exceptions.DrillRuntimeException;
 import org.apache.drill.exec.ops.OperatorStats;
 import org.apache.drill.exec.store.dfs.DrillFileSystem;
 import org.apache.hadoop.conf.Configuration;
 import org.apache.hadoop.security.UserGroupInformation;
 
-import java.io.IOException;
-import java.security.PrivilegedExceptionAction;
+import com.google.common.base.Splitter;
+import com.google.common.base.Strings;
+import com.google.common.cache.CacheBuilder;
+import com.google.common.cache.CacheLoader;
+import com.google.common.cache.LoadingCache;
+import com.google.common.collect.Sets;
 
 /**
  * Utilities for impersonation purpose.
@@ -33,6 +42,66 @@ import java.security.PrivilegedExceptionAction;
 public class ImpersonationUtil {
   private static final org.slf4j.Logger logger = org.slf4j.LoggerFactory.getLogger(ImpersonationUtil.class);
 
+  private static final LoadingCache<Key, UserGroupInformation> CACHE = CacheBuilder.newBuilder()
+      .maximumSize(100)
+      .expireAfterAccess(60, TimeUnit.MINUTES)
+      .build(new CacheLoader<Key, UserGroupInformation>() {
+        @Override
+        public UserGroupInformation load(Key key) throws Exception {
+          return UserGroupInformation.createProxyUser(key.proxyUserName, key.loginUser);
+        }
+      });
+
+  private static final Splitter SPLITTER = Splitter.on(',').trimResults().omitEmptyStrings();
+
+  private static class Key {
+    final String proxyUserName;
+    final UserGroupInformation loginUser;
+
+    public Key(String proxyUserName, UserGroupInformation loginUser) {
+      super();
+      this.proxyUserName = proxyUserName;
+      this.loginUser = loginUser;
+    }
+    @Override
+    public int hashCode() {
+      final int prime = 31;
+      int result = 1;
+      result = prime * result + ((loginUser == null) ? 0 : loginUser.hashCode());
+      result = prime * result + ((proxyUserName == null) ? 0 : proxyUserName.hashCode());
+      return result;
+    }
+    @Override
+    public boolean equals(Object obj) {
+      if (this == obj) {
+        return true;
+      }
+      if (obj == null) {
+        return false;
+      }
+      if (getClass() != obj.getClass()) {
+        return false;
+      }
+      Key other = (Key) obj;
+      if (loginUser == null) {
+        if (other.loginUser != null) {
+          return false;
+        }
+      } else if (!loginUser.equals(other.loginUser)) {
+        return false;
+      }
+      if (proxyUserName == null) {
+        if (other.proxyUserName != null) {
+          return false;
+        }
+      } else if (!proxyUserName.equals(other.proxyUserName)) {
+        return false;
+      }
+      return true;
+    }
+
+
+  }
   /**
    * Create and return proxy user {@link org.apache.hadoop.security.UserGroupInformation} of operator owner if operator
    * owner is valid. Otherwise create and return proxy user {@link org.apache.hadoop.security.UserGroupInformation} for
@@ -78,8 +147,8 @@ public class ImpersonationUtil {
         return getProcessUserUGI();
       }
 
-      return UserGroupInformation.createProxyUser(proxyUserName, UserGroupInformation.getLoginUser());
-    } catch(IOException e) {
+      return CACHE.get(new Key(proxyUserName, UserGroupInformation.getLoginUser()));
+    } catch (IOException | ExecutionException e) {
       final String errMsg = "Failed to create proxy user UserGroupInformation object: " + e.getMessage();
       logger.error(errMsg, e);
       throw new DrillRuntimeException(errMsg, e);
@@ -151,5 +220,40 @@ public class ImpersonationUtil {
     }
 
     return fs;
+  }
+
+  /**
+   * Given admin user/group list, finds whether the given username has admin privileges.
+   *
+   * @param userName User who is checked for administrative privileges.
+   * @param adminUsers Comma separated list of admin usernames,
+   * @param adminGroups Comma separated list of admin usergroups
+   * @return
+   */
+  public static boolean hasAdminPrivileges(final String userName, final String adminUsers, final String adminGroups) {
+    // Process user is by default an admin
+    if (getProcessUserName().equals(userName)) {
+      return true;
+    }
+
+    final Set<String> adminUsersSet = Sets.newHashSet(SPLITTER.split(adminUsers));
+    if (adminUsersSet.contains(userName)) {
+      return true;
+    }
+
+    final UserGroupInformation ugi = createProxyUgi(userName);
+    final String[] userGroups = ugi.getGroupNames();
+    if (userGroups == null || userGroups.length == 0) {
+      return false;
+    }
+
+    final Set<String> adminUserGroupsSet = Sets.newHashSet(SPLITTER.split(adminGroups));
+    for (String userGroup : userGroups) {
+      if (adminUserGroupsSet.contains(userGroup)) {
+        return true;
+      }
+    }
+
+    return false;
   }
 }

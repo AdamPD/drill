@@ -17,38 +17,37 @@
  */
 package org.apache.drill.exec.server.options;
 
+import com.fasterxml.jackson.annotation.JsonCreator;
 import com.fasterxml.jackson.annotation.JsonIgnore;
 import com.fasterxml.jackson.annotation.JsonInclude;
 import com.fasterxml.jackson.annotation.JsonInclude.Include;
+import com.fasterxml.jackson.annotation.JsonProperty;
 import com.google.common.base.Preconditions;
 
+/**
+ * An {@link OptionValue option value} is used by an {@link OptionManager} to store a run-time setting. This setting,
+ * for example, could affect a query in execution stage. Instances of this class are JSON serializable and can be stored
+ * in a {@link org.apache.drill.exec.store.sys.PStore persistent store} (see {@link SystemOptionManager#options}), or
+ * in memory (see {@link InMemoryOptionManager#options}).
+ */
 @JsonInclude(Include.NON_NULL)
 public class OptionValue implements Comparable<OptionValue> {
 
-  public static enum OptionType {
+  public enum OptionType {
     BOOT, SYSTEM, SESSION, QUERY
   }
 
-  public static enum Kind {
+  public enum Kind {
     BOOLEAN, LONG, STRING, DOUBLE
   }
 
-  public String name;
-  public Kind kind;
-  public OptionType type;
-  public Long num_val;
-  public String string_val;
-  public Boolean bool_val;
-  public Double float_val;
-
-  /**
-   * Constructor.
-   *
-   * <p>Unfortunately, we have to have this variant, and are unable to make the members final,
-   * in order to support JSON deserialization into this structure.
-   */
-  public OptionValue() {
-  }
+  public final String name;
+  public final Kind kind;
+  public final OptionType type;
+  public final Long num_val;
+  public final String string_val;
+  public final Boolean bool_val;
+  public final Double float_val;
 
   public static OptionValue createLong(OptionType type, String name, long val) {
     return new OptionValue(Kind.LONG, type, name, val, null, null, null);
@@ -80,8 +79,14 @@ public class OptionValue implements Comparable<OptionValue> {
     return null;
   }
 
-  private OptionValue(Kind kind, OptionType type, String name,
-      Long num_val, String string_val, Boolean bool_val, Double float_val) {
+  @JsonCreator
+  private OptionValue(@JsonProperty("kind") Kind kind,
+                      @JsonProperty("type") OptionType type,
+                      @JsonProperty("name") String name,
+                      @JsonProperty("num_val") Long num_val,
+                      @JsonProperty("string_val") String string_val,
+                      @JsonProperty("bool_val") Boolean bool_val,
+                      @JsonProperty("float_val") Double float_val) {
     Preconditions.checkArgument(num_val != null || string_val != null || bool_val != null || float_val != null);
     this.kind = kind;
     this.type = type;
@@ -122,8 +127,7 @@ public class OptionValue implements Comparable<OptionValue> {
     return result;
   }
 
-  @Override
-  public boolean equals(Object obj) {
+  public boolean equalsIgnoreType(Object obj) {
     if (this == obj) {
       return true;
     }
@@ -133,7 +137,7 @@ public class OptionValue implements Comparable<OptionValue> {
     if (getClass() != obj.getClass()) {
       return false;
     }
-    OptionValue other = (OptionValue) obj;
+    final OptionValue other = (OptionValue) obj;
     if (bool_val == null) {
       if (other.bool_val != null) {
         return false;
@@ -172,10 +176,16 @@ public class OptionValue implements Comparable<OptionValue> {
     } else if (!string_val.equals(other.string_val)) {
       return false;
     }
-    if (type != other.type) {
+    return true;
+  }
+
+  @Override
+  public boolean equals(Object obj) {
+    if (!equalsIgnoreType(obj)) {
       return false;
     }
-    return true;
+    final OptionValue other = (OptionValue) obj;
+    return type == other.type;
   }
 
   @Override

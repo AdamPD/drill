@@ -24,9 +24,6 @@ import java.io.IOException;
 import java.util.ArrayList;
 import java.util.List;
 
-import mockit.Injectable;
-import mockit.NonStrictExpectations;
-
 import org.apache.drill.common.config.DrillConfig;
 import org.apache.drill.common.expression.ExpressionPosition;
 import org.apache.drill.common.expression.FunctionCall;
@@ -34,23 +31,24 @@ import org.apache.drill.common.expression.LogicalExpression;
 import org.apache.drill.common.expression.SchemaPath;
 import org.apache.drill.common.expression.TypedNullConstant;
 import org.apache.drill.common.expression.ValueExpressions;
+import org.apache.drill.common.scanner.ClassPathScanner;
 import org.apache.drill.common.types.TypeProtos;
 import org.apache.drill.common.types.Types;
 import org.apache.drill.common.util.FileUtils;
 import org.apache.drill.exec.ExecTest;
-import org.apache.drill.exec.compile.CodeCompiler;
+import org.apache.drill.exec.compile.CodeCompilerTestFactory;
 import org.apache.drill.exec.expr.fn.DrillFuncHolder;
 import org.apache.drill.exec.expr.fn.FunctionImplementationRegistry;
 import org.apache.drill.exec.expr.fn.impl.StringFunctionHelpers;
 import org.apache.drill.exec.expr.holders.NullableVarBinaryHolder;
 import org.apache.drill.exec.expr.holders.NullableVarCharHolder;
-import org.apache.drill.exec.memory.TopLevelAllocator;
+import org.apache.drill.exec.memory.RootAllocatorFactory;
 import org.apache.drill.exec.ops.FragmentContext;
 import org.apache.drill.exec.physical.PhysicalPlan;
 import org.apache.drill.exec.physical.base.FragmentRoot;
 import org.apache.drill.exec.planner.PhysicalPlanReader;
+import org.apache.drill.exec.planner.PhysicalPlanReaderTestFactory;
 import org.apache.drill.exec.proto.BitControl.PlanFragment;
-import org.apache.drill.exec.proto.CoordinationProtos;
 import org.apache.drill.exec.resolver.FunctionResolver;
 import org.apache.drill.exec.resolver.FunctionResolverFactory;
 import org.apache.drill.exec.rpc.user.UserServer;
@@ -64,14 +62,16 @@ import com.google.common.base.Charsets;
 import com.google.common.io.Files;
 import com.sun.codemodel.JClassAlreadyExistsException;
 
-public class TestSimpleFunctions extends ExecTest {
-  static final org.slf4j.Logger logger = org.slf4j.LoggerFactory.getLogger(TestSimpleFunctions.class);
+import mockit.Injectable;
+import mockit.NonStrictExpectations;
 
-  DrillConfig c = DrillConfig.create();
+public class TestSimpleFunctions extends ExecTest {
+  //private static final org.slf4j.Logger logger = org.slf4j.LoggerFactory.getLogger(TestSimpleFunctions.class);
+  private final DrillConfig c = DrillConfig.create();
 
   @Test
   public void testHashFunctionResolution(@Injectable DrillConfig config) throws JClassAlreadyExistsException, IOException {
-    FunctionImplementationRegistry registry = new FunctionImplementationRegistry(config);
+    final FunctionImplementationRegistry registry = new FunctionImplementationRegistry(config);
     // test required vs nullable Int input
     resolveHash(config,
         new TypedNullConstant(Types.optional(TypeProtos.MinorType.INT)),
@@ -136,46 +136,44 @@ public class TestSimpleFunctions extends ExecTest {
   public void resolveHash(DrillConfig config, LogicalExpression arg, TypeProtos.MajorType expectedArg,
                                     TypeProtos.MajorType expectedOut, TypeProtos.DataMode expectedBestInputMode,
                                     FunctionImplementationRegistry registry) throws JClassAlreadyExistsException, IOException {
-    List<LogicalExpression> args = new ArrayList<>();
+    final List<LogicalExpression> args = new ArrayList<>();
     args.add(arg);
-    String[] registeredNames = { "hash" };
+    final String[] registeredNames = { "hash" };
     FunctionCall call = new FunctionCall(
         "hash",
         args,
         ExpressionPosition.UNKNOWN
     );
-    FunctionResolver resolver = FunctionResolverFactory.getResolver(call);
-    DrillFuncHolder matchedFuncHolder = registry.findDrillFunction(resolver, call);
+    final FunctionResolver resolver = FunctionResolverFactory.getResolver(call);
+    final DrillFuncHolder matchedFuncHolder = registry.findDrillFunction(resolver, call);
     assertEquals( expectedBestInputMode, matchedFuncHolder.getParmMajorType(0).getMode());
   }
 
   @Test
   public void testSubstring(@Injectable final DrillbitContext bitContext,
-                            @Injectable UserServer.UserClientConnection connection) throws Throwable{
-
+                            @Injectable UserServer.UserClientConnection connection) throws Throwable {
     new NonStrictExpectations(){{
       bitContext.getMetrics(); result = new MetricRegistry();
-      bitContext.getAllocator(); result = new TopLevelAllocator();
-      bitContext.getOperatorCreatorRegistry(); result = new OperatorCreatorRegistry(c);
+      bitContext.getAllocator(); result = RootAllocatorFactory.newRoot(c);
+      bitContext.getOperatorCreatorRegistry(); result = new OperatorCreatorRegistry(ClassPathScanner.fromPrescan(c));
       bitContext.getConfig(); result = c;
-      bitContext.getCompiler(); result = CodeCompiler.getTestCompiler(c);
+      bitContext.getCompiler(); result = CodeCompilerTestFactory.getTestCompiler(c);
     }};
 
-    PhysicalPlanReader reader = new PhysicalPlanReader(c, c.getMapper(), CoordinationProtos.DrillbitEndpoint.getDefaultInstance());
-    PhysicalPlan plan = reader.readPhysicalPlan(Files.toString(FileUtils.getResourceAsFile("/functions/testSubstring.json"), Charsets.UTF_8));
-    FunctionImplementationRegistry registry = new FunctionImplementationRegistry(c);
-    FragmentContext context = new FragmentContext(bitContext, PlanFragment.getDefaultInstance(), connection, registry);
-    SimpleRootExec exec = new SimpleRootExec(ImplCreator.getExec(context, (FragmentRoot) plan.getSortedOperators(false).iterator().next()));
+    final PhysicalPlanReader reader = PhysicalPlanReaderTestFactory.defaultPhysicalPlanReader(c);
+    final PhysicalPlan plan = reader.readPhysicalPlan(Files.toString(FileUtils.getResourceAsFile("/functions/testSubstring.json"), Charsets.UTF_8));
+    final FunctionImplementationRegistry registry = new FunctionImplementationRegistry(c);
+    final FragmentContext context = new FragmentContext(bitContext, PlanFragment.getDefaultInstance(), connection, registry);
+    final SimpleRootExec exec = new SimpleRootExec(ImplCreator.getExec(context, (FragmentRoot) plan.getSortedOperators(false).iterator().next()));
 
-    while(exec.next()){
-      NullableVarCharVector c1 = exec.getValueVectorById(new SchemaPath("col3", ExpressionPosition.UNKNOWN), NullableVarCharVector.class);
-      NullableVarCharVector.Accessor a1;
-      a1 = c1.getAccessor();
+    while(exec.next()) {
+      final NullableVarCharVector c1 = exec.getValueVectorById(new SchemaPath("col3", ExpressionPosition.UNKNOWN), NullableVarCharVector.class);
+      final NullableVarCharVector.Accessor a1 = c1.getAccessor();
 
       int count = 0;
-      for(int i = 0; i < c1.getAccessor().getValueCount(); i++){
+      for(int i = 0; i < c1.getAccessor().getValueCount(); i++) {
         if (!a1.isNull(i)) {
-          NullableVarCharHolder holder = new NullableVarCharHolder();
+          final NullableVarCharHolder holder = new NullableVarCharHolder();
           a1.get(i, holder);
           assertEquals("aaaa", StringFunctionHelpers.toStringFromUTF8(holder.start,  holder.end,  holder.buffer));
           ++count;
@@ -184,40 +182,37 @@ public class TestSimpleFunctions extends ExecTest {
       assertEquals(50, count);
     }
 
-    if(context.getFailureCause() != null){
+    if(context.getFailureCause() != null) {
       throw context.getFailureCause();
     }
     assertTrue(!context.isFailed());
-
   }
 
   @Test
   public void testSubstringNegative(@Injectable final DrillbitContext bitContext,
-                                    @Injectable UserServer.UserClientConnection connection) throws Throwable{
-
-    new NonStrictExpectations(){{
+                                    @Injectable UserServer.UserClientConnection connection) throws Throwable {
+    new NonStrictExpectations() {{
       bitContext.getMetrics(); result = new MetricRegistry();
-      bitContext.getAllocator(); result = new TopLevelAllocator();
-      bitContext.getOperatorCreatorRegistry(); result = new OperatorCreatorRegistry(c);
+      bitContext.getAllocator(); result = RootAllocatorFactory.newRoot(c);
+      bitContext.getOperatorCreatorRegistry(); result = new OperatorCreatorRegistry(ClassPathScanner.fromPrescan(c));
       bitContext.getConfig(); result = c;
-      bitContext.getCompiler(); result = CodeCompiler.getTestCompiler(c);
+      bitContext.getCompiler(); result = CodeCompilerTestFactory.getTestCompiler(c);
     }};
 
-    PhysicalPlanReader reader = new PhysicalPlanReader(c, c.getMapper(), CoordinationProtos.DrillbitEndpoint.getDefaultInstance());
-    PhysicalPlan plan = reader.readPhysicalPlan(Files.toString(FileUtils.getResourceAsFile("/functions/testSubstringNegative.json"), Charsets.UTF_8));
-    FunctionImplementationRegistry registry = new FunctionImplementationRegistry(c);
-    FragmentContext context = new FragmentContext(bitContext, PlanFragment.getDefaultInstance(), connection, registry);
-    SimpleRootExec exec = new SimpleRootExec(ImplCreator.getExec(context, (FragmentRoot) plan.getSortedOperators(false).iterator().next()));
+    final PhysicalPlanReader reader = PhysicalPlanReaderTestFactory.defaultPhysicalPlanReader(c);
+    final PhysicalPlan plan = reader.readPhysicalPlan(Files.toString(FileUtils.getResourceAsFile("/functions/testSubstringNegative.json"), Charsets.UTF_8));
+    final FunctionImplementationRegistry registry = new FunctionImplementationRegistry(c);
+    final FragmentContext context = new FragmentContext(bitContext, PlanFragment.getDefaultInstance(), connection, registry);
+    final SimpleRootExec exec = new SimpleRootExec(ImplCreator.getExec(context, (FragmentRoot) plan.getSortedOperators(false).iterator().next()));
 
-    while(exec.next()){
-      NullableVarCharVector c1 = exec.getValueVectorById(new SchemaPath("col3", ExpressionPosition.UNKNOWN), NullableVarCharVector.class);
-      NullableVarCharVector.Accessor a1;
-      a1 = c1.getAccessor();
+    while(exec.next()) {
+      final NullableVarCharVector c1 = exec.getValueVectorById(new SchemaPath("col3", ExpressionPosition.UNKNOWN), NullableVarCharVector.class);
+      final NullableVarCharVector.Accessor a1 = c1.getAccessor();
 
       int count = 0;
-      for(int i = 0; i < c1.getAccessor().getValueCount(); i++){
+      for(int i = 0; i < c1.getAccessor().getValueCount(); i++) {
         if (!a1.isNull(i)) {
-          NullableVarCharHolder holder = new NullableVarCharHolder();
+          final NullableVarCharHolder holder = new NullableVarCharHolder();
           a1.get(i, holder);
           //when offset is negative, substring return empty string.
           assertEquals("", StringFunctionHelpers.toStringFromUTF8(holder.start,  holder.end,  holder.buffer));
@@ -227,40 +222,37 @@ public class TestSimpleFunctions extends ExecTest {
       assertEquals(50, count);
     }
 
-    if(context.getFailureCause() != null){
+    if(context.getFailureCause() != null) {
       throw context.getFailureCause();
     }
     assertTrue(!context.isFailed());
-
   }
 
   @Test
   public void testByteSubstring(@Injectable final DrillbitContext bitContext,
-                                  @Injectable UserServer.UserClientConnection connection) throws Throwable{
-
-    new NonStrictExpectations(){{
+                                  @Injectable UserServer.UserClientConnection connection) throws Throwable {
+    new NonStrictExpectations() {{
       bitContext.getMetrics(); result = new MetricRegistry();
-      bitContext.getAllocator(); result = new TopLevelAllocator();
-      bitContext.getOperatorCreatorRegistry(); result = new OperatorCreatorRegistry(c);
+      bitContext.getAllocator(); result = RootAllocatorFactory.newRoot(c);
+      bitContext.getOperatorCreatorRegistry(); result = new OperatorCreatorRegistry(ClassPathScanner.fromPrescan(c));
       bitContext.getConfig(); result = c;
-      bitContext.getCompiler(); result = CodeCompiler.getTestCompiler(c);
+      bitContext.getCompiler(); result = CodeCompilerTestFactory.getTestCompiler(c);
     }};
 
-    PhysicalPlanReader reader = new PhysicalPlanReader(c, c.getMapper(), CoordinationProtos.DrillbitEndpoint.getDefaultInstance());
-    PhysicalPlan plan = reader.readPhysicalPlan(Files.toString(FileUtils.getResourceAsFile("/functions/testByteSubstring.json"), Charsets.UTF_8));
-    FunctionImplementationRegistry registry = new FunctionImplementationRegistry(c);
-    FragmentContext context = new FragmentContext(bitContext, PlanFragment.getDefaultInstance(), connection, registry);
-    SimpleRootExec exec = new SimpleRootExec(ImplCreator.getExec(context, (FragmentRoot) plan.getSortedOperators(false).iterator().next()));
+    final PhysicalPlanReader reader = PhysicalPlanReaderTestFactory.defaultPhysicalPlanReader(c);
+    final PhysicalPlan plan = reader.readPhysicalPlan(Files.toString(FileUtils.getResourceAsFile("/functions/testByteSubstring.json"), Charsets.UTF_8));
+    final FunctionImplementationRegistry registry = new FunctionImplementationRegistry(c);
+    final FragmentContext context = new FragmentContext(bitContext, PlanFragment.getDefaultInstance(), connection, registry);
+    final SimpleRootExec exec = new SimpleRootExec(ImplCreator.getExec(context, (FragmentRoot) plan.getSortedOperators(false).iterator().next()));
 
-    while(exec.next()){
-      NullableVarBinaryVector c1 = exec.getValueVectorById(new SchemaPath("col3", ExpressionPosition.UNKNOWN), NullableVarBinaryVector.class);
-      NullableVarBinaryVector.Accessor a1;
-      a1 = c1.getAccessor();
+    while(exec.next()) {
+      final NullableVarBinaryVector c1 = exec.getValueVectorById(new SchemaPath("col3", ExpressionPosition.UNKNOWN), NullableVarBinaryVector.class);
+      final NullableVarBinaryVector.Accessor a1 = c1.getAccessor();
 
       int count = 0;
-      for(int i = 0; i < c1.getAccessor().getValueCount(); i++){
+      for(int i = 0; i < c1.getAccessor().getValueCount(); i++) {
         if (!a1.isNull(i)) {
-          NullableVarBinaryHolder holder = new NullableVarBinaryHolder();
+          final NullableVarBinaryHolder holder = new NullableVarBinaryHolder();
           a1.get(i, holder);
           assertEquals("aa", StringFunctionHelpers.toStringFromUTF8(holder.start,  holder.end,  holder.buffer));
           ++count;
@@ -269,11 +261,9 @@ public class TestSimpleFunctions extends ExecTest {
       assertEquals(50, count);
     }
 
-    if(context.getFailureCause() != null){
+    if(context.getFailureCause() != null) {
       throw context.getFailureCause();
     }
     assertTrue(!context.isFailed());
-
   }
-
 }

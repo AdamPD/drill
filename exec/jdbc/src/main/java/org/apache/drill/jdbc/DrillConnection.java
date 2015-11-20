@@ -15,7 +15,6 @@
  * See the License for the specific language governing permissions and
  * limitations under the License.
  */
-
 package org.apache.drill.jdbc;
 
 import java.sql.Connection;
@@ -38,7 +37,7 @@ public interface DrillConnection extends Connection {
    * {@inheritDoc}
    * <p>
    *   <strong>Drill</strong>:
-   *   Drill's implementation accepts {@code DrillConnection.class}.
+   *   Accepts {@code DrillConnection.class}.
    * </p>
    */
   @Override
@@ -48,7 +47,7 @@ public interface DrillConnection extends Connection {
    * {@inheritDoc}
    * <p>
    *   <strong>Drill</strong>:
-   *   Drill's implementation returns true for {@code DrillConnection.class}.
+   *   Returns true for {@code DrillConnection.class}.
    * </p>
    */
   @Override
@@ -70,7 +69,7 @@ public interface DrillConnection extends Connection {
    * {@inheritDoc}
    * <p>
    *   <strong>Drill</strong>:
-   *   Drill's implementation always returns {@code true}.
+   *   Always returns {@code true}.
    * </p>
    */
   @Override
@@ -78,14 +77,16 @@ public interface DrillConnection extends Connection {
 
 
   /**
+   * <strong>Drill</strong>:
    * Not supported.  Always throws {@link SQLFeatureNotSupportedException} (or
-   * {@link AlreadyClosedSqlException})..
+   * {@link AlreadyClosedSqlException}).
    */
   @Override
   void commit() throws SQLException;
 
 
   /**
+   * <strong>Drill</strong>:
    * Not supported.  Always throws {@link SQLFeatureNotSupportedException} (or
    * {@link AlreadyClosedSqlException}).
    */
@@ -96,7 +97,8 @@ public interface DrillConnection extends Connection {
   /**
    * {@inheritDoc}
    * <p>
-   *   <strong>Drill</strong>: Does not throw SQLException.
+   *   <strong>Drill</strong>:
+   *   Does not throw SQLException.
    * </p>
    */
   @Override
@@ -107,11 +109,11 @@ public interface DrillConnection extends Connection {
    * {@inheritDoc}
    * <p>
    *   <strong>Drill</strong>:
-   *   Accepts only {@link Connection.TRANSACTION_NONE}.
+   *   Accepts only {@link Connection#TRANSACTION_NONE}.
    * </p>
    *
    * @throws SQLFeatureNotSupportedException if {@code level} is not
-   * {@link Connection.TRANSACTION_NONE}.
+   * {@link Connection#TRANSACTION_NONE}.
    */
   @Override
   void setTransactionIsolation(int level) throws SQLFeatureNotSupportedException,
@@ -121,7 +123,7 @@ public interface DrillConnection extends Connection {
    * {@inheritDoc}
    * <p>
    *   <strong>Drill</strong>:
-   *   Drill's implementation always returns {@link Connection#TRANSACTION_NONE}.
+   *   Always returns {@link Connection#TRANSACTION_NONE}.
    * </p>
    */
   @Override
@@ -129,6 +131,7 @@ public interface DrillConnection extends Connection {
 
 
   /**
+   * <strong>Drill</strong>:
    * Not supported.  Always throws {@link SQLFeatureNotSupportedException} (or
    * {@link AlreadyClosedSqlException}).
    */
@@ -136,6 +139,7 @@ public interface DrillConnection extends Connection {
   Savepoint setSavepoint() throws SQLException;
 
   /**
+   * <strong>Drill</strong>:
    * Not supported.  Always throws {@link SQLFeatureNotSupportedException} (or
    * {@link AlreadyClosedSqlException}).
    */
@@ -143,6 +147,7 @@ public interface DrillConnection extends Connection {
   Savepoint setSavepoint(String name) throws SQLException;
 
   /**
+   * <strong>Drill</strong>:
    * Not supported.  Always throws {@link SQLFeatureNotSupportedException} (or
    * {@link AlreadyClosedSqlException}).
    */
@@ -150,6 +155,7 @@ public interface DrillConnection extends Connection {
   void rollback(Savepoint savepoint) throws SQLException;
 
   /**
+   * <strong>Drill</strong>:
    * Not supported.  Always throws {@link SQLFeatureNotSupportedException} (or
    * {@link AlreadyClosedSqlException}).
    */
@@ -165,6 +171,7 @@ public interface DrillConnection extends Connection {
 
 
   /**
+   * <strong>Drill</strong>:
    * Not supported (for non-zero timeout value).
    * <p>
    *   Normally, just throws {@link SQLFeatureNotSupportedException} unless
@@ -184,6 +191,7 @@ public interface DrillConnection extends Connection {
              SQLFeatureNotSupportedException;
 
   /**
+   * <strong>Drill</strong>:
    * Returns zero.
    * {@inheritDoc}
    * @throws  AlreadyClosedSqlException
@@ -196,9 +204,11 @@ public interface DrillConnection extends Connection {
   //////////////////////////////////////////////////////////////////////
   // Drill extensions.
 
-  /** Returns a view onto this connection's configuration properties. Code
+  /**
+   * Returns a view onto this connection's configuration properties. Code
    * within Optiq should use this view rather than calling
-   * {@link java.util.Properties#getProperty(String)}. */
+   * {@link java.util.Properties#getProperty(String)}.
+   */
   DrillConnectionConfig getConfig();
 
   DrillClient getClient();

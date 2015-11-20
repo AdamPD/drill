@@ -21,6 +21,7 @@ import java.io.IOException;
 import java.util.List;
 import java.util.Map;
 
+import com.fasterxml.jackson.core.util.MinimalPrettyPrinter;
 import org.apache.drill.exec.record.BatchSchema;
 import org.apache.drill.exec.record.VectorAccessible;
 import org.apache.drill.exec.store.EventBasedRecordWriter;
@@ -29,6 +30,7 @@ import org.apache.drill.exec.store.JSONOutputRecordWriter;
 import org.apache.drill.exec.store.RecordWriter;
 import org.apache.drill.exec.vector.complex.fn.BasicJsonOutput;
 import org.apache.drill.exec.vector.complex.fn.ExtendedJsonOutput;
+import org.apache.drill.exec.vector.complex.fn.JsonWriter;
 import org.apache.drill.exec.vector.complex.reader.FieldReader;
 import org.apache.hadoop.conf.Configuration;
 import org.apache.hadoop.fs.FSDataOutputStream;
@@ -42,6 +44,7 @@ import com.google.common.collect.Lists;
 public class JsonRecordWriter extends JSONOutputRecordWriter implements RecordWriter {
 
   private static final org.slf4j.Logger logger = org.slf4j.LoggerFactory.getLogger(JsonRecordWriter.class);
+  private static final String LINE_FEED = String.format("%n");
 
   private String location;
   private String prefix;
@@ -69,6 +72,7 @@ public class JsonRecordWriter extends JSONOutputRecordWriter implements RecordWr
     this.fieldDelimiter = writerOptions.get("separator");
     this.extension = writerOptions.get("extension");
     this.useExtendedOutput = Boolean.parseBoolean(writerOptions.get("extended"));
+    final boolean uglify = Boolean.parseBoolean(writerOptions.get("uglify"));
 
     Configuration conf = new Configuration();
     conf.set(FileSystem.FS_DEFAULT_NAME_KEY, writerOptions.get(FileSystem.FS_DEFAULT_NAME_KEY));
@@ -78,6 +82,9 @@ public class JsonRecordWriter extends JSONOutputRecordWriter implements RecordWr
     try {
       stream = fs.create(fileName);
       JsonGenerator generator = factory.createGenerator(stream).useDefaultPrettyPrinter();
+      if (uglify) {
+        generator = generator.setPrettyPrinter(new MinimalPrettyPrinter(LINE_FEED));
+      }
       if(useExtendedOutput){
         gen = new ExtendedJsonOutput(generator);
       }else{
@@ -125,6 +132,29 @@ public class JsonRecordWriter extends JSONOutputRecordWriter implements RecordWr
         converter.writeField();
       }
       gen.writeEndObject();
+    }
+  }
+
+  @Override
+  public FieldConverter getNewUnionConverter(int fieldId, String fieldName, FieldReader reader) {
+    return new UnionJsonConverter(fieldId, fieldName, reader);
+  }
+
+  public class UnionJsonConverter extends FieldConverter {
+
+    public UnionJsonConverter(int fieldId, String fieldName, FieldReader reader) {
+      super(fieldId, fieldName, reader);
+    }
+
+    @Override
+    public void startField() throws IOException {
+      gen.writeFieldName(fieldName);
+    }
+
+    @Override
+    public void writeField() throws IOException {
+      JsonWriter writer = new JsonWriter(gen);
+      writer.write(reader);
     }
   }
 

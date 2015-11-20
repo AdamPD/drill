@@ -30,6 +30,7 @@ import org.apache.drill.common.logical.data.Order.Ordering;
 import org.apache.drill.exec.ExecConstants;
 import org.apache.drill.exec.compile.sig.MappingSet;
 import org.apache.drill.exec.exception.ClassTransformationException;
+import org.apache.drill.exec.exception.OutOfMemoryException;
 import org.apache.drill.exec.exception.SchemaChangeException;
 import org.apache.drill.exec.expr.ClassGenerator;
 import org.apache.drill.exec.expr.ClassGenerator.HoldingContainer;
@@ -37,7 +38,6 @@ import org.apache.drill.exec.expr.CodeGenerator;
 import org.apache.drill.exec.expr.ExpressionTreeMaterializer;
 import org.apache.drill.exec.expr.TypeHelper;
 import org.apache.drill.exec.expr.fn.FunctionGenerationHelper;
-import org.apache.drill.exec.memory.OutOfMemoryException;
 import org.apache.drill.exec.ops.FragmentContext;
 import org.apache.drill.exec.physical.config.TopN;
 import org.apache.drill.exec.physical.impl.sort.RecordBatchData;
@@ -67,7 +67,6 @@ import com.sun.codemodel.JExpr;
 public class TopNBatch extends AbstractRecordBatch<TopN> {
   static final org.slf4j.Logger logger = org.slf4j.LoggerFactory.getLogger(TopNBatch.class);
 
-  private static final long MAX_SORT_BYTES = 1L * 1024 * 1024 * 1024;
   private  final int batchPurgeThreshold;
 
   public final MappingSet MAIN_MAPPING = new MappingSet( (String) null, null, ClassGenerator.DEFAULT_SCALAR_MAP, ClassGenerator.DEFAULT_SCALAR_MAP);
@@ -160,6 +159,7 @@ public class TopNBatch extends AbstractRecordBatch<TopN> {
 
   @Override
   public IterOutcome innerNext() {
+    recordCount = 0;
     if (state == BatchState.DONE) {
       return IterOutcome.NONE;
     }
@@ -276,7 +276,7 @@ public class TopNBatch extends AbstractRecordBatch<TopN> {
     SimpleRecordBatch batch = new SimpleRecordBatch(c, selectionVector4, context);
     SimpleRecordBatch newBatch = new SimpleRecordBatch(newContainer, null, context);
     if (copier == null) {
-      copier = RemovingRecordBatch.getGenerated4Copier(batch, context, oContext.getAllocator(),  newContainer, newBatch);
+      copier = RemovingRecordBatch.getGenerated4Copier(batch, context, oContext.getAllocator(),  newContainer, newBatch, null);
     } else {
       for (VectorWrapper<?> i : batch) {
 
@@ -285,7 +285,7 @@ public class TopNBatch extends AbstractRecordBatch<TopN> {
       }
       copier.setupRemover(context, batch, newBatch);
     }
-    SortRecordBatchBuilder builder = new SortRecordBatchBuilder(oContext.getAllocator(), MAX_SORT_BYTES);
+    SortRecordBatchBuilder builder = new SortRecordBatchBuilder(oContext.getAllocator());
     try {
       do {
         int count = selectionVector4.getCount();

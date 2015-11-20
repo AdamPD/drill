@@ -40,6 +40,7 @@ import org.apache.drill.exec.cache.DistributedMap;
 import org.apache.drill.exec.cache.DistributedMultiMap;
 import org.apache.drill.exec.compile.sig.MappingSet;
 import org.apache.drill.exec.exception.ClassTransformationException;
+import org.apache.drill.exec.exception.OutOfMemoryException;
 import org.apache.drill.exec.exception.SchemaChangeException;
 import org.apache.drill.exec.expr.ClassGenerator;
 import org.apache.drill.exec.expr.ClassGenerator.HoldingContainer;
@@ -49,7 +50,6 @@ import org.apache.drill.exec.expr.TypeHelper;
 import org.apache.drill.exec.expr.ValueVectorReadExpression;
 import org.apache.drill.exec.expr.ValueVectorWriteExpression;
 import org.apache.drill.exec.expr.fn.FunctionGenerationHelper;
-import org.apache.drill.exec.memory.OutOfMemoryException;
 import org.apache.drill.exec.ops.FragmentContext;
 import org.apache.drill.exec.physical.config.OrderedPartitionSender;
 import org.apache.drill.exec.physical.impl.sort.SortBatch;
@@ -109,7 +109,6 @@ public class OrderedPartitionRecordBatch extends AbstractRecordBatch<OrderedPart
   public final MappingSet partitionMapping = new MappingSet("partitionIndex", null, "partitionVectors", null,
       ClassGenerator.DEFAULT_CONSTANT_MAP, ClassGenerator.DEFAULT_SCALAR_MAP);
 
-  private static long MAX_SORT_BYTES = 8l * 1024 * 1024 * 1024;
   private final int recordsToSample; // How many records must be received before analyzing
   private final int samplingFactor; // Will collect samplingFactor * number of partitions to send to distributed cache
   private final float completionFactor; // What fraction of fragments must be completed before attempting to build
@@ -160,8 +159,8 @@ public class OrderedPartitionRecordBatch extends AbstractRecordBatch<OrderedPart
   @Override
   public void close() {
     super.close();
-    this.partitionVectors.clear();
-    this.partitionKeyVector.clear();
+    partitionVectors.clear();
+    partitionKeyVector.clear();
   }
 
 
@@ -171,7 +170,7 @@ public class OrderedPartitionRecordBatch extends AbstractRecordBatch<OrderedPart
 
     // Start collecting batches until recordsToSample records have been collected
 
-    SortRecordBatchBuilder builder = new SortRecordBatchBuilder(oContext.getAllocator(), MAX_SORT_BYTES);
+    SortRecordBatchBuilder builder = new SortRecordBatchBuilder(oContext.getAllocator());
     WritableBatch batch = null;
     CachedVectorContainer sampleToSave = null;
     VectorContainer containerToCache = new VectorContainer();
@@ -344,7 +343,7 @@ public class OrderedPartitionRecordBatch extends AbstractRecordBatch<OrderedPart
 
     // Get all samples from distributed map
 
-    SortRecordBatchBuilder containerBuilder = new SortRecordBatchBuilder(context.getAllocator(), MAX_SORT_BYTES);
+    SortRecordBatchBuilder containerBuilder = new SortRecordBatchBuilder(context.getAllocator());
     final VectorContainer allSamplesContainer = new VectorContainer();
     final VectorContainer candidatePartitionTable = new VectorContainer();
     CachedVectorContainer wrap = null;
@@ -463,6 +462,7 @@ public class OrderedPartitionRecordBatch extends AbstractRecordBatch<OrderedPart
 
   @Override
   public IterOutcome innerNext() {
+    recordCount = 0;
     container.zeroVectors();
 
     // if we got IterOutcome.NONE while getting partition vectors, and there are no batches on the queue, then we are

@@ -23,16 +23,16 @@ import static org.junit.Assert.assertTrue;
 import java.util.Iterator;
 import java.util.List;
 
-import mockit.Injectable;
-import mockit.NonStrictExpectations;
-
 import org.apache.drill.common.config.DrillConfig;
+import org.apache.drill.common.config.LogicalPlanPersistence;
+import org.apache.drill.common.scanner.ClassPathScanner;
+import org.apache.drill.common.scanner.persistence.ScanResult;
 import org.apache.drill.common.util.FileUtils;
 import org.apache.drill.common.util.TestTools;
 import org.apache.drill.exec.client.DrillClient;
-import org.apache.drill.exec.compile.CodeCompiler;
+import org.apache.drill.exec.compile.CodeCompilerTestFactory;
 import org.apache.drill.exec.expr.fn.FunctionImplementationRegistry;
-import org.apache.drill.exec.memory.TopLevelAllocator;
+import org.apache.drill.exec.memory.RootAllocatorFactory;
 import org.apache.drill.exec.ops.FragmentContext;
 import org.apache.drill.exec.physical.PhysicalPlan;
 import org.apache.drill.exec.physical.base.FragmentRoot;
@@ -40,9 +40,9 @@ import org.apache.drill.exec.physical.impl.ImplCreator;
 import org.apache.drill.exec.physical.impl.OperatorCreatorRegistry;
 import org.apache.drill.exec.physical.impl.SimpleRootExec;
 import org.apache.drill.exec.planner.PhysicalPlanReader;
+import org.apache.drill.exec.planner.PhysicalPlanReaderTestFactory;
 import org.apache.drill.exec.pop.PopUnitTestBase;
 import org.apache.drill.exec.proto.BitControl.PlanFragment;
-import org.apache.drill.exec.proto.CoordinationProtos;
 import org.apache.drill.exec.record.RecordBatchLoader;
 import org.apache.drill.exec.record.VectorWrapper;
 import org.apache.drill.exec.rpc.user.QueryDataBatch;
@@ -61,33 +61,37 @@ import com.codahale.metrics.MetricRegistry;
 import com.google.common.base.Charsets;
 import com.google.common.io.Files;
 
+import mockit.Injectable;
+import mockit.NonStrictExpectations;
+
 
 public class TestHashJoin extends PopUnitTestBase {
-  static final org.slf4j.Logger logger = org.slf4j.LoggerFactory.getLogger(TestMergeJoin.class);
+  //private static final org.slf4j.Logger logger = org.slf4j.LoggerFactory.getLogger(TestMergeJoin.class);
 
   @Rule public final TestRule TIMEOUT = TestTools.getTimeoutRule(100000);
 
-  DrillConfig c = DrillConfig.create();
+  private final DrillConfig c = DrillConfig.create();
 
   private void testHJMockScanCommon(final DrillbitContext bitContext, UserServer.UserClientConnection connection, String physicalPlan, int expectedRows) throws Throwable {
     final LocalPStoreProvider provider = new LocalPStoreProvider(c);
     provider.start();
-    final SystemOptionManager opt = new SystemOptionManager(c, provider);
+    final SystemOptionManager opt = new SystemOptionManager(PhysicalPlanReaderTestFactory.defaultLogicalPlanPersistence(c), provider);
     opt.init();
     new NonStrictExpectations() {{
         bitContext.getMetrics(); result = new MetricRegistry();
-        bitContext.getAllocator(); result = new TopLevelAllocator();
-        bitContext.getOperatorCreatorRegistry(); result = new OperatorCreatorRegistry(c);
+        bitContext.getAllocator(); result = RootAllocatorFactory.newRoot(c);
+        bitContext.getOperatorCreatorRegistry(); result = new OperatorCreatorRegistry(ClassPathScanner.fromPrescan(c));
         bitContext.getConfig(); result = c;
         bitContext.getOptionManager(); result = opt;
-        bitContext.getCompiler(); result = CodeCompiler.getTestCompiler(c);
+        bitContext.getCompiler(); result = CodeCompilerTestFactory.getTestCompiler(c);
+        bitContext.getLpPersistence(); result = new LogicalPlanPersistence(c, ClassPathScanner.fromPrescan(c));
     }};
 
-    PhysicalPlanReader reader = new PhysicalPlanReader(c, c.getMapper(), CoordinationProtos.DrillbitEndpoint.getDefaultInstance());
-    PhysicalPlan plan = reader.readPhysicalPlan(Files.toString(FileUtils.getResourceAsFile(physicalPlan), Charsets.UTF_8));
-    FunctionImplementationRegistry registry = new FunctionImplementationRegistry(c);
-    FragmentContext context = new FragmentContext(bitContext, PlanFragment.getDefaultInstance(), connection, registry);
-    SimpleRootExec exec = new SimpleRootExec(ImplCreator.getExec(context, (FragmentRoot) plan.getSortedOperators(false).iterator().next()));
+    final PhysicalPlanReader reader = PhysicalPlanReaderTestFactory.defaultPhysicalPlanReader(c);
+    final PhysicalPlan plan = reader.readPhysicalPlan(Files.toString(FileUtils.getResourceAsFile(physicalPlan), Charsets.UTF_8));
+    final FunctionImplementationRegistry registry = new FunctionImplementationRegistry(c);
+    final FragmentContext context = new FragmentContext(bitContext, PlanFragment.getDefaultInstance(), connection, registry);
+    final SimpleRootExec exec = new SimpleRootExec(ImplCreator.getExec(context, (FragmentRoot) plan.getSortedOperators(false).iterator().next()));
 
     int totalRecordCount = 0;
     while (exec.next()) {
@@ -169,18 +173,18 @@ public class TestHashJoin extends PopUnitTestBase {
                              @Injectable UserServer.UserClientConnection connection) throws Throwable {
 
     // Function tests with hash join with exchanges
-    try (RemoteServiceSet serviceSet = RemoteServiceSet.getLocalServiceSet();
-      Drillbit bit = new Drillbit(CONFIG, serviceSet);
-      DrillClient client = new DrillClient(CONFIG, serviceSet.getCoordinator())) {
+    try (final RemoteServiceSet serviceSet = RemoteServiceSet.getLocalServiceSet();
+      final Drillbit bit = new Drillbit(CONFIG, serviceSet);
+      final DrillClient client = new DrillClient(CONFIG, serviceSet.getCoordinator())) {
 
       // run query.
       bit.run();
       client.connect();
-      List<QueryDataBatch> results = client.runQuery(org.apache.drill.exec.proto.UserBitShared.QueryType.PHYSICAL,
+      final List<QueryDataBatch> results = client.runQuery(org.apache.drill.exec.proto.UserBitShared.QueryType.PHYSICAL,
               Files.toString(FileUtils.getResourceAsFile("/join/hj_exchanges.json"), Charsets.UTF_8));
 
       int count = 0;
-      for (QueryDataBatch b : results) {
+      for (final QueryDataBatch b : results) {
         if (b.getHeader().getRowCount() != 0) {
           count += b.getHeader().getRowCount();
         }
@@ -197,32 +201,32 @@ public class TestHashJoin extends PopUnitTestBase {
                                     @Injectable UserServer.UserClientConnection connection) throws Throwable {
 
     // Function tests hash join with multiple join conditions
-    try (RemoteServiceSet serviceSet = RemoteServiceSet.getLocalServiceSet();
-      Drillbit bit = new Drillbit(CONFIG, serviceSet);
-      DrillClient client = new DrillClient(CONFIG, serviceSet.getCoordinator())) {
+    try (final RemoteServiceSet serviceSet = RemoteServiceSet.getLocalServiceSet();
+      final Drillbit bit = new Drillbit(CONFIG, serviceSet);
+      final DrillClient client = new DrillClient(CONFIG, serviceSet.getCoordinator())) {
 
       // run query.
       bit.run();
       client.connect();
-      List<QueryDataBatch> results = client.runQuery(org.apache.drill.exec.proto.UserBitShared.QueryType.PHYSICAL,
+      final List<QueryDataBatch> results = client.runQuery(org.apache.drill.exec.proto.UserBitShared.QueryType.PHYSICAL,
               Files.toString(FileUtils.getResourceAsFile("/join/hj_multi_condition_join.json"), Charsets.UTF_8)
                       .replace("#{TEST_FILE_1}", FileUtils.getResourceAsFile("/build_side_input.json").toURI().toString())
                       .replace("#{TEST_FILE_2}", FileUtils.getResourceAsFile("/probe_side_input.json").toURI().toString()));
 
-      RecordBatchLoader batchLoader = new RecordBatchLoader(bit.getContext().getAllocator());
+      final RecordBatchLoader batchLoader = new RecordBatchLoader(bit.getContext().getAllocator());
 
-      QueryDataBatch batch = results.get(1);
+      final QueryDataBatch batch = results.get(1);
       assertTrue(batchLoader.load(batch.getHeader().getDef(), batch.getData()));
 
-      Iterator<VectorWrapper<?>> itr = batchLoader.iterator();
+      final Iterator<VectorWrapper<?>> itr = batchLoader.iterator();
 
       // Just test the join key
-      long colA[] = {1, 2, 1};
-      long colC[] = {100, 200, 500};
+      final long colA[] = {1, 2, 1};
+      final long colC[] = {100, 200, 500};
 
       // Check the output of decimal9
-      ValueVector.Accessor intAccessor1 = itr.next().getValueVector().getAccessor();
-      ValueVector.Accessor intAccessor2 = itr.next().getValueVector().getAccessor();
+      final ValueVector.Accessor intAccessor1 = itr.next().getValueVector().getAccessor();
+      final ValueVector.Accessor intAccessor2 = itr.next().getValueVector().getAccessor();
 
 
       for (int i = 0; i < intAccessor1.getValueCount(); i++) {
@@ -232,30 +236,29 @@ public class TestHashJoin extends PopUnitTestBase {
       assertEquals(3, intAccessor1.getValueCount());
 
       batchLoader.clear();
-      for (QueryDataBatch result : results) {
+      for (final QueryDataBatch result : results) {
         result.release();
       }
     }
   }
-
 
   @Test
   public void hjWithExchange1(@Injectable final DrillbitContext bitContext,
                               @Injectable UserServer.UserClientConnection connection) throws Throwable {
 
     // Another test for hash join with exchanges
-    try (RemoteServiceSet serviceSet = RemoteServiceSet.getLocalServiceSet();
-         Drillbit bit = new Drillbit(CONFIG, serviceSet);
-         DrillClient client = new DrillClient(CONFIG, serviceSet.getCoordinator())) {
+    try (final RemoteServiceSet serviceSet = RemoteServiceSet.getLocalServiceSet();
+         final Drillbit bit = new Drillbit(CONFIG, serviceSet);
+         final DrillClient client = new DrillClient(CONFIG, serviceSet.getCoordinator())) {
 
       // run query.
       bit.run();
       client.connect();
-      List<QueryDataBatch> results = client.runQuery(org.apache.drill.exec.proto.UserBitShared.QueryType.PHYSICAL,
+      final List<QueryDataBatch> results = client.runQuery(org.apache.drill.exec.proto.UserBitShared.QueryType.PHYSICAL,
           Files.toString(FileUtils.getResourceAsFile("/join/hj_exchanges1.json"), Charsets.UTF_8));
 
       int count = 0;
-      for (QueryDataBatch b : results) {
+      for (final QueryDataBatch b : results) {
         if (b.getHeader().getRowCount() != 0) {
           count += b.getHeader().getRowCount();
         }
@@ -267,20 +270,19 @@ public class TestHashJoin extends PopUnitTestBase {
     }
   }
 
-
   @Test
   public void testHashJoinExprInCondition() throws Exception {
-    RemoteServiceSet serviceSet = RemoteServiceSet.getLocalServiceSet();
+    final RemoteServiceSet serviceSet = RemoteServiceSet.getLocalServiceSet();
 
-    try (Drillbit bit1 = new Drillbit(CONFIG, serviceSet);
-        DrillClient client = new DrillClient(CONFIG, serviceSet.getCoordinator());) {
+    try (final Drillbit bit1 = new Drillbit(CONFIG, serviceSet);
+        final DrillClient client = new DrillClient(CONFIG, serviceSet.getCoordinator());) {
 
       bit1.run();
       client.connect();
-      List<QueryDataBatch> results = client.runQuery(org.apache.drill.exec.proto.UserBitShared.QueryType.PHYSICAL,
+      final List<QueryDataBatch> results = client.runQuery(org.apache.drill.exec.proto.UserBitShared.QueryType.PHYSICAL,
               Files.toString(FileUtils.getResourceAsFile("/join/hashJoinExpr.json"), Charsets.UTF_8));
       int count = 0;
-      for (QueryDataBatch b : results) {
+      for (final QueryDataBatch b : results) {
         if (b.getHeader().getRowCount() != 0) {
           count += b.getHeader().getRowCount();
         }
@@ -289,5 +291,4 @@ public class TestHashJoin extends PopUnitTestBase {
       assertEquals(10, count);
     }
   }
-
 }

@@ -27,9 +27,11 @@ import org.apache.drill.exec.vector.IntVector;
 import org.apache.drill.exec.vector.TimeStampVector;
 import org.apache.drill.exec.vector.TimeVector;
 
-import parquet.column.ColumnDescriptor;
-import parquet.format.SchemaElement;
-import parquet.hadoop.metadata.ColumnChunkMetaData;
+import org.apache.drill.exec.vector.VarBinaryVector;
+import org.apache.parquet.column.ColumnDescriptor;
+import org.apache.parquet.format.SchemaElement;
+import org.apache.parquet.hadoop.metadata.ColumnChunkMetaData;
+import org.apache.parquet.io.api.Binary;
 
 public class ParquetFixedWidthDictionaryReaders {
 
@@ -55,6 +57,52 @@ public class ParquetFixedWidthDictionaryReaders {
         for (int i = 0; i < recordsReadInThisIteration; i++){
           castedVector.getMutator().setSafe(valuesReadInCurrentPass + i, pageReader.dictionaryValueReader.readInteger());
         }
+      }
+    }
+  }
+
+  static class DictionaryFixedBinaryReader extends FixedByteAlignedReader {
+
+    VarBinaryVector castedVector;
+
+    DictionaryFixedBinaryReader(ParquetRecordReader parentReader, int allocateSize, ColumnDescriptor descriptor,
+                        ColumnChunkMetaData columnChunkMetaData, boolean fixedLength, VarBinaryVector v,
+                        SchemaElement schemaElement) throws ExecutionSetupException {
+      super(parentReader, allocateSize, descriptor, columnChunkMetaData, fixedLength, v, schemaElement);
+      castedVector = v;
+    }
+
+    // this method is called by its superclass during a read loop
+    @Override
+    protected void readField(long recordsToReadInThisPass) {
+
+      recordsReadInThisIteration = Math.min(pageReader.currentPageCount
+          - pageReader.valuesRead, recordsToReadInThisPass - valuesReadInCurrentPass);
+      readLengthInBits = recordsReadInThisIteration * dataTypeLengthInBits;
+      readLength = (int) Math.ceil(readLengthInBits / 8.0);
+
+      if (usingDictionary) {
+        VarBinaryVector.Mutator mutator =  castedVector.getMutator();
+        Binary currDictValToWrite = null;
+        for (int i = 0; i < recordsReadInThisIteration; i++){
+          currDictValToWrite = pageReader.dictionaryValueReader.readBytes();
+          mutator.setSafe(valuesReadInCurrentPass + i, currDictValToWrite.toByteBuffer(), 0,
+              currDictValToWrite.length());
+        }
+        // Set the write Index. The next page that gets read might be a page that does not use dictionary encoding
+        // and we will go into the else condition below. The readField method of the parent class requires the
+        // writer index to be set correctly.
+        int writerIndex = castedVector.getBuffer().writerIndex();
+        castedVector.getBuffer().setIndex(0, writerIndex + (int)readLength);
+      } else {
+        super.readField(recordsToReadInThisPass);
+      }
+
+      // TODO - replace this with fixed binary type in drill
+      // now we need to write the lengths of each value
+      int byteLength = dataTypeLengthInBits / 8;
+      for (int i = 0; i < recordsToReadInThisPass; i++) {
+        castedVector.getMutator().setValueLengthSafe(valuesReadInCurrentPass + i, byteLength);
       }
     }
   }

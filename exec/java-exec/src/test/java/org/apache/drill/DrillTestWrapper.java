@@ -32,6 +32,7 @@ import org.apache.drill.exec.record.VectorWrapper;
 import org.apache.drill.exec.rpc.user.QueryDataBatch;
 import org.apache.drill.exec.vector.ValueVector;
 import org.apache.hadoop.io.Text;
+import org.codehaus.jackson.node.BinaryNode;
 
 import java.io.UnsupportedEncodingException;
 import java.lang.reflect.Array;
@@ -64,6 +65,9 @@ public class DrillTestWrapper {
   // it will only make the test slower.
   private static boolean VERBOSE_DEBUG = false;
 
+  // Unit test doesn't expect any specific batch count
+  public static final int EXPECTED_BATCH_COUNT_NOT_SET = -1;
+
   // The motivation behind the TestBuilder was to provide a clean API for test writers. The model is mostly designed to
   // prepare all of the components necessary for running the tests, before the TestWrapper is initialized. There is however
   // one case where the setup for the baseline is driven by the test query results, and this is implicit type enforcement
@@ -95,10 +99,12 @@ public class DrillTestWrapper {
   // and translated into a map in the builder
   private List<Map> baselineRecords;
 
+  private int expectedNumBatches;
+
   public DrillTestWrapper(TestBuilder testBuilder, BufferAllocator allocator, String query, QueryType queryType,
                           String baselineOptionSettingQueries, String testOptionSettingQueries,
                           QueryType baselineQueryType, boolean ordered, boolean approximateEquality,
-                          boolean highPerformanceComparison, List<Map> baselineRecords) {
+                          boolean highPerformanceComparison, List<Map> baselineRecords, int expectedNumBatches) {
     this.testBuilder = testBuilder;
     this.allocator = allocator;
     this.query = query;
@@ -110,6 +116,7 @@ public class DrillTestWrapper {
     this.testOptionSettingQueries = testOptionSettingQueries;
     this.highPerformanceComparison = highPerformanceComparison;
     this.baselineRecords = baselineRecords;
+    this.expectedNumBatches = expectedNumBatches;
   }
 
   public void run() throws Exception {
@@ -159,12 +166,44 @@ public class DrillTestWrapper {
       assertEquals("Different number of records returned", expectedValues.size(), actualValues.size());
 
       for (int i = 0; i < expectedValues.size(); i++) {
-        compareValuesErrorOnMismatch(expectedValues.get(i), actualValues.get(i), i, s);
+        try {
+          compareValuesErrorOnMismatch(expectedValues.get(i), actualValues.get(i), i, s);
+        } catch (Exception ex) {
+          throw new Exception(ex.getMessage() + "\n\n" + printNearbyRecords(expectedRecords, actualRecords, i), ex);
+        }
       }
     }
     if (actualRecords.size() < expectedRecords.size()) {
       throw new Exception(findMissingColumns(expectedRecords.keySet(), actualRecords.keySet()));
     }
+  }
+
+  private String printNearbyRecords(Map<String, List> expectedRecords, Map<String, List> actualRecords, int offset) {
+    StringBuilder expected = new StringBuilder();
+    StringBuilder actual = new StringBuilder();
+    expected.append("Expected Records near verification failure:\n");
+    actual.append("Actual Records near verification failure:\n");
+    int firstRecordToPrint = Math.max(0, offset - 5);
+    List<Object> expectedValuesInFirstColumn = expectedRecords.get(expectedRecords.keySet().iterator().next());
+    List<Object> actualValuesInFirstColumn = expectedRecords.get(expectedRecords.keySet().iterator().next());
+    int numberOfRecordsToPrint = Math.min(Math.min(10, expectedValuesInFirstColumn.size()), actualValuesInFirstColumn.size());
+    for (int i = firstRecordToPrint; i < numberOfRecordsToPrint; i++) {
+      expected.append("Record Number: ").append(i).append(" { ");
+      actual.append("Record Number: ").append(i).append(" { ");
+      for (String s : actualRecords.keySet()) {
+        List actualValues = actualRecords.get(s);
+        actual.append(s).append(" : ").append(actualValues.get(i)).append(",");
+      }
+      for (String s : expectedRecords.keySet()) {
+        List expectedValues = expectedRecords.get(s);
+        expected.append(s).append(" : ").append(expectedValues.get(i)).append(",");
+      }
+      expected.append(" }\n");
+      actual.append(" }\n");
+    }
+
+    return expected.append("\n\n").append(actual).toString();
+
   }
 
   private Map<String, HyperVectorValueIterator> addToHyperVectorMap(List<QueryDataBatch> records, RecordBatchLoader loader,
@@ -246,9 +285,6 @@ public class DrillTestWrapper {
                 System.out.println(w.getField());
               }
             }
-            else if (obj instanceof byte[]) {
-              obj = new String((byte[]) obj, "UTF-8");
-            }
           }
           combinedVectors.get(field).add(obj);
         }
@@ -278,6 +314,8 @@ public class DrillTestWrapper {
     try {
       BaseTestQuery.test(testOptionSettingQueries);
       actual = BaseTestQuery.testRunAndReturn(queryType, query);
+
+      checkNumBatches(actual);
 
       addTypeInfoIfMissing(actual.get(0), testBuilder);
       addToMaterializedResults(actualRecords, actual, loader, schema);
@@ -327,6 +365,9 @@ public class DrillTestWrapper {
     try {
     BaseTestQuery.test(testOptionSettingQueries);
     actual = BaseTestQuery.testRunAndReturn(queryType, query);
+
+    checkNumBatches(actual);
+
     // To avoid extra work for test writers, types can optionally be inferred from the test query
     addTypeInfoIfMissing(actual.get(0), testBuilder);
 
@@ -365,6 +406,9 @@ public class DrillTestWrapper {
 
     BaseTestQuery.test(testOptionSettingQueries);
     List<QueryDataBatch> results = BaseTestQuery.testRunAndReturn(queryType, query);
+
+    checkNumBatches(results);
+
     // To avoid extra work for test writers, types can optionally be inferred from the test query
     addTypeInfoIfMissing(results.get(0), testBuilder);
 
@@ -377,6 +421,14 @@ public class DrillTestWrapper {
 
     compareHyperVectors(expectedSuperVectors, actualSuperVectors);
     cleanupBatches(results, expected);
+  }
+
+  private void checkNumBatches(final List<QueryDataBatch> results) {
+    if (expectedNumBatches != EXPECTED_BATCH_COUNT_NOT_SET) {
+      final int actualNumBatches = results.size();
+      assertEquals(String.format("Expected %d batches but query returned %d non empty batch(es)%n", expectedNumBatches,
+          actualNumBatches), expectedNumBatches, actualNumBatches);
+    }
   }
 
   private void addTypeInfoIfMissing(QueryDataBatch batch, TestBuilder testBuilder) {
@@ -538,7 +590,23 @@ public class DrillTestWrapper {
         break;
       }
       if (!found) {
-        throw new Exception(String.format("After matching %d records, did not find expected record in result set: %s", counter, printRecord(expectedRecord)));
+        StringBuilder sb = new StringBuilder();
+        for (int expectedRecordDisplayCount = 0;
+             expectedRecordDisplayCount < 10 && expectedRecordDisplayCount < expectedRecords.size();
+             expectedRecordDisplayCount++) {
+          sb.append(printRecord(expectedRecords.get(expectedRecordDisplayCount)));
+        }
+        String expectedRecordExamples = sb.toString();
+        sb.setLength(0);
+        for (int actualRecordDisplayCount = 0;
+             actualRecordDisplayCount < 10 && actualRecordDisplayCount < actualRecords.size();
+             actualRecordDisplayCount++) {
+          sb.append(printRecord(actualRecords.get(actualRecordDisplayCount)));
+        }
+        String actualRecordExamples = sb.toString();
+        throw new Exception(String.format("After matching %d records, did not find expected record in result set: %s\n\n" +
+            "Some examples of expected records:%s\n\n Some examples of records returned by the test query:%s",
+            counter, printRecord(expectedRecord), expectedRecordExamples, actualRecordExamples));
       } else {
         actualRecords.remove(i);
         counter++;

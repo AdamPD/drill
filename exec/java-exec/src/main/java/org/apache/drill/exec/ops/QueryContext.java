@@ -17,22 +17,22 @@
  */
 package org.apache.drill.exec.ops;
 
+import io.netty.buffer.DrillBuf;
+
 import java.io.IOException;
 import java.util.Collection;
 import java.util.List;
 
-import com.google.common.collect.Lists;
-import io.netty.buffer.DrillBuf;
-import org.apache.calcite.schema.SchemaPlus;
 import org.apache.calcite.jdbc.SimpleCalciteSchema;
-
+import org.apache.calcite.schema.SchemaPlus;
 import org.apache.drill.common.AutoCloseables;
 import org.apache.drill.common.config.DrillConfig;
-import org.apache.drill.exec.ExecConstants;
-import org.apache.drill.exec.expr.fn.FunctionImplementationRegistry;
+import org.apache.drill.common.config.LogicalPlanPersistence;
 import org.apache.drill.common.exceptions.DrillRuntimeException;
+import org.apache.drill.exec.ExecConstants;
+import org.apache.drill.exec.exception.OutOfMemoryException;
+import org.apache.drill.exec.expr.fn.FunctionImplementationRegistry;
 import org.apache.drill.exec.memory.BufferAllocator;
-import org.apache.drill.exec.memory.OutOfMemoryException;
 import org.apache.drill.exec.planner.physical.PlannerSettings;
 import org.apache.drill.exec.planner.sql.DrillOperatorTable;
 import org.apache.drill.exec.proto.BitControl.QueryContextInformation;
@@ -50,15 +50,14 @@ import org.apache.drill.exec.testing.ExecutionControls;
 import org.apache.drill.exec.util.ImpersonationUtil;
 import org.apache.drill.exec.util.Utilities;
 
+import com.google.common.collect.Lists;
+
 // TODO except for a couple of tests, this is only created by Foreman
 // TODO the many methods that just return drillbitContext.getXxx() should be replaced with getDrillbitContext()
 // TODO - consider re-name to PlanningContext, as the query execution context actually appears
 // in fragment contexts
-public class QueryContext implements AutoCloseable, UdfUtilities {
+public class QueryContext implements AutoCloseable, OptimizerRulesContext {
   private static final org.slf4j.Logger logger = org.slf4j.LoggerFactory.getLogger(QueryContext.class);
-
-  private static final int INITIAL_OFF_HEAP_ALLOCATION_IN_BYTES = 1024 * 1024;
-  private static final int MAX_OFF_HEAP_ALLOCATION_IN_BYTES = 256 * 1024 * 1024;
 
   private final DrillbitContext drillbitContext;
   private final UserSession session;
@@ -94,17 +93,18 @@ public class QueryContext implements AutoCloseable, UdfUtilities {
     contextInformation = new ContextInformation(session.getCredentials(), queryContextInfo);
 
     try {
-      allocator = drillbitContext.getAllocator().getChildAllocator(null, INITIAL_OFF_HEAP_ALLOCATION_IN_BYTES,
-          MAX_OFF_HEAP_ALLOCATION_IN_BYTES, false);
+      allocator = drillbitContext.getAllocator().getChildAllocator(null, plannerSettings.getInitialPlanningMemorySize(),
+          plannerSettings.getPlanningMemoryLimit(), false);
     } catch (OutOfMemoryException e) {
       throw new DrillRuntimeException("Error creating off-heap allocator for planning context.",e);
     }
     // TODO(DRILL-1942) the new allocator has this capability built-in, so this can be removed once that is available
-    bufferManager = new BufferManager(this.allocator, null);
+    bufferManager = new BufferManagerImpl(this.allocator);
     viewExpansionContext = new ViewExpansionContext(this);
     schemaTreesToClose = Lists.newArrayList();
   }
 
+  @Override
   public PlannerSettings getPlannerSettings() {
     return plannerSettings;
   }
@@ -113,6 +113,7 @@ public class QueryContext implements AutoCloseable, UdfUtilities {
     return session;
   }
 
+  @Override
   public BufferAllocator getAllocator() {
     return allocator;
   }
@@ -197,6 +198,10 @@ public class QueryContext implements AutoCloseable, UdfUtilities {
     return drillbitContext.getStorage();
   }
 
+  public LogicalPlanPersistence getLpPersistence() {
+    return drillbitContext.getLpPersistence();
+  }
+
   public Collection<DrillbitEndpoint> getActiveEndpoints() {
     return drillbitContext.getBits();
   }
@@ -205,6 +210,7 @@ public class QueryContext implements AutoCloseable, UdfUtilities {
     return drillbitContext.getConfig();
   }
 
+  @Override
   public FunctionImplementationRegistry getFunctionRegistry() {
     return drillbitContext.getFunctionImplementationRegistry();
   }
@@ -215,6 +221,10 @@ public class QueryContext implements AutoCloseable, UdfUtilities {
 
   public boolean isImpersonationEnabled() {
      return getConfig().getBoolean(ExecConstants.IMPERSONATION_ENABLED);
+  }
+
+  public boolean isUserAuthenticationEnabled() {
+    return getConfig().getBoolean(ExecConstants.USER_AUTHENTICATION_ENABLED);
   }
 
   public DrillOperatorTable getDrillOperatorTable() {

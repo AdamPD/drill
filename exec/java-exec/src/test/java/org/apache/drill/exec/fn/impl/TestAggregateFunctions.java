@@ -18,6 +18,7 @@
 package org.apache.drill.exec.fn.impl;
 
 import org.apache.drill.BaseTestQuery;
+import org.apache.drill.PlanTestBase;
 import org.apache.drill.common.types.TypeProtos;
 import org.apache.drill.common.util.TestTools;
 import org.junit.Ignore;
@@ -323,4 +324,118 @@ public class TestAggregateFunctions extends BaseTestQuery {
         .baselineValues(6l)
         .go();
   }
+
+  @Test //DRILL-2748
+  public void testPushFilterPastAgg() throws Exception {
+    final String query =
+        " select cnt " +
+        " from (select n_regionkey, count(*) cnt from cp.`tpch/nation.parquet` group by n_regionkey) " +
+        " where n_regionkey = 2 ";
+
+    // Validate the plan
+    final String[] expectedPlan = {"(?s)(StreamAgg|HashAgg).*Filter"};
+    final String[] excludedPatterns = {"(?s)Filter.*(StreamAgg|HashAgg)"};
+    PlanTestBase.testPlanMatchingPatterns(query, expectedPlan, excludedPatterns);
+
+    testBuilder()
+        .sqlQuery(query)
+        .unOrdered()
+        .baselineColumns("cnt")
+        .baselineValues(5l)
+        .build().run();
+
+    // having clause
+    final String query2 =
+        " select count(*) cnt from cp.`tpch/nation.parquet` group by n_regionkey " +
+        " having n_regionkey = 2 ";
+    PlanTestBase.testPlanMatchingPatterns(query2, expectedPlan, excludedPatterns);
+
+    testBuilder()
+        .sqlQuery(query)
+        .unOrdered()
+        .baselineColumns("cnt")
+        .baselineValues(5l)
+        .build().run();
+  }
+
+  @Test
+  public void testPushFilterInExprPastAgg() throws Exception {
+    final String query =
+        " select cnt " +
+            " from (select n_regionkey, count(*) cnt from cp.`tpch/nation.parquet` group by n_regionkey) " +
+            " where n_regionkey + 100 - 100 = 2 ";
+
+    // Validate the plan
+    final String[] expectedPlan = {"(?s)(StreamAgg|HashAgg).*Filter"};
+    final String[] excludedPatterns = {"(?s)Filter.*(StreamAgg|HashAgg)"};
+    PlanTestBase.testPlanMatchingPatterns(query, expectedPlan, excludedPatterns);
+
+    testBuilder()
+        .sqlQuery(query)
+        .unOrdered()
+        .baselineColumns("cnt")
+        .baselineValues(5l)
+        .build().run();
+  }
+
+  @Test
+  public void testNegPushFilterInExprPastAgg() throws Exception {
+    // negative case: should not push filter, since it involves the aggregate result
+    final String query =
+        " select cnt " +
+            " from (select n_regionkey, count(*) cnt from cp.`tpch/nation.parquet` group by n_regionkey) " +
+            " where cnt + 100 - 100 = 5 ";
+
+    // Validate the plan
+    final String[] expectedPlan = {"(?s)Filter(?!StreamAgg|!HashAgg)"};
+    final String[] excludedPatterns = {"(?s)(StreamAgg|HashAgg).*Filter"};
+    PlanTestBase.testPlanMatchingPatterns(query, expectedPlan, excludedPatterns);
+
+    // negative case: should not push filter, since it is expression of group key + agg result.
+    final String query2 =
+        " select cnt " +
+            " from (select n_regionkey, count(*) cnt from cp.`tpch/nation.parquet` group by n_regionkey) " +
+            " where cnt + n_regionkey = 5 ";
+    PlanTestBase.testPlanMatchingPatterns(query2, expectedPlan, excludedPatterns);
+
+  }
+
+  @Test // DRILL-3781
+  // GROUP BY System functions in schema table.
+  public void testGroupBySystemFuncSchemaTable() throws Exception {
+    final String query = "select count(*) as cnt from sys.version group by CURRENT_DATE";
+    final String[] expectedPlan = {"(?s)(StreamAgg|HashAgg)"};
+    final String[] excludedPatterns = {};
+
+    PlanTestBase.testPlanMatchingPatterns(query, expectedPlan, excludedPatterns);
+  }
+
+  @Test //DRILL-3781
+  // GROUP BY System functions in csv, parquet, json table.
+  public void testGroupBySystemFuncFileSystemTable() throws Exception {
+    final String query = String.format("select count(*) as cnt from dfs_test.`%s/nation/nation.tbl` group by CURRENT_DATE", TEST_RES_PATH);
+    testBuilder()
+        .sqlQuery(query)
+        .unOrdered()
+        .baselineColumns("cnt")
+        .baselineValues(25l)
+        .build().run();
+
+    final String query2 = "select count(*) as cnt from cp.`tpch/nation.parquet` group by CURRENT_DATE";
+    testBuilder()
+        .sqlQuery(query2)
+        .unOrdered()
+        .baselineColumns("cnt")
+        .baselineValues(25l)
+        .build().run();
+
+    final String query3 = "select count(*) as cnt from cp.`employee.json` group by CURRENT_DATE";
+    testBuilder()
+        .sqlQuery(query3)
+        .unOrdered()
+        .baselineColumns("cnt")
+        .baselineValues(1155l)
+        .build().run();
+  }
+
 }

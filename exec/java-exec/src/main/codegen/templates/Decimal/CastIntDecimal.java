@@ -56,7 +56,7 @@ public class Cast${type.from}${type.to} implements DrillSimpleFunc {
 
     public void setup() {
         <#if type.to.startsWith("Decimal28") || type.to.startsWith("Decimal38")>
-        int size = ${type.arraySize} * (org.apache.drill.exec.util.DecimalUtility.integerSize);
+        int size = ${type.arraySize} * (org.apache.drill.exec.util.DecimalUtility.INTEGER_SIZE);
         buffer = buffer.reallocIfNeeded(size);
         </#if>
 
@@ -90,9 +90,10 @@ public class Cast${type.from}${type.to} implements DrillSimpleFunc {
         int scaleSize = org.apache.drill.exec.util.DecimalUtility.roundUp((int) scale.value);
         int integerIndex = (${type.arraySize} - scaleSize - 1);
 
-        while (in.value != 0 && integerIndex >= 0) {
-            out.setInteger(integerIndex--, (int) Math.abs((in.value % org.apache.drill.exec.util.DecimalUtility.DIGITS_BASE)), out.start, out.buffer);
-            in.value = in.value / org.apache.drill.exec.util.DecimalUtility.DIGITS_BASE;
+        long inValue = in.value;
+        while (inValue != 0 && integerIndex >= 0) {
+            out.setInteger(integerIndex--, (int) Math.abs((inValue % org.apache.drill.exec.util.DecimalUtility.DIGITS_BASE)), out.start, out.buffer);
+            inValue = inValue / org.apache.drill.exec.util.DecimalUtility.DIGITS_BASE;
         }
 
         </#if>

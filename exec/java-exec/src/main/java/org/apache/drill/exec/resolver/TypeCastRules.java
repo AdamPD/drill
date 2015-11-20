@@ -24,6 +24,8 @@ import java.util.List;
 import java.util.Map;
 import java.util.Set;
 
+import com.google.common.collect.Lists;
+import com.google.common.collect.Sets;
 import org.apache.drill.common.expression.FunctionCall;
 import org.apache.drill.common.types.TypeProtos.DataMode;
 import org.apache.drill.common.types.TypeProtos.MajorType;
@@ -426,7 +428,6 @@ public class TypeCastRules {
     rule.add(MinorType.UINT4);
     rule.add(MinorType.UINT8);
     rule.add(MinorType.DATE);
-    rule.add(MinorType.TIME);
     rule.add(MinorType.TIMESTAMPTZ);
     rules.put(MinorType.TIMESTAMP, rule);
 
@@ -751,6 +752,8 @@ public class TypeCastRules {
     rule.add(MinorType.VARBINARY);
     rule.add(MinorType.FIXEDBINARY);
     rules.put(MinorType.VARBINARY, rule);
+
+    rules.put(MinorType.UNION, Sets.newHashSet(MinorType.UNION));
   }
 
   public static boolean isCastableWithNullHandling(MajorType from, MajorType to, NullHandling nullHandling) {
@@ -786,17 +789,23 @@ public class TypeCastRules {
     }
   }
 
-    /*
+  /*
    * Function checks if casting is allowed from the 'from' -> 'to' minor type. If its allowed
    * we also check if the precedence map allows such a cast and return true if both cases are satisfied
    */
   public static MinorType getLeastRestrictiveType(List<MinorType> types) {
     assert types.size() >= 2;
     MinorType result = types.get(0);
+    if (result == MinorType.UNION) {
+      return result;
+    }
     int resultPrec = ResolverTypePrecedence.precedenceMap.get(result);
 
     for (int i = 1; i < types.size(); i++) {
       MinorType next = types.get(i);
+      if (next == MinorType.UNION) {
+        return next;
+      }
       if (next == result) {
         // both args are of the same type; continue
         continue;

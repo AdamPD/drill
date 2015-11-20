@@ -22,14 +22,18 @@ import java.net.URL;
 
 import mockit.Mocked;
 import mockit.NonStrictExpectations;
-import org.apache.calcite.schema.SchemaPlus;
-import org.apache.calcite.jdbc.SimpleCalciteSchema;
 
+import org.apache.calcite.jdbc.SimpleCalciteSchema;
+import org.apache.calcite.schema.SchemaPlus;
 import org.apache.drill.common.config.DrillConfig;
+import org.apache.drill.common.config.LogicalPlanPersistence;
+import org.apache.drill.common.scanner.ClassPathScanner;
+import org.apache.drill.common.scanner.persistence.ScanResult;
 import org.apache.drill.common.util.TestTools;
 import org.apache.drill.exec.ExecTest;
 import org.apache.drill.exec.expr.fn.FunctionImplementationRegistry;
-import org.apache.drill.exec.memory.TopLevelAllocator;
+import org.apache.drill.exec.memory.BufferAllocator;
+import org.apache.drill.exec.memory.RootAllocatorFactory;
 import org.apache.drill.exec.ops.QueryContext;
 import org.apache.drill.exec.physical.PhysicalPlan;
 import org.apache.drill.exec.planner.physical.PlannerSettings;
@@ -54,7 +58,7 @@ import com.google.common.collect.ImmutableList;
 import com.google.common.io.Resources;
 
 public class PlanningBase extends ExecTest{
-  static final org.slf4j.Logger logger = org.slf4j.LoggerFactory.getLogger(PlanningBase.class);
+  //private static final org.slf4j.Logger logger = org.slf4j.LoggerFactory.getLogger(PlanningBase.class);
 
   @Rule public final TestRule TIMEOUT = TestTools.getTimeoutRule(10000);
 
@@ -63,20 +67,19 @@ public class PlanningBase extends ExecTest{
 
   @Mocked QueryContext context;
 
-  TopLevelAllocator allocator = new TopLevelAllocator();
+  BufferAllocator allocator = RootAllocatorFactory.newRoot(config);
 
   protected void testSqlPlanFromFile(String file) throws Exception {
     testSqlPlan(getFile(file));
   }
 
   protected void testSqlPlan(String sqlCommands) throws Exception {
-    String[] sqlStrings = sqlCommands.split(";");
-
-
+    final String[] sqlStrings = sqlCommands.split(";");
     final LocalPStoreProvider provider = new LocalPStoreProvider(config);
     provider.start();
-
-    final SystemOptionManager systemOptions = new SystemOptionManager(config, provider);
+    final ScanResult scanResult = ClassPathScanner.fromPrescan(config);
+    final LogicalPlanPersistence logicalPlanPersistence = new LogicalPlanPersistence(config, scanResult);
+    final SystemOptionManager systemOptions = new SystemOptionManager(logicalPlanPersistence , provider);
     systemOptions.init();
     final UserSession userSession = UserSession.Builder.newBuilder().withOptionManager(systemOptions).build();
     final SessionOptionManager sessionOptions = (SessionOptionManager) userSession.getOptions();
@@ -95,6 +98,10 @@ public class PlanningBase extends ExecTest{
         result = systemOptions;
         dbContext.getPersistentStoreProvider();
         result = provider;
+        dbContext.getClasspathScan();
+        result = scanResult;
+        dbContext.getLpPersistence();
+        result = logicalPlanPersistence;
       }
     };
 
@@ -109,6 +116,8 @@ public class PlanningBase extends ExecTest{
       {
         context.getNewDefaultSchema();
         result = root;
+        context.getLpPersistence();
+        result = new LogicalPlanPersistence(config, ClassPathScanner.fromPrescan(config));
         context.getStorage();
         result = registry;
         context.getFunctionRegistry();
@@ -131,21 +140,22 @@ public class PlanningBase extends ExecTest{
         result = allocator;
         context.getExecutionControls();
         result = executionControls;
+        dbContext.getLpPersistence();
+        result = logicalPlanPersistence;
       }
     };
 
-    for (String sql : sqlStrings) {
+    for (final String sql : sqlStrings) {
       if (sql.trim().isEmpty()) {
         continue;
       }
-      DrillSqlWorker worker = new DrillSqlWorker(context);
-      PhysicalPlan p = worker.getPlan(sql);
+      final DrillSqlWorker worker = new DrillSqlWorker(context);
+      final PhysicalPlan p = worker.getPlan(sql);
     }
-
   }
 
-  protected String getFile(String resource) throws IOException{
-    URL url = Resources.getResource(resource);
+  protected static String getFile(String resource) throws IOException {
+    final URL url = Resources.getResource(resource);
     if (url == null) {
       throw new IOException(String.format("Unable to find path %s.", resource));
     }

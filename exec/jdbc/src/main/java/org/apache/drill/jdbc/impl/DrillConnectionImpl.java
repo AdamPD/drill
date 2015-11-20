@@ -18,17 +18,31 @@
 package org.apache.drill.jdbc.impl;
 
 import java.io.IOException;
+import java.sql.Array;
+import java.sql.Blob;
+import java.sql.CallableStatement;
+import java.sql.Clob;
+import java.sql.Connection;
+import java.sql.DatabaseMetaData;
+import java.sql.NClob;
 import java.sql.PreparedStatement;
+import java.sql.SQLClientInfoException;
 import java.sql.SQLException;
 import java.sql.SQLFeatureNotSupportedException;
 import java.sql.SQLNonTransientConnectionException;
+import java.sql.SQLWarning;
+import java.sql.SQLXML;
 import java.sql.Savepoint;
+import java.sql.Statement;
+import java.sql.Struct;
+import java.util.Map;
 import java.util.Properties;
 import java.util.TimeZone;
 import java.util.concurrent.Executor;
 
 import net.hydromatic.avatica.AvaticaConnection;
 import net.hydromatic.avatica.AvaticaFactory;
+import net.hydromatic.avatica.AvaticaStatement;
 import net.hydromatic.avatica.Helper;
 import net.hydromatic.avatica.Meta;
 import net.hydromatic.avatica.UnregisteredDriver;
@@ -37,8 +51,9 @@ import org.apache.drill.common.config.DrillConfig;
 import org.apache.drill.common.exceptions.DrillRuntimeException;
 import org.apache.drill.common.exceptions.UserException;
 import org.apache.drill.exec.client.DrillClient;
+import org.apache.drill.exec.exception.OutOfMemoryException;
 import org.apache.drill.exec.memory.BufferAllocator;
-import org.apache.drill.exec.memory.TopLevelAllocator;
+import org.apache.drill.exec.memory.RootAllocatorFactory;
 import org.apache.drill.exec.rpc.RpcException;
 import org.apache.drill.exec.server.Drillbit;
 import org.apache.drill.exec.server.RemoteServiceSet;
@@ -49,7 +64,7 @@ import org.apache.drill.jdbc.DrillConnection;
 import org.apache.drill.jdbc.DrillConnectionConfig;
 import org.apache.drill.jdbc.InvalidParameterSqlException;
 import org.apache.drill.jdbc.JdbcApiSqlException;
-
+import org.slf4j.Logger;
 
 /**
  * Drill's implementation of {@link Connection}.
@@ -58,8 +73,9 @@ import org.apache.drill.jdbc.JdbcApiSqlException;
 // interface methods, but now newer versions would probably use Java 8's default
 // methods for compatibility.)
 class DrillConnectionImpl extends AvaticaConnection
-                                   implements DrillConnection {
-  private static final org.slf4j.Logger logger = org.slf4j.LoggerFactory.getLogger(DrillConnection.class);
+                          implements DrillConnection {
+  private static final org.slf4j.Logger logger =
+      org.slf4j.LoggerFactory.getLogger(DrillConnection.class);
 
   final DrillStatementRegistry openStatementsRegistry = new DrillStatementRegistry();
   final DrillConnectionConfig config;
@@ -69,7 +85,9 @@ class DrillConnectionImpl extends AvaticaConnection
   private Drillbit bit;
   private RemoteServiceSet serviceSet;
 
-  protected DrillConnectionImpl(DriverImpl driver, AvaticaFactory factory, String url, Properties info) throws SQLException {
+
+  protected DrillConnectionImpl(DriverImpl driver, AvaticaFactory factory,
+                                String url, Properties info) throws SQLException {
     super(driver, factory, url, info);
 
     // Initialize transaction-related settings per Drill behavior.
@@ -89,7 +107,7 @@ class DrillConnectionImpl extends AvaticaConnection
         }
 
         final DrillConfig dConfig = DrillConfig.create(info);
-        this.allocator = new TopLevelAllocator(dConfig);
+        this.allocator = RootAllocatorFactory.newRoot(dConfig);
         RemoteServiceSet set = GlobalServiceSetReference.SETS.get();
         if (set == null) {
           // We're embedded; start a local drill bit.
@@ -119,12 +137,12 @@ class DrillConnectionImpl extends AvaticaConnection
         this.client.connect(null, info);
       } else if(config.isDirect()) {
         final DrillConfig dConfig = DrillConfig.forClient();
-        this.allocator = new TopLevelAllocator(dConfig);
+        this.allocator = RootAllocatorFactory.newRoot(dConfig);
         this.client = new DrillClient(dConfig, true); // Get a direct connection
         this.client.connect(config.getZookeeperConnectionString(), info);
       } else {
         final DrillConfig dConfig = DrillConfig.forClient();
-        this.allocator = new TopLevelAllocator(dConfig);
+        this.allocator = RootAllocatorFactory.newRoot(dConfig);
         // TODO:  Check:  Why does new DrillClient() create another DrillConfig,
         // with enableServerConfigs true, and cause scanning for function
         // implementations (needed by a server, but not by a client-only
@@ -132,6 +150,8 @@ class DrillConnectionImpl extends AvaticaConnection
         this.client = new DrillClient();
         this.client.connect(config.getZookeeperConnectionString(), info);
       }
+    } catch (OutOfMemoryException e) {
+      throw new SQLException("Failure creating root allocator", e);
     } catch (RpcException e) {
       // (Include cause exception's text in wrapping exception's text so
       // it's more likely to get to user (e.g., via SQLLine), and use
@@ -143,8 +163,9 @@ class DrillConnectionImpl extends AvaticaConnection
   /**
    * Throws AlreadyClosedSqlException <i>iff</i> this Connection is closed.
    *
-   * @throws  AlreadyClosedSqlException  if Connection is closed   */
-  private void checkNotClosed() throws AlreadyClosedSqlException {
+   * @throws  AlreadyClosedSqlException  if Connection is closed
+   */
+  private void throwIfClosed() throws AlreadyClosedSqlException {
     if ( isClosed() ) {
       throw new AlreadyClosedSqlException( "Connection is already closed." );
     }
@@ -175,7 +196,7 @@ class DrillConnectionImpl extends AvaticaConnection
 
   @Override
   public void setAutoCommit( boolean autoCommit ) throws SQLException {
-    checkNotClosed();
+    throwIfClosed();
     if ( ! autoCommit ) {
       throw new SQLFeatureNotSupportedException(
           "Can't turn off auto-committing; transactions are not supported.  "
@@ -186,7 +207,7 @@ class DrillConnectionImpl extends AvaticaConnection
 
   @Override
   public void commit() throws SQLException {
-    checkNotClosed();
+    throwIfClosed();
     if ( getAutoCommit() ) {
       throw new JdbcApiSqlException( "Can't call commit() in auto-commit mode." );
     }
@@ -199,7 +220,7 @@ class DrillConnectionImpl extends AvaticaConnection
 
   @Override
   public void rollback() throws SQLException {
-    checkNotClosed();
+    throwIfClosed();
     if ( getAutoCommit()  ) {
       throw new JdbcApiSqlException( "Can't call rollback() in auto-commit mode." );
     }
@@ -229,28 +250,28 @@ class DrillConnectionImpl extends AvaticaConnection
 
   @Override
   public Savepoint setSavepoint() throws SQLException {
-    checkNotClosed();
+    throwIfClosed();
     throw new SQLFeatureNotSupportedException(
         "Savepoints are not supported.  (Drill is not transactional.)" );
   }
 
   @Override
   public Savepoint setSavepoint(String name) throws SQLException {
-    checkNotClosed();
+    throwIfClosed();
     throw new SQLFeatureNotSupportedException(
         "Savepoints are not supported.  (Drill is not transactional.)" );
   }
 
   @Override
     public void rollback(Savepoint savepoint) throws SQLException {
-    checkNotClosed();
+    throwIfClosed();
     throw new SQLFeatureNotSupportedException(
         "Savepoints are not supported.  (Drill is not transactional.)" );
   }
 
   @Override
   public void releaseSavepoint(Savepoint savepoint) throws SQLException {
-    checkNotClosed();
+    throwIfClosed();
     throw new SQLFeatureNotSupportedException(
         "Savepoints are not supported.  (Drill is not transactional.)" );
   }
@@ -270,7 +291,7 @@ class DrillConnectionImpl extends AvaticaConnection
 
   @Override
   public void setTransactionIsolation(int level) throws SQLException {
-    checkNotClosed();
+    throwIfClosed();
     switch ( level ) {
       case TRANSACTION_NONE:
         // No-op.  (Is already set in constructor, and we disallow changing it.)
@@ -297,15 +318,15 @@ class DrillConnectionImpl extends AvaticaConnection
       throws AlreadyClosedSqlException,
              JdbcApiSqlException,
              SQLFeatureNotSupportedException {
-    checkNotClosed();
+    throwIfClosed();
     if ( null == executor ) {
       throw new InvalidParameterSqlException(
           "Invalid (null) \"executor\" parameter to setNetworkTimeout(...)" );
     }
     else if ( milliseconds < 0 ) {
       throw new InvalidParameterSqlException(
-          "Invalid (negative) \"milliseconds\" parameter to setNetworkTimeout(...)"
-          + " (" + milliseconds + ")" );
+          "Invalid (negative) \"milliseconds\" parameter to"
+          + " setNetworkTimeout(...) (" + milliseconds + ")" );
     }
     else {
       if ( 0 != milliseconds ) {
@@ -315,21 +336,22 @@ class DrillConnectionImpl extends AvaticaConnection
     }
   }
 
-
   @Override
   public int getNetworkTimeout() throws AlreadyClosedSqlException
   {
-    checkNotClosed();
-    return 0;  // (No no timeout.)
+    throwIfClosed();
+    return 0;  // (No timeout.)
   }
 
 
   @Override
-  public DrillStatementImpl createStatement(int resultSetType, int resultSetConcurrency,
+  public DrillStatementImpl createStatement(int resultSetType,
+                                            int resultSetConcurrency,
                                             int resultSetHoldability) throws SQLException {
-    checkNotClosed();
+    throwIfClosed();
     DrillStatementImpl statement =
-        (DrillStatementImpl) super.createStatement(resultSetType, resultSetConcurrency,
+        (DrillStatementImpl) super.createStatement(resultSetType,
+                                                   resultSetConcurrency,
                                                    resultSetHoldability);
     return statement;
   }
@@ -338,7 +360,7 @@ class DrillConnectionImpl extends AvaticaConnection
   public PreparedStatement prepareStatement(String sql, int resultSetType,
                                             int resultSetConcurrency,
                                             int resultSetHoldability) throws SQLException {
-    checkNotClosed();
+    throwIfClosed();
     try {
       DrillPrepareResult prepareResult = new DrillPrepareResult(sql);
       DrillPreparedStatementImpl statement =
@@ -358,6 +380,388 @@ class DrillConnectionImpl extends AvaticaConnection
     return config.getTimeZone();
   }
 
+
+  // Note:  Using dynamic proxies would reduce the quantity (450?) of method
+  // overrides by eliminating those that exist solely to check whether the
+  // object is closed.  It would also eliminate the need to throw non-compliant
+  // RuntimeExceptions when Avatica's method declarations won't let us throw
+  // proper SQLExceptions. (Check performance before applying to frequently
+  // called ResultSet.)
+
+  // No isWrapperFor(Class<?>) (it doesn't throw SQLException if already closed).
+  // No unwrap(Class<T>) (it doesn't throw SQLException if already closed).
+
+  @Override
+  public AvaticaStatement createStatement() throws SQLException {
+    throwIfClosed();
+    return super.createStatement();
+  }
+
+  @Override
+  public PreparedStatement prepareStatement(String sql) throws SQLException {
+    throwIfClosed();
+    return super.prepareStatement(sql);
+  }
+
+  @Override
+  public CallableStatement prepareCall(String sql) throws SQLException {
+    throwIfClosed();
+    try {
+      return super.prepareCall(sql);
+    }
+    catch (UnsupportedOperationException e) {
+      throw new SQLFeatureNotSupportedException(e.getMessage(), e);
+    }
+  }
+
+  @Override
+  public String nativeSQL(String sql) throws SQLException {
+    throwIfClosed();
+    try {
+      return super.nativeSQL(sql);
+    }
+    catch (UnsupportedOperationException e) {
+      throw new SQLFeatureNotSupportedException(e.getMessage(), e);
+    }
+  }
+
+
+  @Override
+  public boolean getAutoCommit() throws SQLException {
+    throwIfClosed();
+    return super.getAutoCommit();
+  }
+
+  // No close() (it doesn't throw SQLException if already closed).
+
+  @Override
+  public DatabaseMetaData getMetaData() throws SQLException {
+    throwIfClosed();
+    return super.getMetaData();
+  }
+
+  @Override
+  public void setReadOnly(boolean readOnly) throws SQLException {
+    throwIfClosed();
+    super.setReadOnly(readOnly);
+  }
+
+  @Override
+  public boolean isReadOnly() throws SQLException {
+    throwIfClosed();
+    return super.isReadOnly();
+  }
+
+  @Override
+  public void setCatalog(String catalog) throws SQLException {
+    throwIfClosed();
+    super.setCatalog(catalog);
+  }
+
+  @Override
+  public String getCatalog() {
+    // Can't throw any SQLException because AvaticaConnection's getCatalog() is
+    // missing "throws SQLException".
+    try {
+      throwIfClosed();
+    } catch (AlreadyClosedSqlException e) {
+      throw new RuntimeException(e.getMessage(), e);
+    }
+    return super.getCatalog();
+  }
+
+  @Override
+  public int getTransactionIsolation() throws SQLException {
+    throwIfClosed();
+    return super.getTransactionIsolation();
+  }
+
+  @Override
+  public SQLWarning getWarnings() throws SQLException {
+    throwIfClosed();
+    return super.getWarnings();
+  }
+
+  @Override
+  public void clearWarnings() throws SQLException {
+    throwIfClosed();
+    super.clearWarnings();
+  }
+
+  @Override
+  public Statement createStatement(int resultSetType,
+                                   int resultSetConcurrency) throws SQLException {
+    throwIfClosed();
+    return super.createStatement(resultSetType, resultSetConcurrency);
+  }
+
+  @Override
+  public PreparedStatement prepareStatement(String sql, int resultSetType,
+                                            int resultSetConcurrency) throws SQLException {
+    throwIfClosed();
+    return super.prepareStatement(sql, resultSetType, resultSetConcurrency);
+  }
+
+  @Override
+  public CallableStatement prepareCall(String sql, int resultSetType,
+                                       int resultSetConcurrency) throws SQLException {
+    throwIfClosed();
+    try {
+      return super.prepareCall(sql, resultSetType, resultSetConcurrency);
+    }
+    catch (UnsupportedOperationException e) {
+      throw new SQLFeatureNotSupportedException(e.getMessage(), e);
+    }
+  }
+
+  @Override
+  public Map<String,Class<?>> getTypeMap() throws SQLException {
+    throwIfClosed();
+    try {
+      return super.getTypeMap();
+    }
+    catch (UnsupportedOperationException e) {
+      throw new SQLFeatureNotSupportedException(e.getMessage(), e);
+    }
+  }
+
+  @Override
+  public void setTypeMap(Map<String,Class<?>> map) throws SQLException {
+    throwIfClosed();
+    try {
+      super.setTypeMap(map);
+    }
+    catch (UnsupportedOperationException e) {
+      throw new SQLFeatureNotSupportedException(e.getMessage(), e);
+    }
+  }
+
+  @Override
+  public void setHoldability(int holdability) throws SQLException {
+    throwIfClosed();
+    super.setHoldability(holdability);
+  }
+
+  @Override
+  public int getHoldability() throws SQLException {
+    throwIfClosed();
+    return super.getHoldability();
+  }
+
+  @Override
+  public CallableStatement prepareCall(String sql, int resultSetType,
+                                       int resultSetConcurrency,
+                                       int resultSetHoldability) throws SQLException {
+    throwIfClosed();
+    try {
+      return super.prepareCall(sql, resultSetType, resultSetConcurrency,
+                               resultSetHoldability);
+    }
+    catch (UnsupportedOperationException e) {
+      throw new SQLFeatureNotSupportedException(e.getMessage(), e);
+    }
+  }
+
+  @Override
+  public PreparedStatement prepareStatement(String sql,
+                                            int autoGeneratedKeys) throws SQLException {
+    throwIfClosed();
+    try {
+      return super.prepareStatement(sql, autoGeneratedKeys);
+    }
+    catch (UnsupportedOperationException e) {
+      throw new SQLFeatureNotSupportedException(e.getMessage(), e);
+    }
+  }
+
+  @Override
+  public PreparedStatement prepareStatement(String sql,
+                                            int columnIndexes[]) throws SQLException {
+    throwIfClosed();
+    try {
+      return super.prepareStatement(sql, columnIndexes);
+    }
+    catch (UnsupportedOperationException e) {
+      throw new SQLFeatureNotSupportedException(e.getMessage(), e);
+    }
+  }
+
+  @Override
+  public PreparedStatement prepareStatement(String sql,
+                                            String columnNames[]) throws SQLException {
+    throwIfClosed();
+    try {
+      return super.prepareStatement(sql, columnNames);
+    }
+    catch (UnsupportedOperationException e) {
+      throw new SQLFeatureNotSupportedException(e.getMessage(), e);
+    }
+  }
+
+  @Override
+  public Clob createClob() throws SQLException {
+    throwIfClosed();
+    try {
+      return super.createClob();
+    }
+    catch (UnsupportedOperationException e) {
+      throw new SQLFeatureNotSupportedException(e.getMessage(), e);
+    }
+  }
+
+  @Override
+  public Blob createBlob() throws SQLException {
+    throwIfClosed();
+    try {
+      return super.createBlob();
+    }
+    catch (UnsupportedOperationException e) {
+      throw new SQLFeatureNotSupportedException(e.getMessage(), e);
+    }
+  }
+
+  @Override
+  public NClob createNClob() throws SQLException {
+    throwIfClosed();
+    try {
+      return super.createNClob();
+    }
+    catch (UnsupportedOperationException e) {
+      throw new SQLFeatureNotSupportedException(e.getMessage(), e);
+    }
+  }
+
+  @Override
+  public SQLXML createSQLXML() throws SQLException {
+    throwIfClosed();
+    try {
+      return super.createSQLXML();
+    }
+    catch (UnsupportedOperationException e) {
+      throw new SQLFeatureNotSupportedException(e.getMessage(), e);
+    }
+  }
+
+  @Override
+  public boolean isValid(int timeout) throws SQLException {
+    throwIfClosed();
+    try {
+      return super.isValid(timeout);
+    }
+    catch (UnsupportedOperationException e) {
+      throw new SQLFeatureNotSupportedException(e.getMessage(), e);
+    }
+  }
+
+  @Override
+  public void setClientInfo(String name, String value) throws SQLClientInfoException {
+    try {
+      throwIfClosed();
+    } catch (AlreadyClosedSqlException e) {
+      throw new SQLClientInfoException(e.getMessage(), null, e);
+    }
+    try {
+      super.setClientInfo(name,  value);
+    }
+    catch (UnsupportedOperationException e) {
+      SQLFeatureNotSupportedException intended =
+          new SQLFeatureNotSupportedException(e.getMessage(), e);
+      throw new SQLClientInfoException(e.getMessage(), null, intended);
+    }
+  }
+
+  @Override
+  public void setClientInfo(Properties properties) throws SQLClientInfoException {
+    try {
+      throwIfClosed();
+    } catch (AlreadyClosedSqlException e) {
+      throw new SQLClientInfoException(e.getMessage(), null, e);
+    }
+    try {
+      super.setClientInfo(properties);
+    }
+    catch (UnsupportedOperationException e) {
+      SQLFeatureNotSupportedException intended =
+          new SQLFeatureNotSupportedException(e.getMessage(), e);
+      throw new SQLClientInfoException(e.getMessage(), null, intended);
+    }
+  }
+
+  @Override
+  public String getClientInfo(String name) throws SQLException {
+    throwIfClosed();
+    try {
+      return super.getClientInfo(name);
+    }
+    catch (UnsupportedOperationException e) {
+      throw new SQLFeatureNotSupportedException(e.getMessage(), e);
+    }
+  }
+
+  @Override
+  public Properties getClientInfo() throws SQLException {
+    throwIfClosed();
+    try {
+      return super.getClientInfo();
+    }
+    catch (UnsupportedOperationException e) {
+      throw new SQLFeatureNotSupportedException(e.getMessage(), e);
+    }
+  }
+
+  @Override
+  public Array createArrayOf(String typeName, Object[] elements) throws SQLException {
+    throwIfClosed();
+    try {
+      return super.createArrayOf(typeName, elements);
+    }
+    catch (UnsupportedOperationException e) {
+      throw new SQLFeatureNotSupportedException(e.getMessage(), e);
+    }
+  }
+
+  @Override
+  public Struct createStruct(String typeName, Object[] attributes) throws SQLException {
+    throwIfClosed();
+    try {
+      return super.createStruct(typeName, attributes);
+    }
+    catch (UnsupportedOperationException e) {
+      throw new SQLFeatureNotSupportedException(e.getMessage(), e);
+    }
+  }
+
+  @Override
+  public void setSchema(String schema) throws SQLException {
+    throwIfClosed();
+    super.setSchema(schema);
+  }
+
+  @Override
+  public String getSchema() {
+    // Can't throw any SQLException because AvaticaConnection's getCatalog() is
+    // missing "throws SQLException".
+    try {
+      throwIfClosed();
+    } catch (AlreadyClosedSqlException e) {
+      throw new RuntimeException(e.getMessage(), e);
+    }
+    return super.getSchema();
+  }
+
+  @Override
+  public void abort(Executor executor) throws SQLException {
+    throwIfClosed();
+    try {
+      super.abort(executor);
+    }
+    catch (UnsupportedOperationException e) {
+      throw new SQLFeatureNotSupportedException(e.getMessage(), e);
+    }
+  }
+
+
+
   // do not make public
   UnregisteredDriver getDriver() {
     return driver;
@@ -368,26 +772,39 @@ class DrillConnectionImpl extends AvaticaConnection
     return factory;
   }
 
+  private static void closeOrWarn(final AutoCloseable autoCloseable, final String message, final Logger logger) {
+    if (autoCloseable == null) {
+      return;
+    }
+
+    try {
+      autoCloseable.close();
+    } catch(Exception e) {
+      logger.warn(message, e);
+    }
+  }
+
+  // TODO this should be an AutoCloseable, and this should be close()
   void cleanup() {
     // First close any open JDBC Statement objects, to close any open ResultSet
     // objects and release their buffers/vectors.
     openStatementsRegistry.close();
 
-    client.close();
-    allocator.close();
+    // TODO all of these should use DeferredException when it is available from DRILL-2245
+    closeOrWarn(client, "Exception while closing client.", logger);
+    closeOrWarn(allocator, "Exception while closing allocator.", logger);
+
     if (bit != null) {
       bit.close();
     }
 
-    if (serviceSet != null) {
-      try {
-        serviceSet.close();
-      } catch (IOException e) {
-        logger.warn("Exception while closing service set.", e);
-      }
-    }
+    closeOrWarn(serviceSet, "Exception while closing service set.", logger);
   }
 
+  // TODO(DRILL-xxxx):  Eliminate this test-specific hack from production code.
+  // If we're not going to have tests themselves explicitly handle making names
+  // unique, then at least move this logic into a test base class, and have it
+  // go through DrillConnection.getClient().
   /**
    * Test only code to make JDBC tests run concurrently. If the property <i>drillJDBCUnitTests</i> is set to
    * <i>true</i> in connection properties:

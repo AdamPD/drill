@@ -43,8 +43,8 @@ import com.fasterxml.jackson.annotation.JsonProperty;
 import com.fasterxml.jackson.annotation.JsonTypeName;
 import com.google.common.base.Preconditions;
 import com.google.common.collect.Iterators;
-import parquet.filter2.predicate.FilterPredicate;
-import parquet.hadoop.FilterPredicateSerializer;
+import org.apache.parquet.filter2.predicate.FilterPredicate;
+import org.apache.parquet.hadoop.FilterPredicateSerializer;
 
 // Class containing information for reading a single parquet row group form HDFS
 @JsonTypeName("parquet-row-group-scan")

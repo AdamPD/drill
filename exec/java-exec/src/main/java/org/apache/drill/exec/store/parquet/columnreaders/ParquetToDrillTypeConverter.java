@@ -17,21 +17,17 @@
  ******************************************************************************/
 package org.apache.drill.exec.store.parquet.columnreaders;
 
-import static parquet.Preconditions.checkArgument;
-
-import org.apache.drill.common.exceptions.DrillRuntimeException;
-import org.apache.drill.common.exceptions.UserException;
 import org.apache.drill.common.types.TypeProtos;
 import org.apache.drill.common.types.TypeProtos.MinorType;
 
 import org.apache.drill.common.util.CoreDecimalUtility;
-import org.apache.drill.exec.planner.physical.PlannerSettings;
 import org.apache.drill.exec.server.options.OptionManager;
 import org.apache.drill.exec.store.parquet.ParquetReaderUtility;
-import org.apache.drill.exec.work.ExecErrorConstants;
-import parquet.format.ConvertedType;
-import parquet.format.SchemaElement;
-import parquet.schema.PrimitiveType;
+import org.apache.parquet.format.ConvertedType;
+import org.apache.parquet.format.SchemaElement;
+import org.apache.parquet.schema.PrimitiveType;
+
+import static com.google.common.base.Preconditions.checkArgument;
 
 public class ParquetToDrillTypeConverter {
 
@@ -98,7 +94,7 @@ public class ParquetToDrillTypeConverter {
       // TODO - Both of these are not supported by the parquet library yet (7/3/13),
       // but they are declared here for when they are implemented
       case INT96:
-        return TypeProtos.MinorType.FIXEDBINARY;
+        return TypeProtos.MinorType.VARBINARY;
       case FIXED_LEN_BYTE_ARRAY:
         if (convertedType == null) {
           checkArgument(length > 0, "A length greater than zero must be provided for a FixedBinary type.");

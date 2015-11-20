@@ -23,6 +23,7 @@ import org.apache.drill.common.exceptions.ExecutionSetupException;
 import org.apache.drill.common.exceptions.UserException;
 import org.apache.drill.common.expression.ErrorCollector;
 import org.apache.drill.common.expression.ErrorCollectorImpl;
+import org.apache.drill.common.expression.IfExpression;
 import org.apache.drill.common.expression.LogicalExpression;
 import org.apache.drill.common.logical.data.NamedExpression;
 import org.apache.drill.exec.ExecConstants;
@@ -211,6 +212,10 @@ public class HashAggBatch extends AbstractRecordBatch<HashAggregate> {
       final LogicalExpression expr =
           ExpressionTreeMaterializer.materialize(ne.getExpr(), incoming, collector, context.getFunctionRegistry());
 
+      if (expr instanceof IfExpression) {
+        throw UserException.unsupportedError(new UnsupportedOperationException("Union type not supported in aggregate functions")).build(logger);
+      }
+
       if (collector.hasErrors()) {
         throw new SchemaChangeException("Failure while materializing expression. " + collector.toErrorString());
       }
@@ -251,7 +256,7 @@ public class HashAggBatch extends AbstractRecordBatch<HashAggregate> {
     cg.setMappingSet(UpdateAggrValuesMapping);
 
     for (LogicalExpression aggr : aggrExprs) {
-      HoldingContainer hc = cg.addExpr(aggr);
+      HoldingContainer hc = cg.addExpr(aggr, true);
     }
   }
 

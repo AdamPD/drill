@@ -36,10 +36,10 @@ import org.apache.drill.exec.vector.ValueVector;
 import org.apache.drill.exec.vector.VariableWidthVector;
 import org.joda.time.DateTimeUtils;
 
-import parquet.column.ColumnDescriptor;
-import parquet.format.SchemaElement;
-import parquet.hadoop.metadata.ColumnChunkMetaData;
-import parquet.io.api.Binary;
+import org.apache.parquet.column.ColumnDescriptor;
+import org.apache.parquet.format.SchemaElement;
+import org.apache.parquet.hadoop.metadata.ColumnChunkMetaData;
+import org.apache.parquet.io.api.Binary;
 
 class FixedByteAlignedReader extends ColumnReader {
 
@@ -89,7 +89,7 @@ class FixedByteAlignedReader extends ColumnReader {
       // now we need to write the lengths of each value
       int byteLength = dataTypeLengthInBits / 8;
       for (int i = 0; i < recordsToReadInThisPass; i++) {
-        castedVector.getMutator().setValueLengthSafe(i, byteLength);
+        castedVector.getMutator().setValueLengthSafe(valuesReadInCurrentPass + i, byteLength);
       }
     }
 

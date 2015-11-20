@@ -20,6 +20,7 @@ package org.apache.drill.exec.store.parquet.columnreaders;
 import io.netty.buffer.DrillBuf;
 
 import java.math.BigDecimal;
+import java.nio.ByteBuffer;
 
 import org.apache.drill.common.exceptions.ExecutionSetupException;
 import org.apache.drill.exec.expr.holders.NullableDecimal28SparseHolder;
@@ -27,7 +28,6 @@ import org.apache.drill.exec.expr.holders.NullableDecimal38SparseHolder;
 import org.apache.drill.exec.store.ParquetOutputRecordWriter;
 import org.apache.drill.exec.store.parquet.ParquetReaderUtility;
 import org.apache.drill.exec.util.DecimalUtility;
-import org.apache.drill.exec.vector.IntervalVector;
 import org.apache.drill.exec.vector.NullableBigIntVector;
 import org.apache.drill.exec.vector.NullableDateVector;
 import org.apache.drill.exec.vector.NullableDecimal18Vector;
@@ -40,13 +40,14 @@ import org.apache.drill.exec.vector.NullableIntVector;
 import org.apache.drill.exec.vector.NullableIntervalVector;
 import org.apache.drill.exec.vector.NullableTimeStampVector;
 import org.apache.drill.exec.vector.NullableTimeVector;
+import org.apache.drill.exec.vector.NullableVarBinaryVector;
 import org.apache.drill.exec.vector.ValueVector;
 import org.joda.time.DateTimeUtils;
 
-import parquet.column.ColumnDescriptor;
-import parquet.format.SchemaElement;
-import parquet.hadoop.metadata.ColumnChunkMetaData;
-import parquet.io.api.Binary;
+import org.apache.parquet.column.ColumnDescriptor;
+import org.apache.parquet.format.SchemaElement;
+import org.apache.parquet.hadoop.metadata.ColumnChunkMetaData;
+import org.apache.parquet.io.api.Binary;
 
 public class NullableFixedByteAlignedReaders {
 
@@ -65,6 +66,50 @@ public class NullableFixedByteAlignedReaders {
 
       // fill in data.
       vectorData.writeBytes(bytebuf, (int) readStartInBytes, (int) readLength);
+    }
+  }
+
+  /**
+   * Class for reading the fixed length byte array type in parquet. Currently Drill does not have
+   * a fixed length binary type, so this is read into a varbinary with the same size recorded for
+   * each value.
+   */
+  static class NullableFixedBinaryReader extends NullableFixedByteAlignedReader {
+
+    NullableVarBinaryVector castedVector;
+
+    NullableFixedBinaryReader(ParquetRecordReader parentReader, int allocateSize, ColumnDescriptor descriptor,
+                                   ColumnChunkMetaData columnChunkMetaData, boolean fixedLength, NullableVarBinaryVector v, SchemaElement schemaElement) throws ExecutionSetupException {
+      super(parentReader, allocateSize, descriptor, columnChunkMetaData, fixedLength, v, schemaElement);
+      castedVector = v;
+    }
+
+    @Override
+    protected void readField(long recordsToReadInThisPass) {
+      this.bytebuf = pageReader.pageData;
+      if (usingDictionary) {
+        NullableVarBinaryVector.Mutator mutator =  castedVector.getMutator();
+        Binary currDictValToWrite;
+        for (int i = 0; i < recordsReadInThisIteration; i++){
+          currDictValToWrite = pageReader.dictionaryValueReader.readBytes();
+          ByteBuffer buf = currDictValToWrite.toByteBuffer();
+          mutator.setSafe(valuesReadInCurrentPass + i, buf, buf.position(),
+              currDictValToWrite.length());
+        }
+        // Set the write Index. The next page that gets read might be a page that does not use dictionary encoding
+        // and we will go into the else condition below. The readField method of the parent class requires the
+        // writer index to be set correctly.
+        int writerIndex = castedBaseVector.getBuffer().writerIndex();
+        castedBaseVector.getBuffer().setIndex(0, writerIndex + (int)readLength);
+      } else {
+        super.readField(recordsToReadInThisPass);
+        // TODO - replace this with fixed binary type in drill
+        // for now we need to write the lengths of each value
+        int byteLength = dataTypeLengthInBits / 8;
+        for (int i = 0; i < recordsToReadInThisPass; i++) {
+          castedVector.getMutator().setValueLengthSafe(valuesReadInCurrentPass + i, byteLength);
+        }
+      }
     }
   }
 
@@ -358,5 +403,5 @@ public class NullableFixedByteAlignedReaders {
       nullableIntervalVector.getMutator().set(index, 1, bytebuf.getInt(start), bytebuf.getInt(start + 4), bytebuf.getInt(start + 8));
     }
   }
-
 }
+

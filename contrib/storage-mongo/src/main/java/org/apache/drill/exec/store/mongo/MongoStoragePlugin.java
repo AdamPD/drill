@@ -27,7 +27,11 @@ import java.util.concurrent.TimeUnit;
 import org.apache.calcite.schema.SchemaPlus;
 import org.apache.drill.common.JSONOptions;
 import org.apache.drill.common.exceptions.ExecutionSetupException;
+<<<<<<< HEAD
 import org.apache.drill.exec.ops.QueryContext;
+=======
+import org.apache.drill.exec.ops.OptimizerRulesContext;
+>>>>>>> upstream/master
 import org.apache.drill.exec.physical.base.AbstractGroupScan;
 import org.apache.drill.exec.server.DrillbitContext;
 import org.apache.drill.exec.store.AbstractStoragePlugin;
@@ -97,7 +101,8 @@ public class MongoStoragePlugin extends AbstractStoragePlugin {
     return new MongoGroupScan(userName, this, mongoScanSpec, null);
   }
 
-  public Set<StoragePluginOptimizerRule> getOptimizerRules(QueryContext context) {
+  @Override
+  public Set<StoragePluginOptimizerRule> getOptimizerRules(OptimizerRulesContext optimizerRulesContext) {
     return ImmutableSet.of(MongoPushDownFilterForScan.INSTANCE);
   }
 
@@ -145,4 +150,10 @@ public class MongoStoragePlugin extends AbstractStoragePlugin {
     }
     return client;
   }
+
+  @Override
+  public void close() throws Exception {
+    addressClientMap.invalidateAll();
+  }
+
 }

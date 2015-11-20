@@ -23,7 +23,6 @@ import java.util.Set;
 import java.util.regex.Matcher;
 import java.util.regex.Pattern;
 
-import com.google.common.base.Preconditions;
 import org.apache.commons.lang3.ArrayUtils;
 import org.apache.drill.common.exceptions.ExecutionSetupException;
 import org.apache.drill.common.expression.SchemaPath;
@@ -32,6 +31,7 @@ import org.apache.drill.common.logical.StoragePluginConfig;
 import org.apache.drill.exec.ExecConstants;
 import org.apache.drill.exec.ops.FragmentContext;
 import org.apache.drill.exec.ops.OperatorContext;
+import org.apache.drill.exec.ops.OptimizerRulesContext;
 import org.apache.drill.exec.ops.QueryContext;
 import org.apache.drill.exec.physical.base.AbstractGroupScan;
 import org.apache.drill.exec.physical.base.AbstractWriter;
@@ -58,6 +58,7 @@ import org.apache.hadoop.conf.Configuration;
 
 import com.google.common.collect.ImmutableSet;
 import com.google.common.collect.Lists;
+
 import org.apache.hadoop.fs.Path;
 
 public abstract class EasyFormatPlugin<T extends FormatPluginConfig> implements FormatPlugin {
@@ -116,12 +117,15 @@ public abstract class EasyFormatPlugin<T extends FormatPluginConfig> implements 
     return blockSplittable;
   }
 
+  /** Method indicates whether or not this format could also be in a compression container (for example: csv.gz versus csv).
+   * If this format uses its own internal compression scheme, such as Parquet does, then this should return false.
+   */
   public boolean isCompressible() {
     return compressible;
   }
 
   public abstract RecordReader getRecordReader(FragmentContext context, DrillFileSystem dfs, FileWork fileWork,
-      List<SchemaPath> columns) throws ExecutionSetupException;
+      List<SchemaPath> columns, String userName) throws ExecutionSetupException;
 
   CloseableRecordBatch getReaderBatch(FragmentContext context, EasySubScan scan) throws ExecutionSetupException {
     String partitionDesignator = context.getOptions()
@@ -171,7 +175,7 @@ public abstract class EasyFormatPlugin<T extends FormatPluginConfig> implements 
     }
 
     for(FileWork work : scan.getWorkUnits()){
-      readers.add(getRecordReader(context, dfs, work, scan.getColumns()));
+      readers.add(getRecordReader(context, dfs, work, scan.getColumns(), scan.getUserName()));
       if (scan.getSelectionRoot() != null) {
         String[] r = Path.getPathWithoutSchemeAndAuthority(new Path(scan.getSelectionRoot())).toString().split("/");
         String[] p = Path.getPathWithoutSchemeAndAuthority(new Path(work.getPath())).toString().split("/");
@@ -259,7 +263,7 @@ public abstract class EasyFormatPlugin<T extends FormatPluginConfig> implements 
   }
 
   @Override
-  public Set<StoragePluginOptimizerRule> getOptimizerRules(QueryContext context) {
+  public Set<StoragePluginOptimizerRule> getOptimizerRules(OptimizerRulesContext context) {
     return ImmutableSet.of();
   }
 

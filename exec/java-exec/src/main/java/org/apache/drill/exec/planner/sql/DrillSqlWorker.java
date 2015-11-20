@@ -62,6 +62,7 @@ import org.apache.calcite.plan.hep.HepProgramBuilder;
 import org.apache.calcite.sql.SqlNode;
 import org.apache.calcite.sql.parser.SqlParseException;
 import org.apache.calcite.sql.parser.SqlParser;
+import org.apache.calcite.sql.parser.SqlParserPos;
 import org.apache.drill.exec.work.foreman.SqlUnsupportedException;
 import org.apache.hadoop.security.AccessControlException;
 
@@ -73,7 +74,8 @@ public class DrillSqlWorker {
   private final HepPlanner hepPlanner;
   public final static int LOGICAL_RULES = 0;
   public final static int PHYSICAL_MEM_RULES = 1;
-  public final static int LOGICAL_CONVERT_RULES = 2;
+  public final static int LOGICAL_HEP_JOIN_RULES = 2;
+  public final static int LOGICAL_HEP_JOIN__PP_RULES = 3;
 
   private final QueryContext context;
 
@@ -115,20 +117,32 @@ public class DrillSqlWorker {
 
   private RuleSet[] getRules(QueryContext context) {
     StoragePluginRegistry storagePluginRegistry = context.getStorage();
-    RuleSet drillLogicalRules = DrillRuleSets.mergedRuleSets(
+
+    // Ruleset for the case where VolcanoPlanner is used for everything : join, filter/project pushdown, partition pruning.
+    RuleSet drillLogicalVolOnlyRules = DrillRuleSets.mergedRuleSets(
         DrillRuleSets.getDrillBasicRules(context),
+        DrillRuleSets.getPruneScanRules(context),
         DrillRuleSets.getJoinPermRules(context),
         DrillRuleSets.getDrillUserConfigurableLogicalRules(context));
+
+    // Ruleset for the case where join planning is done in Hep-LOPT, filter/project pushdown and parttion pruning are done in VolcanoPlanner
+    RuleSet drillLogicalHepJoinRules = DrillRuleSets.mergedRuleSets(
+        DrillRuleSets.getDrillBasicRules(context),
+        DrillRuleSets.getPruneScanRules(context),
+        DrillRuleSets.getDrillUserConfigurableLogicalRules(context));
+
+    // Ruleset for the case where join planning and partition pruning is done in Hep, filter/project pushdown are done in VolcanoPlanner
+    RuleSet drillLogicalHepJoinPPRules = DrillRuleSets.mergedRuleSets(
+        DrillRuleSets.getDrillBasicRules(context),
+        DrillRuleSets.getDrillUserConfigurableLogicalRules(context));
+
+    // Ruleset for physical planning rules
     RuleSet drillPhysicalMem = DrillRuleSets.mergedRuleSets(
         DrillRuleSets.getPhysicalRules(context),
         storagePluginRegistry.getStoragePluginRuleSet(context));
 
-    // Following is used in LOPT join OPT.
-    RuleSet logicalConvertRules = DrillRuleSets.mergedRuleSets(
-        DrillRuleSets.getDrillBasicRules(context),
-        DrillRuleSets.getDrillUserConfigurableLogicalRules(context));
 
-    RuleSet[] allRules = new RuleSet[] {drillLogicalRules, drillPhysicalMem, logicalConvertRules};
+    RuleSet[] allRules = new RuleSet[] {drillLogicalVolOnlyRules, drillPhysicalMem, drillLogicalHepJoinRules, drillLogicalHepJoinPPRules};
 
     return allRules;
   }
@@ -145,7 +159,12 @@ public class DrillSqlWorker {
       injector.injectChecked(context.getExecutionControls(), "sql-parsing", ForemanSetupException.class);
       sqlNode = planner.parse(sql);
     } catch (SqlParseException e) {
-      throw UserException.parseError(e).build(logger);
+      throw UserException
+        .parseError(e)
+        .addContext(
+            "while parsing SQL query:\n" +
+            formatSQLParsingError(sql, e.getPos()))
+        .build(logger);
     }
 
     AbstractSqlHandler handler;
@@ -178,17 +197,39 @@ public class DrillSqlWorker {
       return handler.getPlan(sqlNode);
     } catch(ValidationException e) {
       String errorMessage = e.getCause() != null ? e.getCause().getMessage() : e.getMessage();
-      throw UserException.parseError(e)
-        .message(errorMessage)
-        .build(logger);
+      throw UserException.validationError(e)
+          .message(errorMessage)
+          .build(logger);
     } catch (AccessControlException e) {
       throw UserException.permissionError(e)
-        .build(logger);
+          .build(logger);
     } catch(SqlUnsupportedException e) {
       throw UserException.unsupportedError(e)
-        .build(logger);
+          .build(logger);
     } catch (IOException | RelConversionException e) {
       throw new QueryInputException("Failure handling SQL.", e);
     }
+  }
+
+  /**
+   *
+   * @param sql the SQL sent to the server
+   * @param pos the position of the error
+   * @return The sql with a ^ character under the error
+   */
+  static String formatSQLParsingError(String sql, SqlParserPos pos) {
+    StringBuilder sb = new StringBuilder();
+    String[] lines = sql.split("\n");
+    for (int i = 0; i < lines.length; i++) {
+      String line = lines[i];
+      sb.append(line).append("\n");
+      if (i == (pos.getLineNum() - 1)) {
+        for (int j = 0; j < pos.getColumnNum() - 1; j++) {
+          sb.append(" ");
+        }
+        sb.append("^\n");
+      }
+    }
+    return sb.toString();
   }
 }

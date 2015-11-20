@@ -78,7 +78,7 @@ public class TextFormatPlugin extends EasyFormatPlugin<TextFormatPlugin.TextForm
 
   @Override
   public RecordReader getRecordReader(FragmentContext context, DrillFileSystem dfs, FileWork fileWork,
-      List<SchemaPath> columns) throws ExecutionSetupException {
+      List<SchemaPath> columns, String userName) throws ExecutionSetupException {
     Path path = dfs.makeQualified(new Path(fileWork.getPath()));
     FileSplit split = new FileSplit(path, fileWork.getStart(), fileWork.getLength(), new String[]{""});
 
@@ -140,7 +140,7 @@ public class TextFormatPlugin extends EasyFormatPlugin<TextFormatPlugin.TextForm
     public char escape = '"';
     public char comment = '#';
     public boolean skipFirstLine = false;
-
+    public boolean extractHeader = false;
 
     public List<String> getExtensions() {
       return extensions;
@@ -164,6 +164,11 @@ public class TextFormatPlugin extends EasyFormatPlugin<TextFormatPlugin.TextForm
 
     public char getFieldDelimiter() {
       return fieldDelimiter;
+    }
+
+    @JsonIgnore
+    public boolean isHeaderExtractionEnabled() {
+      return extractHeader;
     }
 
     @JsonIgnore
