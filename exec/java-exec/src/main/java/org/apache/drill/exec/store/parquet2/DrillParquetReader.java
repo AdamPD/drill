@@ -322,11 +322,9 @@ public class DrillParquetReader extends AbstractRecordReader {
 
     while (count < 4000 && totalRead < recordCount) {
       recordMaterializer.setPosition(count);
-      totalRead++;
-      if (recordReader.read() == null) {
-        continue;
-      }
+      recordReader.read();
       count++;
+      totalRead++;
     }
     writer.setValueCount(count);
     // if we have requested columns that were not found in the file fill their vectors with null

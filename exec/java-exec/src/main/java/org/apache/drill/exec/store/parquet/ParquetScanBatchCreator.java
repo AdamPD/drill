@@ -113,7 +113,8 @@ public class ParquetScanBatchCreator implements BatchCreator<ParquetRowGroupScan
     // keep footers in a map to avoid re-reading them
     Map<String, ParquetMetadata> footers = new HashMap<String, ParquetMetadata>();
     int numParts = 0;
-    for(RowGroupReadEntry e : rowGroupScan.getRowGroupReadEntries()){
+    if (rowGroupScan.getRowGroupReadEntries() != null) {
+      for (RowGroupReadEntry e : rowGroupScan.getRowGroupReadEntries()) {
       /*
       Here we could store a map from file names to footers, to prevent re-reading the footer for each row group in a file
       TODO - to prevent reading the footer again in the parquet record reader (it is read earlier in the ParquetStorageEngine)
@@ -121,41 +122,42 @@ public class ParquetScanBatchCreator implements BatchCreator<ParquetRowGroupScan
       provide the reader with all of th file meta-data it needs
       These fields will be added to the constructor below
       */
-      try {
-        if ( ! footers.containsKey(e.getPath())){
-          footers.put(e.getPath(),
-              ParquetFileReader.readFooter(conf, new Path(e.getPath())));
-        }
-        if (!context.getOptions().getOption(ExecConstants.PARQUET_NEW_RECORD_READER).bool_val && !isComplex(footers.get(e.getPath()))) {
-          readers.add(
-              new ParquetRecordReader(
-                  context, e.getPath(), e.getRowGroupIndex(), fs,
-                  CodecFactory.createDirectCodecFactory(
-                  fs.getConf(),
-                  new ParquetDirectByteBufferAllocator(oContext.getAllocator()), 0),
-                  footers.get(e.getPath()),
-                  rowGroupScan.getColumns()
-              )
-          );
-        } else {
-          ParquetMetadata footer = footers.get(e.getPath());
-          readers.add(new DrillParquetReader(context, footer, e, newColumns, fs, rowGroupScan.getFilter()));
-        }
-        if (rowGroupScan.getSelectionRoot() != null) {
-          String[] r = Path.getPathWithoutSchemeAndAuthority(new Path(rowGroupScan.getSelectionRoot())).toString().split("/");
-          String[] p = Path.getPathWithoutSchemeAndAuthority(new Path(e.getPath())).toString().split("/");
-          if (p.length > r.length) {
-            String[] q = ArrayUtils.subarray(p, r.length, p.length - 1);
-            partitionColumns.add(q);
-            numParts = Math.max(numParts, q.length);
-          } else {
-            partitionColumns.add(new String[] {});
+        try {
+          if (!footers.containsKey(e.getPath())) {
+            footers.put(e.getPath(),
+                ParquetFileReader.readFooter(conf, new Path(e.getPath())));
           }
-        } else {
-          partitionColumns.add(new String[] {});
+          if (!context.getOptions().getOption(ExecConstants.PARQUET_NEW_RECORD_READER).bool_val && !isComplex(footers.get(e.getPath()))) {
+            readers.add(
+                new ParquetRecordReader(
+                    context, e.getPath(), e.getRowGroupIndex(), fs,
+                    CodecFactory.createDirectCodecFactory(
+                        fs.getConf(),
+                        new ParquetDirectByteBufferAllocator(oContext.getAllocator()), 0),
+                    footers.get(e.getPath()),
+                    rowGroupScan.getColumns()
+                )
+            );
+          } else {
+            ParquetMetadata footer = footers.get(e.getPath());
+            readers.add(new DrillParquetReader(context, footer, e, newColumns, fs, rowGroupScan.getFilter()));
+          }
+          if (rowGroupScan.getSelectionRoot() != null) {
+            String[] r = Path.getPathWithoutSchemeAndAuthority(new Path(rowGroupScan.getSelectionRoot())).toString().split("/");
+            String[] p = Path.getPathWithoutSchemeAndAuthority(new Path(e.getPath())).toString().split("/");
+            if (p.length > r.length) {
+              String[] q = ArrayUtils.subarray(p, r.length, p.length - 1);
+              partitionColumns.add(q);
+              numParts = Math.max(numParts, q.length);
+            } else {
+              partitionColumns.add(new String[]{});
+            }
+          } else {
+            partitionColumns.add(new String[]{});
+          }
+        } catch (IOException e1) {
+          throw new ExecutionSetupException(e1);
         }
-      } catch (IOException e1) {
-        throw new ExecutionSetupException(e1);
       }
     }
 
@@ -163,6 +165,10 @@ public class ParquetScanBatchCreator implements BatchCreator<ParquetRowGroupScan
       for (int i = 0; i < numParts; i++) {
         selectedPartitionColumns.add(i);
       }
+    }
+
+    if (readers.isEmpty()) {
+      readers.add(new EmptyRecordReader());
     }
 
     ScanBatch s =

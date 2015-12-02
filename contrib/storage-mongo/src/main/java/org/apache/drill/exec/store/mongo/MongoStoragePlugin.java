@@ -27,11 +27,7 @@ import java.util.concurrent.TimeUnit;
 import org.apache.calcite.schema.SchemaPlus;
 import org.apache.drill.common.JSONOptions;
 import org.apache.drill.common.exceptions.ExecutionSetupException;
-<<<<<<< HEAD
-import org.apache.drill.exec.ops.QueryContext;
-=======
 import org.apache.drill.exec.ops.OptimizerRulesContext;
->>>>>>> upstream/master
 import org.apache.drill.exec.physical.base.AbstractGroupScan;
 import org.apache.drill.exec.server.DrillbitContext;
 import org.apache.drill.exec.store.AbstractStoragePlugin;

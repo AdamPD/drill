@@ -102,4 +102,19 @@ public class TestFilterPushdown extends PlanTestBase {
         test("alter session set `store.parquet.use_new_reader` = false");
         test("alter session set `store.parquet.enable_pushdown_filter` = false");
     }
+
+    @Test
+    public void testSimpleQuery() throws Exception {
+        test("alter session set `store.parquet.enable_pushdown_filter` = true");
+
+        String query = String.format("select count(*) `count` from dfs_test.`%s/parquet/pushdown` where price > 10.0", TEST_RES_PATH);
+        testBuilder()
+            .ordered()
+            .sqlQuery(query)
+            .baselineColumns("`count`")
+            .baselineValues(3L)
+            .go();
+
+        test("alter session set `store.parquet.enable_pushdown_filter` = false");
+    }
 }

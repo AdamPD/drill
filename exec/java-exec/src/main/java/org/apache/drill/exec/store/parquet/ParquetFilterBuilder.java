@@ -25,8 +25,8 @@ import org.apache.drill.common.expression.SchemaPath;
 import org.apache.drill.common.expression.visitors.AbstractExprVisitor;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
-import parquet.filter2.predicate.FilterApi;
-import parquet.filter2.predicate.FilterPredicate;
+import org.apache.parquet.filter2.predicate.FilterApi;
+import org.apache.parquet.filter2.predicate.FilterPredicate;
 
 import java.io.IOException;
 import java.util.List;

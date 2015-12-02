@@ -93,9 +93,21 @@ import org.apache.drill.exec.vector.ValueVector;
 import org.apache.hadoop.fs.FileStatus;
 import org.apache.hadoop.fs.Path;
 
+import org.apache.parquet.column.Encoding;
+import org.apache.parquet.column.UnknownColumnTypeException;
+import org.apache.parquet.column.statistics.BinaryStatistics;
+import org.apache.parquet.column.statistics.BooleanStatistics;
+import org.apache.parquet.column.statistics.DoubleStatistics;
+import org.apache.parquet.column.statistics.FloatStatistics;
+import org.apache.parquet.column.statistics.IntStatistics;
+import org.apache.parquet.column.statistics.LongStatistics;
+import org.apache.parquet.column.statistics.Statistics;
 import org.apache.parquet.filter2.predicate.FilterPredicate;
 import org.apache.parquet.filter2.statisticslevel.StatisticsFilter;
 import org.apache.parquet.hadoop.FilterPredicateSerializer;
+import org.apache.parquet.hadoop.metadata.ColumnChunkMetaData;
+import org.apache.parquet.hadoop.metadata.ColumnPath;
+import org.apache.parquet.hadoop.metadata.CompressionCodecName;
 import org.joda.time.DateTimeUtils;
 import org.apache.parquet.io.api.Binary;
 
@@ -542,6 +554,76 @@ public class ParquetGroupScan extends AbstractFileGroupScan {
     }
   }
 
+  private static Statistics getStatistics(PrimitiveTypeName type, Object min, Object max) {
+    switch(type) {
+      case INT32:
+        IntStatistics intStats = new IntStatistics();
+        if (min != null && max != null) {
+          intStats.setMinMax((int) min, (int) max);
+        }
+        return intStats;
+      case INT64:
+        LongStatistics longStats = new LongStatistics();
+        if (min != null && max != null) {
+          longStats.setMinMax((long) min, (long) max);
+        }
+        return longStats;
+      case FLOAT:
+        FloatStatistics floatStats = new FloatStatistics();
+        if (min != null && max != null) {
+          floatStats.setMinMax((float) min, (float) max);
+        }
+        return floatStats;
+      case DOUBLE:
+        DoubleStatistics doubleStats = new DoubleStatistics();
+        if (min != null && max != null) {
+          doubleStats.setMinMax((double) min, (double) max);
+        }
+        return doubleStats;
+      case BOOLEAN:
+        BooleanStatistics booleanStats = new BooleanStatistics();
+        if (min != null && max != null) {
+          booleanStats.setMinMax((boolean) min, (boolean) max);
+        }
+        return booleanStats;
+      case FIXED_LEN_BYTE_ARRAY:
+      case BINARY:
+      case INT96:
+        BinaryStatistics binaryStats = new BinaryStatistics();
+        if (min != null && max != null) {
+          binaryStats.setMinMax(Binary.fromReusedByteArray(((String) min).getBytes()), Binary.fromReusedByteArray(((String) max).getBytes()));
+        }
+        return binaryStats;
+      default:
+        throw new UnknownColumnTypeException(type);
+    }
+  }
+
+  private static List<ColumnChunkMetaData> getColumnMetadata(RowGroupMetadata rowGroup) {
+    ArrayList<ColumnChunkMetaData> columns = new ArrayList<ColumnChunkMetaData>();
+    for (ColumnMetadata column : rowGroup.columns) {
+      columns.add(ColumnChunkMetaData.get(ColumnPath.fromDotString(column.name.getAsUnescapedPath()), column.primitiveType,
+          CompressionCodecName.UNCOMPRESSED, Collections.<Encoding>emptySet(), getStatistics(column.primitiveType, column.min, column.max), 0, 0, 1, 0, 0));
+    }
+    return columns;
+  }
+
+  private static ParquetTableMetadata_v1 applyFilter(ParquetTableMetadata_v1 metadata, FilterPredicate filter) {
+    ArrayList<ParquetFileMetadata> files = new ArrayList<ParquetFileMetadata>();
+    for (ParquetFileMetadata file : metadata.files) {
+      ArrayList<RowGroupMetadata> rowGroups = new ArrayList<RowGroupMetadata>();
+      for (RowGroupMetadata rowGroup : file.rowGroups) {
+        if (!StatisticsFilter.canDrop(filter, getColumnMetadata(rowGroup))) {
+          rowGroups.add(rowGroup);
+        }
+      }
+      if (rowGroups.size() > 0) {
+        files.add(new ParquetFileMetadata(file.path, file.length, rowGroups));
+      }
+    }
+    return new ParquetTableMetadata_v1(files, metadata.directories);
+  }
+
   private void init() throws IOException {
     List<FileStatus> fileStatuses = null;
     if (entries.size() == 1) {
@@ -583,6 +665,10 @@ public class ParquetGroupScan extends AbstractFileGroupScan {
         }
         parquetTableMetadata = Metadata.getParquetTableMetadata(fs, fileStatuses);
       }
+    }
+
+    if (filter != null) {
+      parquetTableMetadata = applyFilter(parquetTableMetadata, filter);
     }
 
     if (fileSet == null) {
@@ -740,7 +826,8 @@ public class ParquetGroupScan extends AbstractFileGroupScan {
   @Override
   public SubScan getSpecificScan(int minorFragmentId) {
     if (mappings == null) {
-      return new EmptyRowGroupScan();
+      return new ParquetRowGroupScan(
+          getUserName(), formatPlugin, null, columns, selectionRoot, filter);
     }
 
     assert minorFragmentId < mappings.size() : String.format(

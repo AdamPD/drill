@@ -96,12 +96,11 @@ public class ScanBatch implements CloseableRecordBatch {
                    List<Integer> selectedPartitionColumns) throws ExecutionSetupException {
     this.context = context;
     this.readers = readers;
-    this.oContext = oContext;
     if (!readers.hasNext()) {
-      this.done = true;
-      return;
+      throw new ExecutionSetupException("A scan batch must contain at least one reader.");
     }
     currentReader = readers.next();
+    this.oContext = oContext;
 
     boolean setup = false;
     try {
@@ -283,7 +282,7 @@ public class ScanBatch implements CloseableRecordBatch {
       for (int i : selectedPartitionColumns) {
         final MaterializedField field =
             MaterializedField.create(SchemaPath.getSimplePath(partitionColumnDesignator + i),
-                                     Types.optional(MinorType.VARCHAR));
+                Types.optional(MinorType.VARCHAR));
         final ValueVector v = mutator.addField(field, NullableVarCharVector.class);
         partitionVectors.add(v);
       }
@@ -350,7 +349,7 @@ public class ScanBatch implements CloseableRecordBatch {
           throw new SchemaChangeException(
               String.format(
                   "The class that was provided, %s, does not correspond to the "
-                  + "expected vector type of %s.",
+                      + "expected vector type of %s.",
                   clazz.getSimpleName(), v.getClass().getSimpleName()));
         }
 
@@ -419,21 +418,17 @@ public class ScanBatch implements CloseableRecordBatch {
   @Override
   public void close() throws Exception {
     container.clear();
-    if (partitionVectors != null) {
-      for (ValueVector v : partitionVectors) {
-        v.clear();
-      }
+    for (final ValueVector v : partitionVectors) {
+      v.clear();
     }
     fieldVectorMap.clear();
-    if (currentReader != null) {
-      currentReader.close();
-    }
+    currentReader.close();
   }
 
   @Override
   public VectorContainer getOutgoingContainer() {
     throw new UnsupportedOperationException(
         String.format("You should not call getOutgoingContainer() for class %s",
-                      this.getClass().getCanonicalName()));
+            this.getClass().getCanonicalName()));
   }
 }

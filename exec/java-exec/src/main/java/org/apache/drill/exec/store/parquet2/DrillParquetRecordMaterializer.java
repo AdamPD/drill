@@ -27,7 +27,6 @@ import org.apache.parquet.io.api.RecordMaterializer;
 import org.apache.parquet.schema.MessageType;
 
 import java.util.Collection;
-import java.util.List;
 
 public class DrillParquetRecordMaterializer extends RecordMaterializer<Void> {
 
@@ -46,7 +45,7 @@ public class DrillParquetRecordMaterializer extends RecordMaterializer<Void> {
 
   @Override
   public Void getCurrentRecord() {
-    return true;
+    return null;
   }
 
   @Override
