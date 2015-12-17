@@ -46,6 +46,8 @@ import org.apache.drill.exec.vector.ValueVector;
 import org.apache.hadoop.fs.FileSystem;
 import org.apache.hadoop.fs.Path;
 import org.apache.parquet.column.ColumnDescriptor;
+import org.apache.parquet.filter2.predicate.FilterPredicate;
+import org.apache.parquet.filter2.statisticslevel.StatisticsFilter;
 import org.apache.parquet.format.FileMetaData;
 import org.apache.parquet.format.SchemaElement;
 import org.apache.parquet.format.converter.ParquetMetadataConverter;
@@ -105,15 +107,19 @@ public class ParquetRecordReader extends AbstractRecordReader {
   long totalRecordsRead;
   private final FragmentContext fragmentContext;
 
+  private final FilterPredicate filter;
+  private boolean emptyScan;
+
   public ParquetRecordReader(FragmentContext fragmentContext,
       String path,
       int rowGroupIndex,
       FileSystem fs,
       CodecFactory codecFactory,
       ParquetMetadata footer,
-                             List<SchemaPath> columns) throws ExecutionSetupException {
+      List<SchemaPath> columns,
+      FilterPredicate filter) throws ExecutionSetupException {
     this(fragmentContext, DEFAULT_BATCH_LENGTH_IN_BITS, path, rowGroupIndex, fs, codecFactory, footer,
-        columns);
+        columns, filter);
   }
 
   public ParquetRecordReader(
@@ -124,7 +130,8 @@ public class ParquetRecordReader extends AbstractRecordReader {
       FileSystem fs,
       CodecFactory codecFactory,
       ParquetMetadata footer,
-      List<SchemaPath> columns) throws ExecutionSetupException {
+      List<SchemaPath> columns,
+      FilterPredicate filter) throws ExecutionSetupException {
     this.hadoopPath = new Path(path);
     this.fileSystem = fs;
     this.codecFactory = codecFactory;
@@ -132,6 +139,7 @@ public class ParquetRecordReader extends AbstractRecordReader {
     this.batchSize = batchSize;
     this.footer = footer;
     this.fragmentContext = fragmentContext;
+    this.filter = filter;
     setColumns(columns);
   }
 
@@ -334,6 +342,17 @@ public class ParquetRecordReader extends AbstractRecordReader {
           }
         }
       }
+
+      try {
+        if (filter != null && StatisticsFilter.canDrop(filter, rowGroupMetadata.getColumns())) {
+          emptyScan = true;
+        }
+      } catch (Exception e) {
+        // canDrop will throw an exception if the schema is incompatible
+        // In this case, we simply ignore the filter predicate and continue
+        logger.warn("Filter is not compatible with Parquet schema", e);
+      }
+
     } catch (Exception e) {
       handleAndRaise("Failure in setting up reader", e);
     }
@@ -392,6 +411,10 @@ public class ParquetRecordReader extends AbstractRecordReader {
     resetBatch();
     long recordsToRead = 0;
     try {
+      if (emptyScan) {
+        return 0;
+      }
+
       ColumnReader<?> firstColumnStatus;
       if (columnStatuses.size() > 0) {
         firstColumnStatus = columnStatuses.iterator().next();

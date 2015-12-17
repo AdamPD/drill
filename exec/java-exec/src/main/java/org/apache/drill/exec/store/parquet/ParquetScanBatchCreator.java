@@ -135,7 +135,8 @@ public class ParquetScanBatchCreator implements BatchCreator<ParquetRowGroupScan
                         fs.getConf(),
                         new ParquetDirectByteBufferAllocator(oContext.getAllocator()), 0),
                     footers.get(e.getPath()),
-                    rowGroupScan.getColumns()
+                    rowGroupScan.getColumns(),
+                    rowGroupScan.getFilter()
                 )
             );
           } else {
@@ -165,10 +166,6 @@ public class ParquetScanBatchCreator implements BatchCreator<ParquetRowGroupScan
       for (int i = 0; i < numParts; i++) {
         selectedPartitionColumns.add(i);
       }
-    }
-
-    if (readers.isEmpty()) {
-      readers.add(new EmptyRecordReader());
     }
 
     ScanBatch s =

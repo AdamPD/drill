@@ -603,16 +603,22 @@ public class ParquetGroupScan extends AbstractFileGroupScan {
     ArrayList<ColumnChunkMetaData> columns = new ArrayList<ColumnChunkMetaData>();
     for (ColumnMetadata column : rowGroup.columns) {
       columns.add(ColumnChunkMetaData.get(ColumnPath.fromDotString(column.name.getAsUnescapedPath()), column.primitiveType,
-          CompressionCodecName.UNCOMPRESSED, Collections.<Encoding>emptySet(), getStatistics(column.primitiveType, column.min, column.max), 0, 0, 1, 0, 0));
+          CompressionCodecName.UNCOMPRESSED, Collections.<Encoding>emptySet(), getStatistics(column.primitiveType, column.min, column.max), 0, 0, rowGroup.rowCount, 0, 0));
     }
     return columns;
   }
 
   private static ParquetTableMetadata_v1 applyFilter(ParquetTableMetadata_v1 metadata, FilterPredicate filter) {
     ArrayList<ParquetFileMetadata> files = new ArrayList<ParquetFileMetadata>();
+    ParquetFileMetadata defaultFile = null;
+    RowGroupMetadata defaultRowGroup = null;
     for (ParquetFileMetadata file : metadata.files) {
       ArrayList<RowGroupMetadata> rowGroups = new ArrayList<RowGroupMetadata>();
       for (RowGroupMetadata rowGroup : file.rowGroups) {
+        if (defaultFile == null) {
+          defaultFile = file;
+          defaultRowGroup = rowGroup;
+        }
         if (!StatisticsFilter.canDrop(filter, getColumnMetadata(rowGroup))) {
           rowGroups.add(rowGroup);
         }
@@ -620,6 +626,11 @@ public class ParquetGroupScan extends AbstractFileGroupScan {
       if (rowGroups.size() > 0) {
         files.add(new ParquetFileMetadata(file.path, file.length, rowGroups));
       }
+    }
+    if (files.size() == 0) {
+      // We need at least a single file here to ensure we don't return
+      // an empty scan batch
+      files.add(new ParquetFileMetadata(defaultFile.path, defaultFile.length, Arrays.asList(defaultRowGroup)));
     }
     return new ParquetTableMetadata_v1(files, metadata.directories);
   }
@@ -668,7 +679,17 @@ public class ParquetGroupScan extends AbstractFileGroupScan {
     }
 
     if (filter != null) {
-      parquetTableMetadata = applyFilter(parquetTableMetadata, filter);
+      try {
+        parquetTableMetadata = applyFilter(parquetTableMetadata, filter);
+      } catch (Exception e) {
+        // canDrop will throw an exception if the schema is incompatible
+        // In this case, we simply ignore the filter predicate and continue with all row groups
+        //
+        // NB: RowGroupFilter uses SchemaCompatibilityValidator which will not (currently) allow filtering
+        // timestamp/time/date columns using in64/32 values, hence it is not being used.
+        // https://issues.apache.org/jira/browse/PARQUET-247 is related to this, although not exactly the same
+        logger.warn("Filter is not compatible with Parquet schema", e);
+      }
     }
 
     if (fileSet == null) {
@@ -818,18 +839,11 @@ public class ParquetGroupScan extends AbstractFileGroupScan {
 
   @Override
   public void applyAssignments(List<DrillbitEndpoint> incomingEndpoints) throws PhysicalOperatorSetupException {
-    if (!rowGroupInfos.isEmpty()) {
-      this.mappings = AssignmentCreator.getMappings(incomingEndpoints, rowGroupInfos, formatPlugin.getContext());
-    }
+    this.mappings = AssignmentCreator.getMappings(incomingEndpoints, rowGroupInfos, formatPlugin.getContext());
   }
 
   @Override
   public SubScan getSpecificScan(int minorFragmentId) {
-    if (mappings == null) {
-      return new ParquetRowGroupScan(
-          getUserName(), formatPlugin, null, columns, selectionRoot, filter);
-    }
-
     assert minorFragmentId < mappings.size() : String.format(
         "Mappings length [%d] should be longer than minor fragment id [%d] but it isn't.", mappings.size(),
         minorFragmentId);
